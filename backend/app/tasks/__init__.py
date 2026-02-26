@@ -1,0 +1,1 @@
+# Cola asíncrona (RQ) - placeholder
