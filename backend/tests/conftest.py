@@ -25,7 +25,7 @@ class TestConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     REDIS_URL = "redis://localhost:6379/15"
     SECRET_KEY = "test-secret"
-    CLIENT_SECRET_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+    CLIENT_SECRET_KEY = "test-client-secret"
     CORS_ORIGINS = ["http://localhost:5173"]
 
 
