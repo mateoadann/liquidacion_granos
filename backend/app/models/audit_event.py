@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from ..extensions import db
+from ..time_utils import now_cordoba_naive
 
 
 class AuditEvent(db.Model):
@@ -14,4 +13,4 @@ class AuditEvent(db.Model):
     request_xml = db.Column(db.Text, nullable=True)
     response_xml = db.Column(db.Text, nullable=True)
     metadata_json = db.Column(db.JSON, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)

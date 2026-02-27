@@ -1,0 +1,14 @@
+Flask>=3.0,<4
+Flask-Cors>=4.0,<5
+Flask-SQLAlchemy>=3.1,<4
+Flask-Migrate>=4.0,<5
+SQLAlchemy>=2.0,<3
+psycopg[binary]>=3.1,<4
+python-dotenv>=1.0,<2
+redis>=5.0,<6
+rq>=1.16,<2
+cryptography>=42.0,<45
+pytest>=8.0,<9
+arca-arg
+playwright>=1.52,<2
+openpyxl>=3.1,<4
