@@ -16,6 +16,9 @@ frontend/dist/
 
 # Env
 .env
+.env.*
+.envrc
+!.env.example
 backend/.env
 frontend/.env
 
@@ -30,5 +33,11 @@ frontend/.env
 data/*
 !data/.gitkeep
 certificados_ws/*
+certificados_clientes/*
+certificados_clientes/**
+!certificados_clientes/.gitkeep
 *.pdf
 *.txt
+
+# Local notes/artifacts
+*.pen
