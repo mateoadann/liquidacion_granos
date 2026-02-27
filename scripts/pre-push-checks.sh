@@ -10,6 +10,9 @@ echo "[pre-push] backend quick tests"
 python3 -m pytest "$ROOT_DIR/backend/tests/unit" -q
 
 echo "[pre-push] frontend typecheck"
-npx --prefix "$ROOT_DIR/frontend" tsc --noEmit
+(
+  cd "$ROOT_DIR/frontend"
+  npx tsc --noEmit
+)
 
 echo "[pre-push] quick checks OK"
