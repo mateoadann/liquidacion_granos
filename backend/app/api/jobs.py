@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from flask import Blueprint, jsonify, request
 
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
+from ..time_utils import now_cordoba_naive
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -64,12 +63,11 @@ def create_job():
     if not taxpayer:
         return jsonify({"error": "taxpayer_id no existe."}), 404
 
-    item = ExtractionJob(
-        taxpayer_id=taxpayer_id,
-        operation=operation,
-        status="pending",
-        payload=payload.get("payload"),
-    )
+    item = ExtractionJob()
+    item.taxpayer_id = taxpayer_id
+    item.operation = operation
+    item.status = "pending"
+    item.payload = payload.get("payload")
     db.session.add(item)
     db.session.commit()
 
@@ -100,9 +98,9 @@ def update_job(job_id: int):
             )
         item.status = status
         if status == "running" and not item.started_at:
-            item.started_at = datetime.utcnow()
+            item.started_at = now_cordoba_naive()
         if status in {"completed", "failed"}:
-            item.finished_at = datetime.utcnow()
+            item.finished_at = now_cordoba_naive()
 
     if "result" in payload:
         item.result = payload["result"]
@@ -113,8 +111,7 @@ def update_job(job_id: int):
     if "payload" in payload:
         item.payload = payload["payload"]
 
-    item.updated_at = datetime.utcnow()
+    item.updated_at = now_cordoba_naive()
     db.session.commit()
 
     return jsonify(_serialize_job(item))
-

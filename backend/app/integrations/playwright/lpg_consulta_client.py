@@ -4,7 +4,6 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
 import logging
 
 from playwright.sync_api import (
@@ -14,6 +13,8 @@ from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
     sync_playwright,
 )
+
+from ...time_utils import now_cordoba_naive
 
 
 def _normalize_text(value: str | None) -> str:
@@ -87,7 +88,7 @@ class ArcaLpgPlaywrightClient:
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
 
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
-        started = datetime.utcnow()
+        started = now_cordoba_naive()
         logger.info(
             "PLAYWRIGHT_RUN_START | empresa=%s desde=%s hasta=%s timeout_ms=%s type_delay_ms=%s",
             request.empresa,
@@ -98,7 +99,7 @@ class ArcaLpgPlaywrightClient:
         )
         with sync_playwright() as playwright:
             headers, total_rows, coes = self._run_with_playwright(playwright, request)
-        finished = datetime.utcnow()
+        finished = now_cordoba_naive()
 
         logger.info(
             "PLAYWRIGHT_RUN_FINISHED | empresa=%s total_rows=%s total_coes=%s",

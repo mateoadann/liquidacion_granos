@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from ..extensions import db
+from ..time_utils import now_cordoba_naive
 
 
 class LpgDocument(db.Model):
@@ -14,4 +13,4 @@ class LpgDocument(db.Model):
     estado = db.Column(db.String(10), nullable=True)
     tipo_documento = db.Column(db.String(30), nullable=False, default="LPG")
     raw_data = db.Column(db.JSON, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)

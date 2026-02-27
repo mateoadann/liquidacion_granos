@@ -4,7 +4,6 @@ import logging
 import os
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -23,6 +22,7 @@ from .certificate_validator import (
     validate_certificate_and_key_paths,
 )
 from .crypto_service import decrypt_secret, is_placeholder_secret
+from ..time_utils import now_cordoba_naive
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class LpgPlaywrightPipelineService:
         on_taxpayer_start: Callable[[Taxpayer], None] | None = None,
         on_taxpayer_finish: Callable[[TaxpayerPipelineResult], None] | None = None,
     ) -> PipelineRunResult:
-        started = datetime.utcnow()
+        started = now_cordoba_naive()
         logger.info(
             "Playwright pipeline start | desde=%s hasta=%s taxpayers=%s headless=%s timeout_ms=%s type_delay_ms=%s",
             fecha_desde,
@@ -129,7 +129,7 @@ class LpgPlaywrightPipelineService:
                 result.error,
             )
 
-        finished = datetime.utcnow()
+        finished = now_cordoba_naive()
         taxpayers_ok = sum(1 for item in results if item.ok)
         taxpayers_error = len(results) - taxpayers_ok
         return PipelineRunResult(

@@ -20,6 +20,8 @@ services:
       context: ./backend
     env_file:
       - .env
+    environment:
+      - TZ=America/Argentina/Cordoba
     depends_on:
       - postgres
       - redis
@@ -36,6 +38,8 @@ services:
       context: ./backend
     env_file:
       - .env
+    environment:
+      - TZ=America/Argentina/Cordoba
     depends_on:
       - postgres
       - redis

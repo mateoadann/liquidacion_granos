@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 import sys
 
@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from app import create_app
 from app.extensions import db
+from app.time_utils import now_cordoba_aware
 
 
 class TestConfig:
@@ -58,7 +59,7 @@ def cert_pair_bytes():
         ]
     )
 
-    now = datetime.utcnow()
+    now = now_cordoba_aware()
     certificate = (
         x509.CertificateBuilder()
         .subject_name(subject)

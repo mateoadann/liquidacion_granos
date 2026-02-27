@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
+from ..time_utils import now_cordoba_naive
 from ..services import (
     CertificateValidationError,
     decrypt_secret,
@@ -107,7 +108,7 @@ def _build_export_filename(client: Taxpayer, ext: str) -> str:
     company = "_".join((client.empresa or "cliente").split())
     safe = "".join(ch for ch in company if ch.isalnum() or ch in {"_", "-"}).strip("_")
     safe = safe or f"cliente_{client.id}"
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = now_cordoba_naive().strftime("%Y%m%d_%H%M%S")
     return f"coes_{safe}_{timestamp}.{ext}"
 
 
@@ -237,7 +238,7 @@ def update_client(client_id: int):
         except ValueError as exc:
             return _error(str(exc), 400)
 
-    item.updated_at = datetime.utcnow()
+    item.updated_at = now_cordoba_naive()
 
     try:
         db.session.commit()
@@ -252,7 +253,7 @@ def update_client(client_id: int):
 def delete_client(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     item.activo = False
-    item.updated_at = datetime.utcnow()
+    item.updated_at = now_cordoba_naive()
     db.session.commit()
     return jsonify(_serialize_client(item))
 
@@ -278,8 +279,8 @@ def upload_client_certificates(client_id: int):
     item.cert_key_path = saved_meta["cert_key_path"]
     item.cert_crt_filename = saved_meta["cert_crt_filename"]
     item.cert_key_filename = saved_meta["cert_key_filename"]
-    item.cert_uploaded_at = datetime.utcnow()
-    item.updated_at = datetime.utcnow()
+    item.cert_uploaded_at = now_cordoba_naive()
+    item.updated_at = now_cordoba_naive()
 
     db.session.commit()
 
@@ -320,7 +321,7 @@ def remove_client_certificates(client_id: int):
     item.cert_crt_filename = None
     item.cert_key_filename = None
     item.cert_uploaded_at = None
-    item.updated_at = datetime.utcnow()
+    item.updated_at = now_cordoba_naive()
     db.session.commit()
 
     return jsonify({"ok": True, "message": "Certificados eliminados."})

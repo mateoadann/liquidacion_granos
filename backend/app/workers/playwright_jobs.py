@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from .. import create_app
@@ -11,6 +10,7 @@ from ..services.lpg_playwright_pipeline import (
     LpgPlaywrightPipelineService,
     TaxpayerPipelineResult,
 )
+from ..time_utils import now_cordoba_naive
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def _update_job(job_id: int, **fields: Any) -> None:
         return
     for key, value in fields.items():
         setattr(item, key, value)
-    item.updated_at = datetime.utcnow()
+    item.updated_at = now_cordoba_naive()
     db.session.commit()
 
 
@@ -77,7 +77,7 @@ def _update_progress_state(
             continue
         if client.get("taxpayer_id") != taxpayer_id:
             continue
-        now_iso = datetime.utcnow().isoformat()
+        now_iso = now_cordoba_naive().isoformat()
         if status == "running":
             client["status"] = "running"
             client["started_at"] = now_iso
@@ -125,7 +125,7 @@ def run_playwright_pipeline_job(
         _update_job(
             extraction_job_id,
             status="running",
-            started_at=datetime.utcnow(),
+            started_at=now_cordoba_naive(),
             error_message=None,
         )
 
@@ -184,7 +184,7 @@ def run_playwright_pipeline_job(
                 extraction_job_id,
                 status=status,
                 result=payload,
-                finished_at=datetime.utcnow(),
+                finished_at=now_cordoba_naive(),
                 error_message=error_message,
             )
             logger.info(
@@ -200,7 +200,7 @@ def run_playwright_pipeline_job(
             _update_job(
                 extraction_job_id,
                 status="failed",
-                finished_at=datetime.utcnow(),
+                finished_at=now_cordoba_naive(),
                 error_message=str(exc),
             )
             logger.exception("JOB_FAILED | job_id=%s error=%s", extraction_job_id, exc)

@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from ..extensions import db
+from ..time_utils import now_cordoba_naive
 
 
 class ExtractionJob(db.Model):
@@ -13,9 +12,12 @@ class ExtractionJob(db.Model):
     payload = db.Column(db.JSON, nullable=True)
     result = db.Column(db.JSON, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)
     started_at = db.Column(db.DateTime, nullable=True)
     finished_at = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(
-        db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        db.DateTime,
+        nullable=False,
+        default=now_cordoba_naive,
+        onupdate=now_cordoba_naive,
     )

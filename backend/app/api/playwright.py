@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
 from ..queue import get_queue
+from ..time_utils import now_cordoba_naive
 
 playwright_bp = Blueprint("playwright", __name__)
 logger = logging.getLogger(__name__)
@@ -166,7 +167,7 @@ def enqueue_lpg_playwright_pipeline():
     except Exception as exc:
         item.status = "failed"
         item.error_message = f"No se pudo encolar el job Playwright: {exc}"
-        item.finished_at = datetime.utcnow()
+        item.finished_at = now_cordoba_naive()
         db.session.commit()
         logger.exception(
             "JOB_ENQUEUE_FAILED | job_id=%s operation=%s error=%s",

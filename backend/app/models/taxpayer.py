@@ -1,6 +1,5 @@
-from datetime import datetime
-
 from ..extensions import db
+from ..time_utils import now_cordoba_naive
 
 
 class Taxpayer(db.Model):
@@ -20,12 +19,12 @@ class Taxpayer(db.Model):
     razon_social = db.Column(db.String(255), nullable=True)
     ambiente = db.Column(db.String(20), nullable=False, default="homologacion")
     activo = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)
     updated_at = db.Column(
         db.DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=now_cordoba_naive,
+        onupdate=now_cordoba_naive,
     )
 
     extraction_jobs = db.relationship(
