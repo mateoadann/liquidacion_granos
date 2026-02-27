@@ -37,8 +37,9 @@ certificados_clientes/*
 certificados_clientes/**
 !certificados_clientes/.gitkeep
 *.pdf
-*.txt
 
 # Local notes/artifacts
 *.pen
 ui_clientes_crud.md
+manual_wslpg_*.txt
+ejemplo_playwright.txt
