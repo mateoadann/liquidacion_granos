@@ -15,6 +15,7 @@ export async function fetchWithAuth(
   options: RequestInit = {}
 ): Promise<Response> {
   const headers = {
+    "Content-Type": "application/json",
     ...getAuthHeaders(),
     ...options.headers,
   };
