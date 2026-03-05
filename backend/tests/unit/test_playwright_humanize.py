@@ -37,3 +37,58 @@ def test_humanized_delay_disabled_returns_base():
     result = client._humanized_delay(500, variance_percent=0.3, enabled=False)
 
     assert result == 500
+
+
+def test_classify_error_network_is_transient():
+    from app.integrations.playwright.lpg_consulta_client import ArcaLpgPlaywrightClient
+
+    client = ArcaLpgPlaywrightClient()
+
+    classification = client._classify_error(Exception("net::ERR_CONNECTION_RESET"))
+
+    assert classification.is_transient is True
+    assert classification.error_type == "network"
+
+
+def test_classify_error_timeout_is_transient():
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+    from app.integrations.playwright.lpg_consulta_client import ArcaLpgPlaywrightClient
+
+    client = ArcaLpgPlaywrightClient()
+
+    classification = client._classify_error(PlaywrightTimeoutError("Timeout 30000ms"))
+
+    assert classification.is_transient is True
+    assert classification.error_type == "timeout"
+
+
+def test_classify_error_auth_failed_is_not_transient():
+    from app.integrations.playwright.lpg_consulta_client import (
+        ArcaLpgPlaywrightClient,
+        PlaywrightFlowError,
+    )
+
+    client = ArcaLpgPlaywrightClient()
+
+    classification = client._classify_error(
+        PlaywrightFlowError("clave o usuario incorrecto")
+    )
+
+    assert classification.is_transient is False
+    assert classification.error_type == "auth_failed"
+
+
+def test_classify_error_arca_unavailable_is_transient():
+    from app.integrations.playwright.lpg_consulta_client import (
+        ArcaLpgPlaywrightClient,
+        PlaywrightFlowError,
+    )
+
+    client = ArcaLpgPlaywrightClient()
+
+    classification = client._classify_error(
+        PlaywrightFlowError("servicio no disponible")
+    )
+
+    assert classification.is_transient is True
+    assert classification.error_type == "arca_unavailable"

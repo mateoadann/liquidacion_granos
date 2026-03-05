@@ -88,6 +88,14 @@ class PlaywrightFlowError(RuntimeError):
     """Error funcional del flujo Playwright en ARCA/AFIP."""
 
 
+@dataclass(slots=True)
+class ErrorClassification:
+    """Clasificación de un error para decidir si reintentar."""
+    is_transient: bool
+    error_type: str  # "network", "timeout", "arca_unavailable", "auth_failed", "unknown"
+    message: str
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -104,6 +112,47 @@ class ArcaLpgPlaywrightClient:
         min_delay = int(base_ms * (1 - variance_percent))
         max_delay = int(base_ms * (1 + variance_percent))
         return random.randint(min_delay, max_delay)
+
+    def _classify_error(self, error: Exception) -> ErrorClassification:
+        """Clasifica un error para determinar si es transitorio (reintentable)."""
+        message = str(error).lower()
+
+        # Errores de red
+        if "net::err_" in message or "network" in message:
+            return ErrorClassification(
+                is_transient=True, error_type="network", message=str(error)
+            )
+
+        # Timeouts
+        if isinstance(error, PlaywrightTimeoutError) or "timeout" in message:
+            return ErrorClassification(
+                is_transient=True, error_type="timeout", message=str(error)
+            )
+
+        # Errores de autenticación (no reintentar)
+        auth_patterns = ["clave o usuario incorrecto", "credenciales", "clave fiscal"]
+        if any(pattern in message for pattern in auth_patterns):
+            return ErrorClassification(
+                is_transient=False, error_type="auth_failed", message=str(error)
+            )
+
+        # ARCA no disponible (reintentar)
+        arca_unavailable_patterns = [
+            "servicio no disponible",
+            "error del sistema",
+            "intente más tarde",
+            "sesión expirada",
+            "tiempo de espera agotado",
+        ]
+        if any(pattern in message for pattern in arca_unavailable_patterns):
+            return ErrorClassification(
+                is_transient=True, error_type="arca_unavailable", message=str(error)
+            )
+
+        # Error desconocido - no reintentar por seguridad
+        return ErrorClassification(
+            is_transient=False, error_type="unknown", message=str(error)
+        )
 
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
         started = now_cordoba_naive()

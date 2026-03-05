@@ -1,5 +1,6 @@
 from .lpg_consulta_client import (
     ArcaLpgPlaywrightClient,
+    ErrorClassification,
     LpgConsultaRequest,
     LpgConsultaResult,
     LpgCredentials,
@@ -8,6 +9,7 @@ from .lpg_consulta_client import (
 
 __all__ = [
     "ArcaLpgPlaywrightClient",
+    "ErrorClassification",
     "LpgCredentials",
     "LpgConsultaRequest",
     "LpgConsultaResult",
