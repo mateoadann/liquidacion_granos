@@ -103,6 +103,24 @@ class ArcaLpgPlaywrightClient:
     LANDING_URL = "https://www.afip.gob.ar/landing/default.asp"
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
 
+    # Configuración anti-detección
+    BROWSER_ARGS = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-infobars",
+    ]
+    DEFAULT_USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    DEFAULT_VIEWPORT = {"width": 1366, "height": 768}
+    WEBDRIVER_HIDE_SCRIPT = """
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+    """
+
     def _humanized_delay(
         self, base_ms: int, variance_percent: float = 0.3, enabled: bool = True
     ) -> int:
@@ -195,9 +213,17 @@ class ArcaLpgPlaywrightClient:
             request.empresa, request.headless, request.slow_mo_ms,
         )
         browser = playwright.chromium.launch(
-            headless=request.headless, slow_mo=request.slow_mo_ms,
+            headless=request.headless,
+            slow_mo=request.slow_mo_ms,
+            args=self.BROWSER_ARGS,
         )
-        context = browser.new_context()
+        context = browser.new_context(
+            user_agent=self.DEFAULT_USER_AGENT,
+            viewport=self.DEFAULT_VIEWPORT,
+            locale="es-AR",
+            timezone_id="America/Argentina/Buenos_Aires",
+        )
+        context.add_init_script(self.WEBDRIVER_HIDE_SCRIPT)
         landing_page = context.new_page()
 
         login_page: Page | None = None
