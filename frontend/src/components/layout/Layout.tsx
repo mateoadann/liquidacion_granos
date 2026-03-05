@@ -27,6 +27,9 @@ export function Layout({ children }: LayoutProps) {
                 <NavLink to="/clientes" className={linkClass}>
                   Clientes
                 </NavLink>
+                <NavLink to="/coes" className={linkClass}>
+                  COEs
+                </NavLink>
               </div>
             </div>
           </div>
