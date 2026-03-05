@@ -15,11 +15,13 @@ from ..services.auth_service import (
 from ..services.token_blacklist import add_to_blacklist
 from ..middleware import require_auth, get_current_user
 from ..time_utils import now_cordoba_naive
+from .. import limiter
 
 auth_bp = Blueprint("auth", __name__)
 
 
 @auth_bp.post("/auth/login")
+@limiter.limit("5 per minute")
 def login():
     data = request.get_json(silent=True) or {}
     username = data.get("username", "").strip()

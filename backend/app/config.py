@@ -19,3 +19,9 @@ class Config:
         if origin.strip()
     ]
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+    # Rate limiting
+    RATELIMIT_STORAGE_URI = REDIS_URL
+    RATELIMIT_STRATEGY = "fixed-window"
+    RATELIMIT_DEFAULT = "200 per minute"
+    RATELIMIT_HEADERS_ENABLED = True
