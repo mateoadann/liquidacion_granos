@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import random
 import re
 import time
 import unicodedata
 from dataclasses import dataclass
 import logging
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
 
 from playwright.sync_api import (
     Locator,
@@ -48,6 +52,13 @@ class LpgConsultaRequest:
     headless: bool = True
     timeout_ms: int = 30_000
     type_delay_ms: int = 80
+    slow_mo_ms: int = 0
+    post_action_delay_ms: int = 0
+    login_max_retries: int = 1
+    # Resilience parameters
+    humanize_delays: bool = True
+    retry_max_attempts: int = 2
+    retry_base_delay_ms: int = 1000
 
 
 @dataclass(slots=True)
@@ -80,12 +91,156 @@ class PlaywrightFlowError(RuntimeError):
     """Error funcional del flujo Playwright en ARCA/AFIP."""
 
 
+@dataclass(slots=True)
+class ErrorClassification:
+    """Clasificación de un error para decidir si reintentar."""
+    is_transient: bool
+    error_type: str  # "network", "timeout", "arca_unavailable", "auth_failed", "unknown"
+    message: str
+
+
 logger = logging.getLogger(__name__)
 
 
 class ArcaLpgPlaywrightClient:
     LANDING_URL = "https://www.afip.gob.ar/landing/default.asp"
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
+
+    # Configuración anti-detección
+    BROWSER_ARGS = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-infobars",
+    ]
+    DEFAULT_USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    DEFAULT_VIEWPORT = {"width": 1366, "height": 768}
+    WEBDRIVER_HIDE_SCRIPT = """
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined
+        });
+    """
+
+    def _humanized_delay(
+        self, base_ms: int, variance_percent: float = 0.3, enabled: bool = True
+    ) -> int:
+        """Retorna un delay con variación aleatoria de ±variance_percent."""
+        if not enabled or variance_percent <= 0:
+            return base_ms
+        min_delay = int(base_ms * (1 - variance_percent))
+        max_delay = int(base_ms * (1 + variance_percent))
+        return random.randint(min_delay, max_delay)
+
+    def _classify_error(self, error: Exception) -> ErrorClassification:
+        """Clasifica un error para determinar si es transitorio (reintentable)."""
+        message = str(error).lower()
+
+        # Errores de red
+        if "net::err_" in message or "network" in message:
+            return ErrorClassification(
+                is_transient=True, error_type="network", message=str(error)
+            )
+
+        # Timeouts
+        if isinstance(error, PlaywrightTimeoutError) or "timeout" in message:
+            return ErrorClassification(
+                is_transient=True, error_type="timeout", message=str(error)
+            )
+
+        # Errores de autenticación (no reintentar)
+        auth_patterns = ["clave o usuario incorrecto", "credenciales", "clave fiscal"]
+        if any(pattern in message for pattern in auth_patterns):
+            return ErrorClassification(
+                is_transient=False, error_type="auth_failed", message=str(error)
+            )
+
+        # ARCA no disponible (reintentar)
+        arca_unavailable_patterns = [
+            "servicio no disponible",
+            "error del sistema",
+            "intente más tarde",
+            "sesión expirada",
+            "tiempo de espera agotado",
+        ]
+        if any(pattern in message for pattern in arca_unavailable_patterns):
+            return ErrorClassification(
+                is_transient=True, error_type="arca_unavailable", message=str(error)
+            )
+
+        # Error desconocido - no reintentar por seguridad
+        return ErrorClassification(
+            is_transient=False, error_type="unknown", message=str(error)
+        )
+
+    def _with_retry(
+        self,
+        operation: Callable[[], T],
+        operation_name: str,
+        max_attempts: int,
+        base_delay_ms: int,
+        empresa: str,
+        page: Page | None = None,
+    ) -> T:
+        """Ejecuta una operación con reintentos para errores transitorios."""
+        last_error: Exception | None = None
+        last_classification: ErrorClassification | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return operation()
+            except Exception as error:
+                classification = self._classify_error(error)
+
+                logger.warning(
+                    "PLAYWRIGHT_OPERATION_ERROR | empresa=%s operation=%s attempt=%s/%s "
+                    "error_type=%s is_transient=%s message=%s",
+                    empresa,
+                    operation_name,
+                    attempt,
+                    max_attempts,
+                    classification.error_type,
+                    classification.is_transient,
+                    classification.message[:200],
+                )
+
+                # Si no es transitorio, fallar inmediatamente
+                if not classification.is_transient:
+                    raise
+
+                # Si es el último intento, fallar
+                if attempt >= max_attempts:
+                    same_error = (
+                        last_classification is not None
+                        and last_classification.error_type == classification.error_type
+                        and last_classification.message == classification.message
+                    )
+                    logger.error(
+                        "PLAYWRIGHT_RETRY_ABORT | empresa=%s operation=%s attempts=%s "
+                        "same_error=%s error_type=%s message=%s",
+                        empresa,
+                        operation_name,
+                        attempt,
+                        same_error,
+                        classification.error_type,
+                        classification.message[:200],
+                    )
+                    raise
+
+                # Guardar para comparar en el próximo intento
+                last_error = error
+                last_classification = classification
+
+                # Esperar antes de reintentar
+                if page is not None:
+                    page.wait_for_timeout(base_delay_ms)
+                else:
+                    time.sleep(base_delay_ms / 1000)
+
+        # Nunca debería llegar aquí, pero por seguridad
+        raise last_error or PlaywrightFlowError("Error desconocido en reintentos")
 
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
         started = now_cordoba_naive()
@@ -123,9 +278,22 @@ class ArcaLpgPlaywrightClient:
     def _run_with_playwright(
         self, playwright: Playwright, request: LpgConsultaRequest
     ) -> tuple[list[str], int, list[str]]:
-        logger.info("PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s", request.empresa, request.headless)
-        browser = playwright.chromium.launch(headless=request.headless)
-        context = browser.new_context()
+        logger.info(
+            "PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s slow_mo_ms=%s",
+            request.empresa, request.headless, request.slow_mo_ms,
+        )
+        browser = playwright.chromium.launch(
+            headless=request.headless,
+            slow_mo=request.slow_mo_ms,
+            args=self.BROWSER_ARGS,
+        )
+        context = browser.new_context(
+            user_agent=self.DEFAULT_USER_AGENT,
+            viewport=self.DEFAULT_VIEWPORT,
+            locale="es-AR",
+            timezone_id="America/Argentina/Buenos_Aires",
+        )
+        context.add_init_script(self.WEBDRIVER_HIDE_SCRIPT)
         landing_page = context.new_page()
 
         login_page: Page | None = None
@@ -140,19 +308,36 @@ class ArcaLpgPlaywrightClient:
                 request.empresa,
             )
             self._select_empresa(service_page, request.empresa, request.timeout_ms)
-            self._open_consulta_recibidas(service_page, request.timeout_ms, request.empresa)
+            self._open_consulta_recibidas(
+                service_page, request.timeout_ms, request.empresa, request.humanize_delays
+            )
             self._set_fechas(
                 service_page,
                 request.fecha_desde,
                 request.fecha_hasta,
                 request.timeout_ms,
                 request.empresa,
+                request.humanize_delays,
             )
-            self._submit_consulta(service_page, request.timeout_ms, request.empresa)
-            headers, total_rows, coes = self._read_results_coes(
-                service_page,
-                request.timeout_ms,
-                request.empresa,
+            self._with_retry(
+                operation=lambda: self._submit_consulta(
+                    service_page, request.timeout_ms, request.empresa
+                ),
+                operation_name="submit_consulta",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
+            )
+            headers, total_rows, coes = self._with_retry(
+                operation=lambda: self._read_results_coes(
+                    service_page, request.timeout_ms, request.empresa
+                ),
+                operation_name="read_results",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
             )
             return headers, total_rows, coes
         finally:
@@ -161,8 +346,47 @@ class ArcaLpgPlaywrightClient:
             browser.close()
 
     def _login(self, landing_page: Page, request: LpgConsultaRequest) -> Page:
+        max_retries = max(request.login_max_retries, 1)
+        last_error: str | None = None
+
+        for attempt in range(1, max_retries + 1):
+            logger.info(
+                "PLAYWRIGHT_LOGIN_ATTEMPT | empresa=%s attempt=%s/%s",
+                request.empresa, attempt, max_retries,
+            )
+            login_page = self._do_login_attempt(landing_page, request)
+
+            login_ok, is_transient, message = self._wait_for_login_result(
+                login_page, request.timeout_ms,
+            )
+            if login_ok:
+                logger.info(
+                    "PLAYWRIGHT_LOGIN_CONFIRMED | empresa=%s attempt=%s",
+                    request.empresa, attempt,
+                )
+                return login_page
+
+            last_error = message
+            if not is_transient:
+                logger.warning(
+                    "PLAYWRIGHT_LOGIN_FAILED | empresa=%s error=%s attempt=%s",
+                    request.empresa, message, attempt,
+                )
+                raise PlaywrightFlowError(message or "No se pudo confirmar el login.")
+
+            logger.warning(
+                "PLAYWRIGHT_LOGIN_TRANSIENT_ERROR | empresa=%s error=%s attempt=%s/%s",
+                request.empresa, message, attempt, max_retries,
+            )
+            if attempt < max_retries:
+                retry_delay = request.post_action_delay_ms if request.post_action_delay_ms > 0 else 2000
+                login_page.wait_for_timeout(retry_delay)
+
+        raise PlaywrightFlowError(last_error or "No se pudo confirmar el login tras reintentos.")
+
+    def _do_login_attempt(self, landing_page: Page, request: LpgConsultaRequest) -> Page:
         logger.info("PLAYWRIGHT_NAVIGATE_LANDING | empresa=%s", request.empresa)
-        landing_page.goto(self.LANDING_URL, wait_until="domcontentloaded")
+        landing_page.goto(self.LANDING_URL, wait_until="networkidle")
 
         with landing_page.expect_popup() as popup_info:
             logger.info("PLAYWRIGHT_CLICK_INICIAR_SESION | empresa=%s", request.empresa)
@@ -170,43 +394,63 @@ class ArcaLpgPlaywrightClient:
                 "link", name=re.compile(r"Iniciar sesi[oó]n", re.IGNORECASE)
             ).click()
         login_page = popup_info.value
-        login_page.wait_for_load_state("domcontentloaded")
+        login_page.wait_for_load_state("networkidle")
         logger.info("PLAYWRIGHT_LOGIN_POPUP_READY | empresa=%s", request.empresa)
 
         logger.info("PLAYWRIGHT_FILL_CUIT | empresa=%s cuit=%s", request.empresa, self._mask_cuit(request.credentials.cuit))
         login_page.get_by_role("spinbutton").fill(request.credentials.cuit)
+        self._post_action_pause(login_page, 300, "cuit_fill", request.empresa, request.humanize_delays)
         logger.info("PLAYWRIGHT_SUBMIT_CUIT | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Siguiente", re.IGNORECASE)).click()
+        self._post_action_pause(login_page, request.post_action_delay_ms, "cuit_submit", request.empresa, request.humanize_delays)
+
         logger.info("PLAYWRIGHT_FILL_CLAVE | empresa=%s", request.empresa)
         login_page.get_by_role(
             "textbox", name=re.compile(r"(TU\s*CLAVE|Clave)", re.IGNORECASE)
         ).fill(request.credentials.clave_fiscal)
+        self._post_action_pause(login_page, 300, "clave_fill", request.empresa, request.humanize_delays)
         logger.info("PLAYWRIGHT_SUBMIT_LOGIN | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Ingresar", re.IGNORECASE)).click()
+        self._post_action_pause(login_page, request.post_action_delay_ms, "login_submit", request.empresa, request.humanize_delays)
 
-        login_ok, message = self._wait_for_login_result(login_page, request.timeout_ms)
-        if not login_ok:
-            logger.warning("PLAYWRIGHT_LOGIN_FAILED | empresa=%s error=%s", request.empresa, message)
-            raise PlaywrightFlowError(message or "No se pudo confirmar el login.")
-        logger.info("PLAYWRIGHT_LOGIN_CONFIRMED | empresa=%s", request.empresa)
         return login_page
 
-    def _wait_for_login_result(self, login_page: Page, timeout_ms: int) -> tuple[bool, str | None]:
+    def _post_action_pause(
+        self, page: Page, delay_ms: int, action: str, empresa: str, humanize: bool = True
+    ) -> None:
+        if delay_ms <= 0:
+            return
+        actual_delay = self._humanized_delay(delay_ms, enabled=humanize)
+        logger.debug(
+            "PLAYWRIGHT_POST_ACTION_PAUSE | empresa=%s action=%s base_delay_ms=%s actual_delay_ms=%s",
+            empresa, action, delay_ms, actual_delay,
+        )
+        page.wait_for_timeout(actual_delay)
+
+    def _wait_for_login_result(
+        self, login_page: Page, timeout_ms: int,
+    ) -> tuple[bool, bool, str | None]:
+        """Returns (success, is_transient_error, message)."""
         deadline = time.monotonic() + (timeout_ms / 1000)
-        error_locator = login_page.get_by_text(
-            re.compile(r"clave o usuario incorrecto|error", re.IGNORECASE)
+        fatal_error_locator = login_page.get_by_text(
+            re.compile(r"clave o usuario incorrecto|credenciales", re.IGNORECASE)
+        )
+        transient_error_locator = login_page.get_by_text(
+            re.compile(r"error", re.IGNORECASE)
         )
         search_locator = login_page.get_by_role(
             "combobox", name=re.compile(r"Buscador", re.IGNORECASE)
         )
 
         while time.monotonic() < deadline:
-            if error_locator.count() > 0 and error_locator.first.is_visible():
-                return False, _normalize_text(error_locator.first.inner_text())
+            if fatal_error_locator.count() > 0 and fatal_error_locator.first.is_visible():
+                return False, False, _normalize_text(fatal_error_locator.first.inner_text())
             if search_locator.count() > 0 and search_locator.first.is_visible():
-                return True, None
+                return True, False, None
+            if transient_error_locator.count() > 0 and transient_error_locator.first.is_visible():
+                return False, True, _normalize_text(transient_error_locator.first.inner_text())
             login_page.wait_for_timeout(250)
-        return False, "Timeout esperando confirmación de login (Buscador no visible)."
+        return False, False, "Timeout esperando confirmación de login (Buscador no visible)."
 
     def _open_lpg_service(
         self,
@@ -335,7 +579,7 @@ class ArcaLpgPlaywrightClient:
                 "El servicio LPG apareció en la búsqueda, pero no abrió una nueva ventana dentro del tiempo esperado."
             ) from exc
         logger.info("PLAYWRIGHT_OPEN_SERVICE_POPUP_OK | empresa=%s", empresa)
-        service_page.wait_for_load_state("domcontentloaded")
+        service_page.wait_for_load_state("networkidle")
         return service_page
 
     def _wait_for_service_page_ready(self, service_page: Page, timeout_ms: int, empresa: str) -> None:
@@ -523,11 +767,14 @@ class ArcaLpgPlaywrightClient:
             "visible_buttons": self._detect_visible_buttons(service_page),
         }
 
-    def _open_consulta_recibidas(self, service_page: Page, timeout_ms: int, empresa: str) -> None:
+    def _open_consulta_recibidas(
+        self, service_page: Page, timeout_ms: int, empresa: str, humanize: bool = True
+    ) -> None:
         logger.info("PLAYWRIGHT_OPEN_CONSULTA_RECIBIDAS_START | empresa=%s", empresa)
         service_page.get_by_role(
             "button", name=re.compile(r"Liquidaci[oó]n Primaria de Granos", re.IGNORECASE)
         ).click()
+        self._post_action_pause(service_page, 400, "menu_click", empresa, humanize)
         target = service_page.get_by_role(
             "button", name=re.compile(r"Consulta Liquidaciones Recibidas", re.IGNORECASE)
         ).first
@@ -542,6 +789,7 @@ class ArcaLpgPlaywrightClient:
         fecha_hasta: str,
         timeout_ms: int,
         empresa: str,
+        humanize: bool = True,
     ) -> None:
         logger.info("PLAYWRIGHT_SET_FECHAS | empresa=%s desde=%s hasta=%s", empresa, fecha_desde, fecha_hasta)
         input_desde = self._resolve_input_fecha_desde(service_page)
@@ -550,10 +798,12 @@ class ArcaLpgPlaywrightClient:
         input_desde.wait_for(timeout=timeout_ms)
         input_desde.click()
         input_desde.fill(fecha_desde)
+        self._post_action_pause(service_page, 200, "fecha_desde_fill", empresa, humanize)
 
         input_hasta.wait_for(timeout=timeout_ms)
         input_hasta.click()
         input_hasta.fill(fecha_hasta)
+        self._post_action_pause(service_page, 200, "fecha_hasta_fill", empresa, humanize)
 
     def _resolve_input_fecha_desde(self, service_page: Page) -> Locator:
         candidates = [

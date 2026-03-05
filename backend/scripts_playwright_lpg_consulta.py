@@ -96,6 +96,24 @@ def _parse_args() -> argparse.Namespace:
         default=int(os.getenv("PLAYWRIGHT_TYPE_DELAY_MS", "80")),
         help="Delay de tipeo para el buscador de servicios ARCA (default: 80).",
     )
+    parser.add_argument(
+        "--slow-mo-ms",
+        type=int,
+        default=int(os.getenv("PLAYWRIGHT_SLOW_MO_MS", "0")),
+        help="Delay entre cada acción de Playwright en ms (default: 0).",
+    )
+    parser.add_argument(
+        "--post-action-delay-ms",
+        type=int,
+        default=int(os.getenv("PLAYWRIGHT_POST_ACTION_DELAY_MS", "0")),
+        help="Pausa después de acciones críticas en ms (default: 0).",
+    )
+    parser.add_argument(
+        "--login-max-retries",
+        type=int,
+        default=int(os.getenv("PLAYWRIGHT_LOGIN_MAX_RETRIES", "1")),
+        help="Reintentos máximos de login ante errores transitorios (default: 1).",
+    )
     parser.add_argument("--output-json", help="Path para guardar salida JSON.")
     return parser.parse_args()
 
@@ -131,6 +149,9 @@ def main() -> int:
             headless=headless,
             timeout_ms=args.timeout_ms,
             type_delay_ms=args.type_delay_ms,
+            slow_mo_ms=args.slow_mo_ms,
+            post_action_delay_ms=args.post_action_delay_ms,
+            login_max_retries=args.login_max_retries,
         )
 
     body = result.to_dict()

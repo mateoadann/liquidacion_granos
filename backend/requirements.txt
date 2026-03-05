@@ -9,6 +9,7 @@ redis>=5.0,<6
 rq>=1.16,<2
 cryptography>=42.0,<45
 pytest>=8.0,<9
+pytest-mock>=3.14,<4
 arca-arg
 playwright>=1.52,<2
 openpyxl>=3.1,<4

@@ -80,6 +80,12 @@ class LpgPlaywrightPipelineService:
         headless: bool = True,
         timeout_ms: int = 30_000,
         type_delay_ms: int = 80,
+        slow_mo_ms: int = 0,
+        post_action_delay_ms: int = 0,
+        login_max_retries: int = 1,
+        humanize_delays: bool = True,
+        retry_max_attempts: int = 2,
+        retry_base_delay_ms: int = 1000,
         on_taxpayer_start: Callable[[Taxpayer], None] | None = None,
         on_taxpayer_finish: Callable[[TaxpayerPipelineResult], None] | None = None,
     ) -> PipelineRunResult:
@@ -112,6 +118,12 @@ class LpgPlaywrightPipelineService:
                 headless=headless,
                 timeout_ms=timeout_ms,
                 type_delay_ms=type_delay_ms,
+                slow_mo_ms=slow_mo_ms,
+                post_action_delay_ms=post_action_delay_ms,
+                login_max_retries=login_max_retries,
+                humanize_delays=humanize_delays,
+                retry_max_attempts=retry_max_attempts,
+                retry_base_delay_ms=retry_base_delay_ms,
             )
             results.append(result)
             if on_taxpayer_finish:
@@ -152,6 +164,12 @@ class LpgPlaywrightPipelineService:
         headless: bool,
         timeout_ms: int,
         type_delay_ms: int,
+        slow_mo_ms: int,
+        post_action_delay_ms: int,
+        login_max_retries: int,
+        humanize_delays: bool,
+        retry_max_attempts: int,
+        retry_base_delay_ms: int,
     ) -> TaxpayerPipelineResult:
         logger.info(
             "Taxpayer start | id=%s empresa=%s cuit=%s cuit_representado=%s",
@@ -206,6 +224,12 @@ class LpgPlaywrightPipelineService:
                     headless=headless,
                     timeout_ms=timeout_ms,
                     type_delay_ms=type_delay_ms,
+                    slow_mo_ms=slow_mo_ms,
+                    post_action_delay_ms=post_action_delay_ms,
+                    login_max_retries=login_max_retries,
+                    humanize_delays=humanize_delays,
+                    retry_max_attempts=retry_max_attempts,
+                    retry_base_delay_ms=retry_base_delay_ms,
                 )
             )
             logger.info(
