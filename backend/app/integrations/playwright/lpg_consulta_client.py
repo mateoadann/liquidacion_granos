@@ -308,13 +308,16 @@ class ArcaLpgPlaywrightClient:
                 request.empresa,
             )
             self._select_empresa(service_page, request.empresa, request.timeout_ms)
-            self._open_consulta_recibidas(service_page, request.timeout_ms, request.empresa)
+            self._open_consulta_recibidas(
+                service_page, request.timeout_ms, request.empresa, request.humanize_delays
+            )
             self._set_fechas(
                 service_page,
                 request.fecha_desde,
                 request.fecha_hasta,
                 request.timeout_ms,
                 request.empresa,
+                request.humanize_delays,
             )
             self._submit_consulta(service_page, request.timeout_ms, request.empresa)
             headers, total_rows, coes = self._read_results_coes(
@@ -382,27 +385,33 @@ class ArcaLpgPlaywrightClient:
 
         logger.info("PLAYWRIGHT_FILL_CUIT | empresa=%s cuit=%s", request.empresa, self._mask_cuit(request.credentials.cuit))
         login_page.get_by_role("spinbutton").fill(request.credentials.cuit)
+        self._post_action_pause(login_page, 300, "cuit_fill", request.empresa, request.humanize_delays)
         logger.info("PLAYWRIGHT_SUBMIT_CUIT | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Siguiente", re.IGNORECASE)).click()
-        self._post_action_pause(login_page, request.post_action_delay_ms, "cuit_submit", request.empresa)
+        self._post_action_pause(login_page, request.post_action_delay_ms, "cuit_submit", request.empresa, request.humanize_delays)
 
         logger.info("PLAYWRIGHT_FILL_CLAVE | empresa=%s", request.empresa)
         login_page.get_by_role(
             "textbox", name=re.compile(r"(TU\s*CLAVE|Clave)", re.IGNORECASE)
         ).fill(request.credentials.clave_fiscal)
+        self._post_action_pause(login_page, 300, "clave_fill", request.empresa, request.humanize_delays)
         logger.info("PLAYWRIGHT_SUBMIT_LOGIN | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Ingresar", re.IGNORECASE)).click()
-        self._post_action_pause(login_page, request.post_action_delay_ms, "login_submit", request.empresa)
+        self._post_action_pause(login_page, request.post_action_delay_ms, "login_submit", request.empresa, request.humanize_delays)
 
         return login_page
 
-    def _post_action_pause(self, page: Page, delay_ms: int, action: str, empresa: str) -> None:
-        if delay_ms > 0:
-            logger.debug(
-                "PLAYWRIGHT_POST_ACTION_PAUSE | empresa=%s action=%s delay_ms=%s",
-                empresa, action, delay_ms,
-            )
-            page.wait_for_timeout(delay_ms)
+    def _post_action_pause(
+        self, page: Page, delay_ms: int, action: str, empresa: str, humanize: bool = True
+    ) -> None:
+        if delay_ms <= 0:
+            return
+        actual_delay = self._humanized_delay(delay_ms, enabled=humanize)
+        logger.debug(
+            "PLAYWRIGHT_POST_ACTION_PAUSE | empresa=%s action=%s base_delay_ms=%s actual_delay_ms=%s",
+            empresa, action, delay_ms, actual_delay,
+        )
+        page.wait_for_timeout(actual_delay)
 
     def _wait_for_login_result(
         self, login_page: Page, timeout_ms: int,
@@ -744,11 +753,14 @@ class ArcaLpgPlaywrightClient:
             "visible_buttons": self._detect_visible_buttons(service_page),
         }
 
-    def _open_consulta_recibidas(self, service_page: Page, timeout_ms: int, empresa: str) -> None:
+    def _open_consulta_recibidas(
+        self, service_page: Page, timeout_ms: int, empresa: str, humanize: bool = True
+    ) -> None:
         logger.info("PLAYWRIGHT_OPEN_CONSULTA_RECIBIDAS_START | empresa=%s", empresa)
         service_page.get_by_role(
             "button", name=re.compile(r"Liquidaci[oó]n Primaria de Granos", re.IGNORECASE)
         ).click()
+        self._post_action_pause(service_page, 400, "menu_click", empresa, humanize)
         target = service_page.get_by_role(
             "button", name=re.compile(r"Consulta Liquidaciones Recibidas", re.IGNORECASE)
         ).first
@@ -763,6 +775,7 @@ class ArcaLpgPlaywrightClient:
         fecha_hasta: str,
         timeout_ms: int,
         empresa: str,
+        humanize: bool = True,
     ) -> None:
         logger.info("PLAYWRIGHT_SET_FECHAS | empresa=%s desde=%s hasta=%s", empresa, fecha_desde, fecha_hasta)
         input_desde = self._resolve_input_fecha_desde(service_page)
@@ -771,10 +784,12 @@ class ArcaLpgPlaywrightClient:
         input_desde.wait_for(timeout=timeout_ms)
         input_desde.click()
         input_desde.fill(fecha_desde)
+        self._post_action_pause(service_page, 200, "fecha_desde_fill", empresa, humanize)
 
         input_hasta.wait_for(timeout=timeout_ms)
         input_hasta.click()
         input_hasta.fill(fecha_hasta)
+        self._post_action_pause(service_page, 200, "fecha_hasta_fill", empresa, humanize)
 
     def _resolve_input_fecha_desde(self, service_page: Page) -> Locator:
         candidates = [
