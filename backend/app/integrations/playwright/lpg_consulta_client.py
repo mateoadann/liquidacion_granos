@@ -48,6 +48,13 @@ class LpgConsultaRequest:
     headless: bool = True
     timeout_ms: int = 30_000
     type_delay_ms: int = 80
+    slow_mo_ms: int = 0
+    post_action_delay_ms: int = 0
+    login_max_retries: int = 1
+    # Resilience parameters
+    humanize_delays: bool = True
+    retry_max_attempts: int = 2
+    retry_base_delay_ms: int = 1000
 
 
 @dataclass(slots=True)
@@ -123,8 +130,13 @@ class ArcaLpgPlaywrightClient:
     def _run_with_playwright(
         self, playwright: Playwright, request: LpgConsultaRequest
     ) -> tuple[list[str], int, list[str]]:
-        logger.info("PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s", request.empresa, request.headless)
-        browser = playwright.chromium.launch(headless=request.headless)
+        logger.info(
+            "PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s slow_mo_ms=%s",
+            request.empresa, request.headless, request.slow_mo_ms,
+        )
+        browser = playwright.chromium.launch(
+            headless=request.headless, slow_mo=request.slow_mo_ms,
+        )
         context = browser.new_context()
         landing_page = context.new_page()
 
@@ -161,8 +173,47 @@ class ArcaLpgPlaywrightClient:
             browser.close()
 
     def _login(self, landing_page: Page, request: LpgConsultaRequest) -> Page:
+        max_retries = max(request.login_max_retries, 1)
+        last_error: str | None = None
+
+        for attempt in range(1, max_retries + 1):
+            logger.info(
+                "PLAYWRIGHT_LOGIN_ATTEMPT | empresa=%s attempt=%s/%s",
+                request.empresa, attempt, max_retries,
+            )
+            login_page = self._do_login_attempt(landing_page, request)
+
+            login_ok, is_transient, message = self._wait_for_login_result(
+                login_page, request.timeout_ms,
+            )
+            if login_ok:
+                logger.info(
+                    "PLAYWRIGHT_LOGIN_CONFIRMED | empresa=%s attempt=%s",
+                    request.empresa, attempt,
+                )
+                return login_page
+
+            last_error = message
+            if not is_transient:
+                logger.warning(
+                    "PLAYWRIGHT_LOGIN_FAILED | empresa=%s error=%s attempt=%s",
+                    request.empresa, message, attempt,
+                )
+                raise PlaywrightFlowError(message or "No se pudo confirmar el login.")
+
+            logger.warning(
+                "PLAYWRIGHT_LOGIN_TRANSIENT_ERROR | empresa=%s error=%s attempt=%s/%s",
+                request.empresa, message, attempt, max_retries,
+            )
+            if attempt < max_retries:
+                retry_delay = request.post_action_delay_ms if request.post_action_delay_ms > 0 else 2000
+                login_page.wait_for_timeout(retry_delay)
+
+        raise PlaywrightFlowError(last_error or "No se pudo confirmar el login tras reintentos.")
+
+    def _do_login_attempt(self, landing_page: Page, request: LpgConsultaRequest) -> Page:
         logger.info("PLAYWRIGHT_NAVIGATE_LANDING | empresa=%s", request.empresa)
-        landing_page.goto(self.LANDING_URL, wait_until="domcontentloaded")
+        landing_page.goto(self.LANDING_URL, wait_until="networkidle")
 
         with landing_page.expect_popup() as popup_info:
             logger.info("PLAYWRIGHT_CLICK_INICIAR_SESION | empresa=%s", request.empresa)
@@ -170,43 +221,57 @@ class ArcaLpgPlaywrightClient:
                 "link", name=re.compile(r"Iniciar sesi[oó]n", re.IGNORECASE)
             ).click()
         login_page = popup_info.value
-        login_page.wait_for_load_state("domcontentloaded")
+        login_page.wait_for_load_state("networkidle")
         logger.info("PLAYWRIGHT_LOGIN_POPUP_READY | empresa=%s", request.empresa)
 
         logger.info("PLAYWRIGHT_FILL_CUIT | empresa=%s cuit=%s", request.empresa, self._mask_cuit(request.credentials.cuit))
         login_page.get_by_role("spinbutton").fill(request.credentials.cuit)
         logger.info("PLAYWRIGHT_SUBMIT_CUIT | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Siguiente", re.IGNORECASE)).click()
+        self._post_action_pause(login_page, request.post_action_delay_ms, "cuit_submit", request.empresa)
+
         logger.info("PLAYWRIGHT_FILL_CLAVE | empresa=%s", request.empresa)
         login_page.get_by_role(
             "textbox", name=re.compile(r"(TU\s*CLAVE|Clave)", re.IGNORECASE)
         ).fill(request.credentials.clave_fiscal)
         logger.info("PLAYWRIGHT_SUBMIT_LOGIN | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Ingresar", re.IGNORECASE)).click()
+        self._post_action_pause(login_page, request.post_action_delay_ms, "login_submit", request.empresa)
 
-        login_ok, message = self._wait_for_login_result(login_page, request.timeout_ms)
-        if not login_ok:
-            logger.warning("PLAYWRIGHT_LOGIN_FAILED | empresa=%s error=%s", request.empresa, message)
-            raise PlaywrightFlowError(message or "No se pudo confirmar el login.")
-        logger.info("PLAYWRIGHT_LOGIN_CONFIRMED | empresa=%s", request.empresa)
         return login_page
 
-    def _wait_for_login_result(self, login_page: Page, timeout_ms: int) -> tuple[bool, str | None]:
+    def _post_action_pause(self, page: Page, delay_ms: int, action: str, empresa: str) -> None:
+        if delay_ms > 0:
+            logger.debug(
+                "PLAYWRIGHT_POST_ACTION_PAUSE | empresa=%s action=%s delay_ms=%s",
+                empresa, action, delay_ms,
+            )
+            page.wait_for_timeout(delay_ms)
+
+    def _wait_for_login_result(
+        self, login_page: Page, timeout_ms: int,
+    ) -> tuple[bool, bool, str | None]:
+        """Returns (success, is_transient_error, message)."""
         deadline = time.monotonic() + (timeout_ms / 1000)
-        error_locator = login_page.get_by_text(
-            re.compile(r"clave o usuario incorrecto|error", re.IGNORECASE)
+        fatal_error_locator = login_page.get_by_text(
+            re.compile(r"clave o usuario incorrecto|credenciales", re.IGNORECASE)
+        )
+        transient_error_locator = login_page.get_by_text(
+            re.compile(r"error", re.IGNORECASE)
         )
         search_locator = login_page.get_by_role(
             "combobox", name=re.compile(r"Buscador", re.IGNORECASE)
         )
 
         while time.monotonic() < deadline:
-            if error_locator.count() > 0 and error_locator.first.is_visible():
-                return False, _normalize_text(error_locator.first.inner_text())
+            if fatal_error_locator.count() > 0 and fatal_error_locator.first.is_visible():
+                return False, False, _normalize_text(fatal_error_locator.first.inner_text())
             if search_locator.count() > 0 and search_locator.first.is_visible():
-                return True, None
+                return True, False, None
+            if transient_error_locator.count() > 0 and transient_error_locator.first.is_visible():
+                return False, True, _normalize_text(transient_error_locator.first.inner_text())
             login_page.wait_for_timeout(250)
-        return False, "Timeout esperando confirmación de login (Buscador no visible)."
+        return False, False, "Timeout esperando confirmación de login (Buscador no visible)."
 
     def _open_lpg_service(
         self,
@@ -335,7 +400,7 @@ class ArcaLpgPlaywrightClient:
                 "El servicio LPG apareció en la búsqueda, pero no abrió una nueva ventana dentro del tiempo esperado."
             ) from exc
         logger.info("PLAYWRIGHT_OPEN_SERVICE_POPUP_OK | empresa=%s", empresa)
-        service_page.wait_for_load_state("domcontentloaded")
+        service_page.wait_for_load_state("networkidle")
         return service_page
 
     def _wait_for_service_page_ready(self, service_page: Page, timeout_ms: int, empresa: str) -> None:
