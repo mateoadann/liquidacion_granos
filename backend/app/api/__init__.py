@@ -2,6 +2,7 @@ from flask import Flask
 
 from .auth import auth_bp
 from .clients import clients_bp
+from .coes import coes_bp
 from .discovery import discovery_bp
 from .health import health_bp
 from .jobs import jobs_bp
@@ -23,3 +24,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(discovery_bp, url_prefix="/api")
     app.register_blueprint(stats_bp, url_prefix="/api")
     app.register_blueprint(wslpg_mvp_bp, url_prefix="/api")
+    app.register_blueprint(coes_bp, url_prefix="/api")
