@@ -1,8 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Layout } from "./components/layout/Layout";
 import { ProtectedRoute } from "./components/layout";
 import { LoginPage, HomePage } from "./pages";
-import ClientsPage from "./ClientsPage";
+import { ClientsListPage } from "./pages/ClientsListPage";
+import { ClientDetailPage } from "./pages/ClientDetailPage";
+import { ClientEditPage } from "./pages/ClientEditPage";
 
 const queryClient = new QueryClient();
 
@@ -16,17 +19,20 @@ export default function App() {
 
           {/* Rutas protegidas */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/clientes" element={<ClientsPage />} />
+            <Route element={<Layout><HomePage /></Layout>} path="/" />
+            <Route path="/clientes" element={<Layout><ClientsListPage /></Layout>} />
+            <Route path="/clientes/nuevo" element={<Layout><ClientEditPage /></Layout>} />
+            <Route path="/clientes/:id" element={<Layout><ClientDetailPage /></Layout>} />
+            <Route path="/clientes/:id/editar" element={<Layout><ClientEditPage /></Layout>} />
             {/* Placeholders para rutas futuras */}
-            <Route path="/coes" element={<div className="text-slate-600">COEs - Próximamente</div>} />
-            <Route path="/exportar" element={<div className="text-slate-600">Exportar - Próximamente</div>} />
+            <Route path="/coes" element={<Layout><div className="text-slate-600">COEs - Próximamente</div></Layout>} />
+            <Route path="/exportar" element={<Layout><div className="text-slate-600">Exportar - Próximamente</div></Layout>} />
           </Route>
 
           {/* Rutas admin */}
           <Route element={<ProtectedRoute requireAdmin />}>
-            <Route path="/configuracion" element={<div className="text-slate-600">Configuración - Próximamente</div>} />
-            <Route path="/configuracion/usuarios" element={<div className="text-slate-600">Usuarios - Próximamente</div>} />
+            <Route path="/configuracion" element={<Layout><div className="text-slate-600">Configuración - Próximamente</div></Layout>} />
+            <Route path="/configuracion/usuarios" element={<Layout><div className="text-slate-600">Usuarios - Próximamente</div></Layout>} />
           </Route>
 
           {/* Fallback */}
