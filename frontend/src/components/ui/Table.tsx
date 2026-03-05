@@ -51,7 +51,7 @@ export function TableRow({ children, onClick, className = "" }: TableRowProps) {
 }
 
 interface TableCellProps {
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
   header?: boolean;
 }
