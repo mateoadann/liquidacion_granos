@@ -15,7 +15,7 @@ from ..services.auth_service import (
 from ..services.token_blacklist import add_to_blacklist
 from ..middleware import require_auth, get_current_user
 from ..time_utils import now_cordoba_naive
-from .. import limiter
+from ..extensions import limiter
 
 auth_bp = Blueprint("auth", __name__)
 

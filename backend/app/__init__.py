@@ -1,18 +1,11 @@
 from flask import Flask
 from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 
 from .config import Config
-from .extensions import db, migrate
+from .extensions import db, migrate, limiter
 from .api import register_blueprints
 from .logging_setup import configure_logging
 from .cli import register_cli
-
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per minute"],
-)
 
 
 def create_app(config_object=Config) -> Flask:
