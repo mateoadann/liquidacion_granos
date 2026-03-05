@@ -416,6 +416,11 @@ export async function listClients(): Promise<Client[]> {
   return payload.map(normalizeClient);
 }
 
+export async function getClient(clientId: number): Promise<Client> {
+  const payload = await requestJson<unknown>(`/clients/${clientId}`, { method: "GET" });
+  return normalizeClient(payload);
+}
+
 export async function createClient(input: CreateClientInput): Promise<Client> {
   const payload = await requestJson<unknown>("/clients", {
     method: "POST",
