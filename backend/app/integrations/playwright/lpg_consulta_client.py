@@ -6,6 +6,9 @@ import time
 import unicodedata
 from dataclasses import dataclass
 import logging
+from typing import Callable, TypeVar
+
+T = TypeVar("T")
 
 from playwright.sync_api import (
     Locator,
@@ -171,6 +174,73 @@ class ArcaLpgPlaywrightClient:
         return ErrorClassification(
             is_transient=False, error_type="unknown", message=str(error)
         )
+
+    def _with_retry(
+        self,
+        operation: Callable[[], T],
+        operation_name: str,
+        max_attempts: int,
+        base_delay_ms: int,
+        empresa: str,
+        page: Page | None = None,
+    ) -> T:
+        """Ejecuta una operación con reintentos para errores transitorios."""
+        last_error: Exception | None = None
+        last_classification: ErrorClassification | None = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return operation()
+            except Exception as error:
+                classification = self._classify_error(error)
+
+                logger.warning(
+                    "PLAYWRIGHT_OPERATION_ERROR | empresa=%s operation=%s attempt=%s/%s "
+                    "error_type=%s is_transient=%s message=%s",
+                    empresa,
+                    operation_name,
+                    attempt,
+                    max_attempts,
+                    classification.error_type,
+                    classification.is_transient,
+                    classification.message[:200],
+                )
+
+                # Si no es transitorio, fallar inmediatamente
+                if not classification.is_transient:
+                    raise
+
+                # Si es el último intento, fallar
+                if attempt >= max_attempts:
+                    same_error = (
+                        last_classification is not None
+                        and last_classification.error_type == classification.error_type
+                        and last_classification.message == classification.message
+                    )
+                    logger.error(
+                        "PLAYWRIGHT_RETRY_ABORT | empresa=%s operation=%s attempts=%s "
+                        "same_error=%s error_type=%s message=%s",
+                        empresa,
+                        operation_name,
+                        attempt,
+                        same_error,
+                        classification.error_type,
+                        classification.message[:200],
+                    )
+                    raise
+
+                # Guardar para comparar en el próximo intento
+                last_error = error
+                last_classification = classification
+
+                # Esperar antes de reintentar
+                if page is not None:
+                    page.wait_for_timeout(base_delay_ms)
+                else:
+                    time.sleep(base_delay_ms / 1000)
+
+        # Nunca debería llegar aquí, pero por seguridad
+        raise last_error or PlaywrightFlowError("Error desconocido en reintentos")
 
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
         started = now_cordoba_naive()
