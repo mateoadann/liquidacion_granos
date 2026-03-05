@@ -7,3 +7,4 @@ export { Badge } from "./Badge";
 export { Select } from "./Select";
 export { Table, TableHeader, TableBody, TableRow, TableCell } from "./Table";
 export { Dropdown, DropdownItem, DropdownDivider } from "./Dropdown";
+export { Modal, ConfirmModal } from "./Modal";
