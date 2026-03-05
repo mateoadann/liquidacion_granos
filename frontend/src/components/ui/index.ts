@@ -2,3 +2,6 @@ export { Button } from "./Button";
 export { Input } from "./Input";
 export { Alert } from "./Alert";
 export { Spinner } from "./Spinner";
+export { Card, CardHeader } from "./Card";
+export { Badge } from "./Badge";
+export { Select } from "./Select";
