@@ -30,6 +30,12 @@ export function Layout({ children }: LayoutProps) {
                 <NavLink to="/coes" className={linkClass}>
                   COEs
                 </NavLink>
+                <NavLink to="/exportar" className={linkClass}>
+                  Exportar
+                </NavLink>
+                <NavLink to="/configuracion" className={linkClass}>
+                  Config
+                </NavLink>
               </div>
             </div>
           </div>
