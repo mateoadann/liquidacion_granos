@@ -319,11 +319,25 @@ class ArcaLpgPlaywrightClient:
                 request.empresa,
                 request.humanize_delays,
             )
-            self._submit_consulta(service_page, request.timeout_ms, request.empresa)
-            headers, total_rows, coes = self._read_results_coes(
-                service_page,
-                request.timeout_ms,
-                request.empresa,
+            self._with_retry(
+                operation=lambda: self._submit_consulta(
+                    service_page, request.timeout_ms, request.empresa
+                ),
+                operation_name="submit_consulta",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
+            )
+            headers, total_rows, coes = self._with_retry(
+                operation=lambda: self._read_results_coes(
+                    service_page, request.timeout_ms, request.empresa
+                ),
+                operation_name="read_results",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
             )
             return headers, total_rows, coes
         finally:
