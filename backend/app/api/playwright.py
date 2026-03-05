@@ -66,30 +66,69 @@ def _parse_int_list(field: str, value: object | None) -> list[int] | None:
     return result
 
 
-def _parse_and_validate_run_payload(payload: dict) -> tuple[str, str, list[int] | None, int, int]:
+def _parse_and_validate_run_payload(payload: dict) -> dict:
     fecha_desde = _parse_date("fecha_desde", payload.get("fecha_desde"))
     fecha_hasta = _parse_date("fecha_hasta", payload.get("fecha_hasta"))
     taxpayer_ids = _parse_int_list("taxpayer_ids", payload.get("taxpayer_ids"))
     timeout_ms = int(payload.get("timeout_ms", 30000))
     type_delay_ms = int(payload.get("type_delay_ms", 80))
+    slow_mo_ms = int(payload.get("slow_mo_ms", 0))
+    post_action_delay_ms = int(payload.get("post_action_delay_ms", 0))
+    login_max_retries = int(payload.get("login_max_retries", 1))
+    # Resilience parameters
+    humanize_delays = bool(payload.get("humanize_delays", True))
+    retry_max_attempts = int(payload.get("retry_max_attempts", 2))
+    retry_base_delay_ms = int(payload.get("retry_base_delay_ms", 1000))
 
     if timeout_ms <= 0:
         raise ValueError("timeout_ms debe ser mayor a 0.")
     if type_delay_ms < 0:
         raise ValueError("type_delay_ms no puede ser negativo.")
+    if slow_mo_ms < 0:
+        raise ValueError("slow_mo_ms no puede ser negativo.")
+    if post_action_delay_ms < 0:
+        raise ValueError("post_action_delay_ms no puede ser negativo.")
+    if login_max_retries < 1:
+        raise ValueError("login_max_retries debe ser al menos 1.")
+    if retry_max_attempts < 1:
+        raise ValueError("retry_max_attempts debe ser al menos 1.")
+    if retry_base_delay_ms < 0:
+        raise ValueError("retry_base_delay_ms no puede ser negativo.")
 
-    return fecha_desde, fecha_hasta, taxpayer_ids, timeout_ms, type_delay_ms
+    return {
+        "fecha_desde": fecha_desde,
+        "fecha_hasta": fecha_hasta,
+        "taxpayer_ids": taxpayer_ids,
+        "timeout_ms": timeout_ms,
+        "type_delay_ms": type_delay_ms,
+        "slow_mo_ms": slow_mo_ms,
+        "post_action_delay_ms": post_action_delay_ms,
+        "login_max_retries": login_max_retries,
+        "humanize_delays": humanize_delays,
+        "retry_max_attempts": retry_max_attempts,
+        "retry_base_delay_ms": retry_base_delay_ms,
+    }
 
 
 @playwright_bp.post("/playwright/lpg/run")
 def enqueue_lpg_playwright_pipeline():
     payload = request.get_json(silent=True) or {}
     try:
-        fecha_desde, fecha_hasta, taxpayer_ids, timeout_ms, type_delay_ms = (
-            _parse_and_validate_run_payload(payload)
-        )
+        params = _parse_and_validate_run_payload(payload)
     except ValueError as exc:
         return _error(str(exc), 400)
+
+    fecha_desde = params["fecha_desde"]
+    fecha_hasta = params["fecha_hasta"]
+    taxpayer_ids = params["taxpayer_ids"]
+    timeout_ms = params["timeout_ms"]
+    type_delay_ms = params["type_delay_ms"]
+    slow_mo_ms = params["slow_mo_ms"]
+    post_action_delay_ms = params["post_action_delay_ms"]
+    login_max_retries = params["login_max_retries"]
+    humanize_delays = params["humanize_delays"]
+    retry_max_attempts = params["retry_max_attempts"]
+    retry_base_delay_ms = params["retry_base_delay_ms"]
 
     try:
         from ..workers.playwright_jobs import run_playwright_pipeline_job
@@ -105,13 +144,19 @@ def enqueue_lpg_playwright_pipeline():
         raise
 
     logger.info(
-        "JOB_RECEIVED | operation=%s desde=%s hasta=%s taxpayers=%s timeout_ms=%s type_delay_ms=%s",
+        "JOB_RECEIVED | operation=%s desde=%s hasta=%s taxpayers=%s timeout_ms=%s type_delay_ms=%s slow_mo_ms=%s post_action_delay_ms=%s login_max_retries=%s humanize_delays=%s retry_max_attempts=%s retry_base_delay_ms=%s",
         PLAYWRIGHT_OPERATION,
         fecha_desde,
         fecha_hasta,
         taxpayer_ids or "todos",
         timeout_ms,
         type_delay_ms,
+        slow_mo_ms,
+        post_action_delay_ms,
+        login_max_retries,
+        humanize_delays,
+        retry_max_attempts,
+        retry_base_delay_ms,
     )
 
     if taxpayer_ids:
@@ -145,6 +190,12 @@ def enqueue_lpg_playwright_pipeline():
         "taxpayer_ids": taxpayer_ids,
         "timeout_ms": timeout_ms,
         "type_delay_ms": type_delay_ms,
+        "slow_mo_ms": slow_mo_ms,
+        "post_action_delay_ms": post_action_delay_ms,
+        "login_max_retries": login_max_retries,
+        "humanize_delays": humanize_delays,
+        "retry_max_attempts": retry_max_attempts,
+        "retry_base_delay_ms": retry_base_delay_ms,
         "headless": True,
     }
     db.session.add(item)
@@ -160,6 +211,12 @@ def enqueue_lpg_playwright_pipeline():
             taxpayer_ids=taxpayer_ids,
             timeout_ms=timeout_ms,
             type_delay_ms=type_delay_ms,
+            slow_mo_ms=slow_mo_ms,
+            post_action_delay_ms=post_action_delay_ms,
+            login_max_retries=login_max_retries,
+            humanize_delays=humanize_delays,
+            retry_max_attempts=retry_max_attempts,
+            retry_base_delay_ms=retry_base_delay_ms,
             job_timeout=max((timeout_ms // 1000) * 10, 3600),
             result_ttl=86400,
             failure_ttl=86400,

@@ -110,17 +110,29 @@ def run_playwright_pipeline_job(
     taxpayer_ids: list[int] | None,
     timeout_ms: int,
     type_delay_ms: int,
+    slow_mo_ms: int = 0,
+    post_action_delay_ms: int = 0,
+    login_max_retries: int = 1,
+    humanize_delays: bool = True,
+    retry_max_attempts: int = 2,
+    retry_base_delay_ms: int = 1000,
 ) -> None:
     app = create_app()
     with app.app_context():
         logger.info(
-            "JOB_STARTED | job_id=%s operation=playwright_lpg_run desde=%s hasta=%s taxpayers=%s timeout_ms=%s type_delay_ms=%s",
+            "JOB_STARTED | job_id=%s operation=playwright_lpg_run desde=%s hasta=%s taxpayers=%s timeout_ms=%s type_delay_ms=%s slow_mo_ms=%s post_action_delay_ms=%s login_max_retries=%s humanize_delays=%s retry_max_attempts=%s retry_base_delay_ms=%s",
             extraction_job_id,
             fecha_desde,
             fecha_hasta,
             taxpayer_ids or "todos",
             timeout_ms,
             type_delay_ms,
+            slow_mo_ms,
+            post_action_delay_ms,
+            login_max_retries,
+            humanize_delays,
+            retry_max_attempts,
+            retry_base_delay_ms,
         )
         _update_job(
             extraction_job_id,
@@ -166,6 +178,12 @@ def run_playwright_pipeline_job(
                 headless=True,
                 timeout_ms=timeout_ms,
                 type_delay_ms=type_delay_ms,
+                slow_mo_ms=slow_mo_ms,
+                post_action_delay_ms=post_action_delay_ms,
+                login_max_retries=login_max_retries,
+                humanize_delays=humanize_delays,
+                retry_max_attempts=retry_max_attempts,
+                retry_base_delay_ms=retry_base_delay_ms,
                 on_taxpayer_start=on_taxpayer_start,
                 on_taxpayer_finish=on_taxpayer_finish,
             )
