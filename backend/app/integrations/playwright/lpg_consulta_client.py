@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import re
 import time
 import unicodedata
@@ -93,6 +94,16 @@ logger = logging.getLogger(__name__)
 class ArcaLpgPlaywrightClient:
     LANDING_URL = "https://www.afip.gob.ar/landing/default.asp"
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
+
+    def _humanized_delay(
+        self, base_ms: int, variance_percent: float = 0.3, enabled: bool = True
+    ) -> int:
+        """Retorna un delay con variación aleatoria de ±variance_percent."""
+        if not enabled or variance_percent <= 0:
+            return base_ms
+        min_delay = int(base_ms * (1 - variance_percent))
+        max_delay = int(base_ms * (1 + variance_percent))
+        return random.randint(min_delay, max_delay)
 
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
         started = now_cordoba_naive()
