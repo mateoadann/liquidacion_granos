@@ -1,4 +1,37 @@
+import { useAuthStore } from "../store/useAuthStore";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:5001/api";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = useAuthStore.getState().accessToken;
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
+
+export async function fetchWithAuth(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const headers = {
+    ...getAuthHeaders(),
+    ...options.headers,
+  };
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers,
+  });
+
+  // Si 401, limpiar auth y redirigir a login
+  if (res.status === 401) {
+    useAuthStore.getState().clearAuth();
+    window.location.href = "/login";
+  }
+
+  return res;
+}
 
 export async function getHealth() {
   const res = await fetch(`${API_BASE}/health`);
@@ -7,7 +40,7 @@ export async function getHealth() {
 }
 
 async function postJson(path: string, body: Record<string, unknown>) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetchWithAuth(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -18,7 +51,7 @@ async function postJson(path: string, body: Record<string, unknown>) {
 }
 
 export async function wslpgDummy() {
-  const res = await fetch(`${API_BASE}/wslpg/mvp/dummy`);
+  const res = await fetchWithAuth("/wslpg/mvp/dummy");
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error ?? "Error en dummy");
   return data;
