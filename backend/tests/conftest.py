@@ -17,22 +17,26 @@ if str(ROOT_DIR) not in sys.path:
 from app import create_app
 from app.extensions import db
 from app.time_utils import now_cordoba_aware
+from app.services.token_blacklist import _reset_for_testing
 
 
 class TestConfig:
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    REDIS_URL = "redis://localhost:6379/15"
     SECRET_KEY = "test-secret"
     CLIENT_SECRET_KEY = "test-client-secret"
     CORS_ORIGINS = ["http://localhost:5173"]
+    # No incluir REDIS_URL - se usará fallback en memoria
 
 
 @pytest.fixture()
 def app(tmp_path):
     class Config(TestConfig):
         CLIENT_CERTIFICATES_BASE_PATH = str(tmp_path / "certificados_clientes")
+
+    # Reset token blacklist para usar memoria
+    _reset_for_testing()
 
     application = create_app(Config)
     with application.app_context():

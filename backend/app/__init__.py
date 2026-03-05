@@ -16,6 +16,12 @@ def create_app(config_object=Config) -> Flask:
     CORS(app, origins=app.config.get("CORS_ORIGINS", "*"))
     db.init_app(app)
     migrate.init_app(app, db)
+
+    # Configurar storage del rate limiter según entorno
+    if app.config.get("TESTING"):
+        app.config["RATELIMIT_STORAGE_URI"] = "memory://"
+    elif app.config.get("REDIS_URL"):
+        app.config["RATELIMIT_STORAGE_URI"] = app.config["REDIS_URL"]
     limiter.init_app(app)
 
     # Registrar modelos para SQLAlchemy/Alembic autogenerate

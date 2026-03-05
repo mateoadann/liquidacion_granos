@@ -5,7 +5,11 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 migrate = Migrate()
+
+# Limiter se configura con storage_uri en init_app según la config
+# En tests usará memory://, en producción usará redis://
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["200 per minute"],
+    storage_uri="memory://",  # Default para tests, se sobreescribe en init_app
 )
