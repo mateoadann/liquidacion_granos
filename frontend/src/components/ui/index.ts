@@ -5,4 +5,3 @@ export { Spinner } from "./Spinner";
 export { Card, CardHeader } from "./Card";
 export { Badge } from "./Badge";
 export { Select } from "./Select";
-export { Spinner } from "./Spinner";
