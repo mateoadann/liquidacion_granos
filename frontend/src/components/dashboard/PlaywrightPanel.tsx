@@ -81,7 +81,7 @@ export function PlaywrightPanel() {
     <Card padding="lg">
       <CardHeader
         title="Extracción de COEs"
-        subtitle="Ejecutar Playwright para obtener COEs de AFIP"
+        subtitle="Obtener documentos desde ARCA para los clientes seleccionados"
       />
 
       <div className="space-y-4">
@@ -125,7 +125,7 @@ export function PlaywrightPanel() {
             </div>
           ) : activeClients.length === 0 ? (
             <Alert variant="warning">
-              No hay clientes configurados para Playwright
+              No hay clientes configurados para extracción automática
             </Alert>
           ) : (
             <div className="border border-slate-200 rounded-md max-h-48 overflow-y-auto">
