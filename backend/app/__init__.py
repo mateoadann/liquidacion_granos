@@ -5,6 +5,7 @@ from .config import Config
 from .extensions import db, migrate
 from .api import register_blueprints
 from .logging_setup import configure_logging
+from .cli import register_cli
 
 
 def create_app(config_object=Config) -> Flask:
@@ -20,4 +21,5 @@ def create_app(config_object=Config) -> Flask:
     from . import models  # noqa: F401
 
     register_blueprints(app)
+    register_cli(app)
     return app
