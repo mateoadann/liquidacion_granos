@@ -26,58 +26,76 @@ def _seed_parameters():
 
 SAMPLE_RAW_DATA = {
     "data": {
-        "codTipoOperacion": 2,
-        "coe": 330230101658,
-        "fechaLiquidacion": "2025-12-15",
-        "cuitComprador": 30500120882,
-        "cuitVendedor": 30711165378,
-        "precioRefTn": 278265,
-        "codGradoRef": "G2",
-        "codGrano": 15,
-        "precioFleteTn": 0,
-        "codPuerto": 14,
-        "nroCertificadoDeposito": 332021671471,
-        "codGradoEnt": "G2",
-        "factorEnt": 95.3,
-        "contProteico": 9.1,
-        "pesoNeto": 29086,
-        "codLocalidadProcedencia": 1443,
-        "codProvProcedencia": 3,
-        "totalPesoNeto": 29086,
-        "precioOperacion": 265.187,
-        "subTotal": 7713215.85,
-        "alicIvaOperacion": 10.5,
-        "importeIva": 809887.66,
-        "operacionConIva": 8523103.51,
-        "deducciones": [
-            {
-                "codigoConcepto": "OD",
-                "detalleAclaratorio": "Derecho de Registro Cordoba",
-                "baseCalculo": 80936.16,
-                "alicuotaIva": 10.5,
-                "importeIva": 8498.3,
-                "importeDeduccion": 89434.46,
-            }
-        ],
-        "retenciones": [
-            {
-                "codigoConcepto": "RG",
-                "detalleAclaratorio": "Detalle de Ret.Gan.",
-                "nroCertificadoRetencion": None,
-                "importeCertificadoRetencion": None,
-                "fechaCertificadoRetencion": None,
-                "baseCalculo": 7632279.6,
-                "alicuota": 5,
-                "importeRetencion": 381613.98,
-            }
-        ],
-        "totalRetencionAfip": 381613.98,
-        "totalNetoAPagar": 8042896.33,
-        "totalPercepcion": 0,
-        "totalOtrasRetenciones": 0,
-        "totalIvaRg4310_18": 419775.38,
-        "totalDeduccion": 98593.2,
-        "totalPagoSegunCondicion": 7623120.95,
+        "autorizacion": {
+            "codTipoOperacion": 2,
+            "coe": 330230101658,
+            "fechaLiquidacion": "2025-12-15",
+            "totalPesoNeto": 29086,
+            "precioOperacion": 265.187,
+            "subTotal": 7713215.85,
+            "importeIva": 809887.66,
+            "operacionConIva": 8523103.51,
+            "deducciones": {
+                "deduccionReturn": [
+                    {
+                        "deduccion": {
+                            "codigoConcepto": "OD",
+                            "detalleAclaratorio": "Derecho de Registro Cordoba",
+                            "baseCalculo": 80936.16,
+                            "alicuotaIva": 10.5,
+                        },
+                        "importeIva": 8498.3,
+                        "importeDeduccion": 89434.46,
+                    }
+                ]
+            },
+            "retenciones": {
+                "retencionReturn": [
+                    {
+                        "retencion": {
+                            "codigoConcepto": "RG",
+                            "detalleAclaratorio": "Detalle de Ret.Gan.",
+                            "nroCertificadoRetencion": None,
+                            "importeCertificadoRetencion": None,
+                            "fechaCertificadoRetencion": None,
+                            "baseCalculo": 7632279.6,
+                            "alicuota": 5,
+                        },
+                        "importeRetencion": 381613.98,
+                    }
+                ]
+            },
+            "totalRetencionAfip": 381613.98,
+            "totalNetoAPagar": 8042896.33,
+            "totalPercepcion": 0,
+            "totalOtrasRetenciones": 0,
+            "totalIvaRg4310_18": 419775.38,
+            "totalDeduccion": 98593.2,
+            "totalPagoSegunCondicion": 7623120.95,
+        },
+        "liquidacion": {
+            "cuitComprador": 30500120882,
+            "cuitVendedor": 30711165378,
+            "precioRefTn": 278265,
+            "codGradoRef": "G2",
+            "codGrano": 15,
+            "precioFleteTn": 0,
+            "codPuerto": 14,
+            "codGradoEnt": "G2",
+            "factorEnt": 95.3,
+            "contProteico": 9.1,
+            "alicIvaOperacion": 10.5,
+            "codLocalidadProcedencia": 1443,
+            "codProvProcedencia": 3,
+            "certificados": {
+                "certificado": [
+                    {
+                        "nroCertificadoDeposito": 332021671471,
+                        "pesoNeto": 29086,
+                    }
+                ]
+            },
+        },
     }
 }
 
@@ -108,6 +126,7 @@ def test_build_datos_limpios(app):
 
 
 def test_build_with_missing_params_uses_fallback(app):
+    """When no parametric data in DB, builder falls back to raw code as string."""
     with app.app_context():
         builder = DatosLimpiosBuilder()
         result = builder.build(SAMPLE_RAW_DATA)
@@ -116,8 +135,10 @@ def test_build_with_missing_params_uses_fallback(app):
 
 
 def test_build_with_no_data_key(app):
+    """When raw_data has no 'data' wrapper, builder falls back to flat read."""
     with app.app_context():
         _seed_parameters()
+        # Pass the inner structure directly (no "data" wrapper)
         raw = dict(SAMPLE_RAW_DATA["data"])
         builder = DatosLimpiosBuilder()
         result = builder.build(raw)

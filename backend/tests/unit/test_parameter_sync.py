@@ -16,55 +16,66 @@ def _mock_ws_client():
 
 
 def _route_mock_request(method_name, data):
+    """Mock responses matching real WSLPG SOAP structure (post _safe_serialize)."""
     responses = {
         "tipoGranoConsultar": {
-            "tipoGrano": [
-                {"codTipoGrano": 15, "descTipoGrano": "TRIGO PAN"},
-                {"codTipoGrano": 2, "descTipoGrano": "MAIZ"},
-            ]
+            "granos": {
+                "codigoDescripcion": [
+                    {"codigo": 15, "descripcion": "TRIGO PAN"},
+                    {"codigo": 2, "descripcion": "MAIZ"},
+                ]
+            }
         },
         "puertoConsultar": {
-            "puerto": [
-                {"codPuerto": 14, "desPuerto": "OTROS"},
-            ]
+            "puertos": {
+                "codigoDescripcion": [
+                    {"codigo": 14, "descripcion": "OTROS"},
+                ]
+            }
         },
         "provinciasConsultar": {
-            "provincia": [
-                {"codProvincia": 3, "desProvincia": "CORDOBA"},
-            ]
+            "provincias": {
+                "codigoDescripcion": [
+                    {"codigo": 3, "descripcion": "CORDOBA"},
+                ]
+            }
         },
         "tipoDeduccionConsultar": {
-            "tipoDeduccion": [
-                {"codigoConcepto": "OD", "descripcionConcepto": "Otras Deducciones"},
-                {"codigoConcepto": "GA", "descripcionConcepto": "Comision o Gastos Administrativos"},
-            ]
+            "tiposDeduccion": {
+                "codigoDescripcion": [
+                    {"codigo": "OD", "descripcion": "Otras Deducciones"},
+                    {"codigo": "GA", "descripcion": "Comision o Gastos Administrativos"},
+                ]
+            }
         },
         "tipoRetencionConsultar": {
-            "tipoRetencion": [
-                {"codigoConcepto": "RG", "descripcionConcepto": "Retencion Ganancias"},
-                {"codigoConcepto": "RI", "descripcionConcepto": "Retencion IVA"},
-            ]
+            "tiposRetencion": {
+                "codigoDescripcion": [
+                    {"codigo": "RG", "descripcion": "Retencion Ganancias"},
+                    {"codigo": "RI", "descripcion": "Retencion IVA"},
+                ]
+            }
         },
         "codigoGradoReferenciaConsultar": {
-            "gradoRef": [
-                {"codGradoRef": "G2", "descGradoRef": "Grado 2"},
-            ]
+            "gradosRef": {
+                "codigoDescripcion": [
+                    {"codigo": "G2", "descripcion": "Grado 2"},
+                ]
+            }
         },
         "codigoGradoEntregadoXTipoGranoConsultar": {
-            "gradoEnt": [
-                {"codGradoEnt": "G2", "descGradoEnt": "Grado 2"},
-            ]
+            "gradoEnt": {
+                "gradoEnt": [
+                    {"codigoDescripcion": {"codigo": "G2", "descripcion": "Grado 2"}, "valor": 95.3},
+                ]
+            }
         },
         "localidadXProvinciaConsultar": {
-            "localidad": [
-                {"codLocalidad": 1443, "descLocalidad": "BENGOLEA"},
-            ]
-        },
-        "tipoOperacionXActividadConsultar": {
-            "tipoOperacion": [
-                {"codTipoOperacion": 1, "descTipoOperacion": "Compraventa"},
-                {"codTipoOperacion": 2, "descTipoOperacion": "Consignacion"},
-            ]
+            "localidades": {
+                "codigoDescripcion": [
+                    {"codigo": 1443, "descripcion": "BENGOLEA"},
+                ]
+            }
         },
     }
     return responses.get(method_name, {})
