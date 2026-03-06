@@ -13,4 +13,5 @@ class LpgDocument(db.Model):
     estado = db.Column(db.String(10), nullable=True)
     tipo_documento = db.Column(db.String(30), nullable=False, default="LPG")
     raw_data = db.Column(db.JSON, nullable=True)
+    datos_limpios = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)
