@@ -73,10 +73,10 @@ export function ClientDetailPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-500">Playwright</dt>
+              <dt className="text-sm font-medium text-slate-500">Extracción Automática</dt>
               <dd className="mt-1">
                 <Badge variant={client.playwrightEnabled ? "success" : "default"}>
-                  {client.playwrightEnabled ? "Habilitado" : "Deshabilitado"}
+                  {client.playwrightEnabled ? "Habilitada" : "Deshabilitada"}
                 </Badge>
               </dd>
             </div>
