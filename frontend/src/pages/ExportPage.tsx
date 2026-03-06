@@ -45,12 +45,22 @@ export function ExportPage() {
     try {
       // Exportar cada cliente seleccionado
       for (const clientId of selectedClients) {
-        await downloadMutation.mutateAsync({
+        const result = await downloadMutation.mutateAsync({
           clientId,
           fechaDesde: fechaDesde || undefined,
           fechaHasta: fechaHasta || undefined,
           format: formato,
         });
+
+        // Descargar el archivo al sistema del usuario
+        const url = URL.createObjectURL(result.blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = result.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
       setExportSuccess(true);
     } catch (err) {
