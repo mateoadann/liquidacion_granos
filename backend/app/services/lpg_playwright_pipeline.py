@@ -22,6 +22,7 @@ from .certificate_validator import (
     validate_certificate_and_key_paths,
 )
 from .crypto_service import decrypt_secret, is_placeholder_secret
+from .datos_limpios_builder import DatosLimpiosBuilder
 from ..time_utils import now_cordoba_naive
 
 logger = logging.getLogger(__name__)
@@ -377,6 +378,9 @@ class LpgPlaywrightPipelineService:
         document.raw_data = ws_result
         db.session.add(document)
         db.session.commit()
+
+        builder = DatosLimpiosBuilder()
+        builder.process_document(document)
 
     def _find_key(self, value: Any, keys: set[str]) -> Any:
         lowered = {item.casefold() for item in keys}
