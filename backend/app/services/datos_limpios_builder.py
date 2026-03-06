@@ -22,38 +22,52 @@ class DatosLimpiosBuilder:
         if not isinstance(data, dict):
             return {}
 
+        # La estructura real es: data.autorizacion (totales, ded, ret) + data.liquidacion (grano, comprador, etc.)
+        aut = data.get("autorizacion", {}) or {}
+        liq = data.get("liquidacion", {}) or {}
+        # Si no hay subniveles, intentar leer flat (compatibilidad)
+        if not aut and not liq:
+            aut = data
+            liq = data
+
         result: dict[str, Any] = {}
 
         # --- General ---
-        result["codTipoOperacion"] = data.get("codTipoOperacion")
-        result["descTipoOperacion"] = self._resolve("tipoOperacion", data.get("codTipoOperacion"))
-        result["coe"] = data.get("coe")
-        result["fechaLiquidacion"] = data.get("fechaLiquidacion")
+        result["codTipoOperacion"] = aut.get("codTipoOperacion") or liq.get("codTipoOperacion")
+        result["descTipoOperacion"] = self._resolve("tipoOperacion", result["codTipoOperacion"])
+        result["coe"] = aut.get("coe")
+        result["fechaLiquidacion"] = aut.get("fechaLiquidacion")
 
         # --- Comprador / Vendedor ---
-        result["cuitComprador"] = data.get("cuitComprador")
-        result["cuitVendedor"] = data.get("cuitVendedor")
+        result["cuitComprador"] = liq.get("cuitComprador")
+        result["cuitVendedor"] = liq.get("cuitVendedor")
 
         # --- Condiciones ---
-        result["precioRefTn"] = data.get("precioRefTn")
-        result["codGradoRef"] = data.get("codGradoRef")
-        result["descGradoRef"] = self._resolve("gradoReferencia", data.get("codGradoRef"))
-        result["codGrano"] = data.get("codGrano")
-        result["descGrano"] = self._resolve("tipoGrano", data.get("codGrano"))
-        result["precioFleteTn"] = data.get("precioFleteTn")
-        result["codPuerto"] = data.get("codPuerto")
-        result["descPuerto"] = self._resolve("puerto", data.get("codPuerto"))
+        result["precioRefTn"] = liq.get("precioRefTn")
+        result["codGradoRef"] = liq.get("codGradoRef")
+        result["descGradoRef"] = self._resolve("gradoReferencia", liq.get("codGradoRef"))
+        result["codGrano"] = liq.get("codGrano")
+        result["descGrano"] = self._resolve("tipoGrano", liq.get("codGrano"))
+        result["precioFleteTn"] = liq.get("precioFleteTn")
+        result["codPuerto"] = liq.get("codPuerto")
+        result["descPuerto"] = self._resolve("puerto", liq.get("codPuerto"))
 
-        # --- Mercaderia ---
-        result["nroCertificadoDeposito"] = data.get("nroCertificadoDeposito")
-        result["codGradoEnt"] = data.get("codGradoEnt")
-        result["descGradoEnt"] = self._resolve("gradoEntregado", data.get("codGradoEnt"))
-        result["factorEnt"] = data.get("factorEnt")
-        result["contProteico"] = data.get("contProteico")
-        result["pesoNeto"] = data.get("pesoNeto")
+        # --- Mercaderia (del primer certificado si existe) ---
+        certs = liq.get("certificados", {})
+        cert_list = certs.get("certificado", []) if isinstance(certs, dict) else []
+        if isinstance(cert_list, dict):
+            cert_list = [cert_list]
+        first_cert = cert_list[0] if cert_list else {}
 
-        cod_prov = data.get("codProvProcedencia")
-        cod_loc = data.get("codLocalidadProcedencia")
+        result["nroCertificadoDeposito"] = first_cert.get("nroCertificadoDeposito")
+        result["codGradoEnt"] = liq.get("codGradoEnt")
+        result["descGradoEnt"] = self._resolve("gradoEntregado", liq.get("codGradoEnt"))
+        result["factorEnt"] = liq.get("factorEnt") or liq.get("valGradoEnt")
+        result["contProteico"] = liq.get("contProteico")
+        result["pesoNeto"] = first_cert.get("pesoNeto")
+
+        cod_prov = liq.get("codProvProcedencia")
+        cod_loc = liq.get("codLocalidadProcedencia")
         result["codLocalidadProcedencia"] = cod_loc
         result["codProvProcedencia"] = cod_prov
         result["descProvProcedencia"] = self._resolve("provincia", cod_prov)
@@ -62,21 +76,33 @@ class DatosLimpiosBuilder:
         )
 
         # --- Operacion ---
-        result["totalPesoNeto"] = data.get("totalPesoNeto")
-        result["precioOperacion"] = data.get("precioOperacion")
-        result["subTotal"] = data.get("subTotal")
-        result["alicIvaOperacion"] = data.get("alicIvaOperacion")
-        result["importeIva"] = data.get("importeIva")
-        result["operacionConIva"] = data.get("operacionConIva")
+        result["totalPesoNeto"] = aut.get("totalPesoNeto")
+        result["precioOperacion"] = aut.get("precioOperacion")
+        result["subTotal"] = aut.get("subTotal")
+        result["alicIvaOperacion"] = liq.get("alicIvaOperacion")
+        result["importeIva"] = aut.get("importeIva")
+        result["operacionConIva"] = aut.get("operacionConIva")
 
         # --- Deducciones ---
-        raw_deds = data.get("deducciones", [])
+        raw_deds_wrap = aut.get("deducciones", {})
+        if isinstance(raw_deds_wrap, dict):
+            raw_deds = raw_deds_wrap.get("deduccionReturn", [])
+        elif isinstance(raw_deds_wrap, list):
+            raw_deds = raw_deds_wrap
+        else:
+            raw_deds = []
         if not isinstance(raw_deds, list):
             raw_deds = [raw_deds] if raw_deds else []
         result["deducciones"] = [self._enrich_deduccion(d) for d in raw_deds]
 
         # --- Retenciones ---
-        raw_rets = data.get("retenciones", [])
+        raw_rets_wrap = aut.get("retenciones", {})
+        if isinstance(raw_rets_wrap, dict):
+            raw_rets = raw_rets_wrap.get("retencionReturn", [])
+        elif isinstance(raw_rets_wrap, list):
+            raw_rets = raw_rets_wrap
+        else:
+            raw_rets = []
         if not isinstance(raw_rets, list):
             raw_rets = [raw_rets] if raw_rets else []
         result["retenciones"] = [self._enrich_retencion(r) for r in raw_rets]
@@ -87,7 +113,7 @@ class DatosLimpiosBuilder:
             "totalPercepcion", "totalOtrasRetenciones", "totalIvaRg4310_18",
             "totalDeduccion", "totalPagoSegunCondicion",
         ):
-            result[key] = data.get(key)
+            result[key] = aut.get(key)
 
         return result
 
@@ -112,13 +138,30 @@ class DatosLimpiosBuilder:
         return desc if desc else str(codigo)
 
     def _enrich_deduccion(self, raw: dict) -> dict:
-        return {
-            **raw,
-            "descConcepto": self._resolve("tipoDeduccion", raw.get("codigoConcepto")),
-        }
+        # Estructura: {deduccion: {codigoConcepto, detalleAclaratorio, ...}, importeDeduccion, importeIva}
+        inner = raw.get("deduccion", {}) if isinstance(raw, dict) else {}
+        if not isinstance(inner, dict):
+            inner = {}
+        result = {**raw}
+        result["codigoConcepto"] = inner.get("codigoConcepto")
+        result["detalleAclaratorio"] = inner.get("detalleAclaratorio")
+        result["baseCalculo"] = inner.get("baseCalculo")
+        result["alicuotaIva"] = inner.get("alicuotaIva")
+        result["descConcepto"] = self._resolve("tipoDeduccion", inner.get("codigoConcepto"))
+        return result
 
     def _enrich_retencion(self, raw: dict) -> dict:
-        return {
-            **raw,
-            "descConcepto": self._resolve("tipoRetencion", raw.get("codigoConcepto")),
-        }
+        # Estructura: {retencion: {codigoConcepto, detalleAclaratorio, ...}, importeRetencion}
+        inner = raw.get("retencion", {}) if isinstance(raw, dict) else {}
+        if not isinstance(inner, dict):
+            inner = {}
+        result = {**raw}
+        result["codigoConcepto"] = inner.get("codigoConcepto")
+        result["detalleAclaratorio"] = inner.get("detalleAclaratorio")
+        result["baseCalculo"] = inner.get("baseCalculo")
+        result["alicuota"] = inner.get("alicuota")
+        result["nroCertificadoRetencion"] = inner.get("nroCertificadoRetencion")
+        result["importeCertificadoRetencion"] = inner.get("importeCertificadoRetencion")
+        result["fechaCertificadoRetencion"] = inner.get("fechaCertificadoRetencion")
+        result["descConcepto"] = self._resolve("tipoRetencion", inner.get("codigoConcepto"))
+        return result

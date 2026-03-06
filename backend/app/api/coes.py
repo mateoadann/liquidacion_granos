@@ -19,6 +19,7 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "tipo_documento": doc.tipo_documento,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "raw_data": doc.raw_data,
+        "datos_limpios": doc.datos_limpios,
     }
     if include_taxpayer and doc.taxpayer_id:
         taxpayer = db.session.get(Taxpayer, doc.taxpayer_id)

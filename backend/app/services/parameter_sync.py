@@ -39,48 +39,64 @@ class ParameterSyncService:
         return {"tabla": tabla, "synced": synced}
 
     def _call(self, method: str, extra_data: dict | None = None) -> Any:
+        from ..integrations.arca.client import _safe_serialize
+
         data = {"auth": self._ws.get_auth_payload()}
         if extra_data:
             data.update(extra_data)
         result = self._ws.send_request(method, data)
-        if isinstance(result, dict) and "data" in result:
-            return result["data"]
-        return result
+        serialized = _safe_serialize(result)
+        return serialized.get("data", serialized)
+
+    def _extract_rows(self, data: dict, wrapper_key: str) -> list[dict]:
+        """Extrae filas de la estructura SOAP: data[wrapper_key].codigoDescripcion -> [{codigo, descripcion}]"""
+        wrapper = data.get(wrapper_key, {}) if isinstance(data, dict) else {}
+        if isinstance(wrapper, dict):
+            rows = wrapper.get("codigoDescripcion", [])
+        elif isinstance(wrapper, list):
+            rows = wrapper
+        else:
+            rows = []
+        if not isinstance(rows, list):
+            rows = [rows] if rows else []
+        return rows
 
     def sync_tipo_grano(self) -> dict:
         data = self._call("tipoGranoConsultar")
-        rows = data.get("tipoGrano", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("tipoGrano", rows, "codTipoGrano", "descTipoGrano")
+        rows = self._extract_rows(data, "granos")
+        return self._upsert_rows("tipoGrano", rows, "codigo", "descripcion")
 
     def sync_grado_referencia(self) -> dict:
         data = self._call("codigoGradoReferenciaConsultar")
-        rows = data.get("gradoRef", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("gradoReferencia", rows, "codGradoRef", "descGradoRef")
+        rows = self._extract_rows(data, "gradosRef")
+        return self._upsert_rows("gradoReferencia", rows, "codigo", "descripcion")
 
     def sync_grado_entregado(self) -> dict:
-        data = self._call("codigoGradoEntregadoXTipoGranoConsultar")
-        rows = data.get("gradoEnt", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("gradoEntregado", rows, "codGradoEnt", "descGradoEnt")
+        # Grados entregados son iguales para todos los granos (solo cambia el valor/factor).
+        # Consultamos con un solo grano (15=TRIGO PAN) para obtener los códigos+descripciones.
+        # Estructura: data.gradoEnt.gradoEnt[] -> {codigoDescripcion: {codigo, desc}, valor}
+        data = self._call("codigoGradoEntregadoXTipoGranoConsultar", {"codGrano": 15})
+        wrapper = data.get("gradoEnt", {}) if isinstance(data, dict) else {}
+        items = wrapper.get("gradoEnt", []) if isinstance(wrapper, dict) else []
+        if not isinstance(items, list):
+            items = [items] if items else []
+        rows = []
+        for item in items:
+            cd = item.get("codigoDescripcion", {}) if isinstance(item, dict) else {}
+            code = cd.get("codigo", "")
+            if code:
+                rows.append({"codigo": code, "descripcion": cd.get("descripcion", "")})
+        return self._upsert_rows("gradoEntregado", rows, "codigo", "descripcion")
 
     def sync_puertos(self) -> dict:
         data = self._call("puertoConsultar")
-        rows = data.get("puerto", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("puerto", rows, "codPuerto", "desPuerto")
+        rows = self._extract_rows(data, "puertos")
+        return self._upsert_rows("puerto", rows, "codigo", "descripcion")
 
     def sync_provincias(self) -> dict:
         data = self._call("provinciasConsultar")
-        rows = data.get("provincia", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("provincia", rows, "codProvincia", "desProvincia")
+        rows = self._extract_rows(data, "provincias")
+        return self._upsert_rows("provincia", rows, "codigo", "descripcion")
 
     def sync_localidades(self, cod_provincia: int | None = None) -> dict:
         if cod_provincia is not None:
@@ -98,37 +114,34 @@ class ParameterSyncService:
 
     def _sync_localidades_provincia(self, cod_provincia: int) -> dict:
         data = self._call("localidadXProvinciaConsultar", {"codProvincia": cod_provincia})
-        rows = data.get("localidad", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
+        rows = self._extract_rows(data, "localidades")
         enriched = []
         for row in rows:
             row_copy = dict(row)
-            row_copy["_cod_compuesto"] = f"{cod_provincia}_{row.get('codLocalidad', '')}"
-            row_copy["_desc_localidad"] = str(row.get("descLocalidad", ""))
+            row_copy["_cod_compuesto"] = f"{cod_provincia}_{row.get('codigo', '')}"
+            row_copy["_desc_localidad"] = str(row.get("descripcion", ""))
             enriched.append(row_copy)
         return self._upsert_rows("localidad", enriched, "_cod_compuesto", "_desc_localidad")
 
     def sync_tipo_deduccion(self) -> dict:
         data = self._call("tipoDeduccionConsultar")
-        rows = data.get("tipoDeduccion", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("tipoDeduccion", rows, "codigoConcepto", "descripcionConcepto")
+        rows = self._extract_rows(data, "tiposDeduccion")
+        return self._upsert_rows("tipoDeduccion", rows, "codigo", "descripcion")
 
     def sync_tipo_retencion(self) -> dict:
         data = self._call("tipoRetencionConsultar")
-        rows = data.get("tipoRetencion", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("tipoRetencion", rows, "codigoConcepto", "descripcionConcepto")
+        rows = self._extract_rows(data, "tiposRetencion")
+        return self._upsert_rows("tipoRetencion", rows, "codigo", "descripcion")
 
     def sync_tipo_operacion(self) -> dict:
-        data = self._call("tipoOperacionXActividadConsultar")
-        rows = data.get("tipoOperacion", []) if isinstance(data, dict) else []
-        if not isinstance(rows, list):
-            rows = [rows]
-        return self._upsert_rows("tipoOperacion", rows, "codTipoOperacion", "descTipoOperacion")
+        # Los tipos de operación son valores estándar fijos del WSLPG
+        rows = [
+            {"codigo": "1", "descripcion": "Compra-venta de granos"},
+            {"codigo": "2", "descripcion": "Consignación de granos"},
+            {"codigo": "3", "descripcion": "Propia (acopiador/consignatario)"},
+            {"codigo": "4", "descripcion": "Propia (industrial)"},
+        ]
+        return self._upsert_rows("tipoOperacion", rows, "codigo", "descripcion")
 
     def sync_all(self) -> dict[str, dict]:
         results = {}
