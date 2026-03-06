@@ -8,7 +8,7 @@ export function useJobsQuery(params?: { status?: string; limit?: number }) {
     refetchInterval: (query) => {
       // Si hay jobs pending/running, refrescar más seguido
       const data = query.state.data;
-      if (data?.jobs.some((j) => j.status === "pending" || j.status === "running")) {
+      if (data && data.jobs.some((j) => j.status === "pending" || j.status === "running")) {
         return 3000;
       }
       return 30000;

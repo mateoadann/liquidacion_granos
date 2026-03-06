@@ -30,6 +30,7 @@ function JobStatusBadge({ status }: { status: string }) {
 
 export function RecentJobsPanel() {
   const jobsQuery = useJobsQuery({ limit: 10 });
+  const jobs = jobsQuery.data?.jobs ?? [];
 
   return (
     <Card padding="lg">
@@ -42,7 +43,7 @@ export function RecentJobsPanel() {
         <div className="flex justify-center py-8">
           <Spinner />
         </div>
-      ) : jobsQuery.data?.jobs.length === 0 ? (
+      ) : jobs.length === 0 ? (
         <p className="text-sm text-slate-500 text-center py-8">
           No hay extracciones registradas
         </p>
@@ -58,7 +59,7 @@ export function RecentJobsPanel() {
               </tr>
             </thead>
             <tbody>
-              {jobsQuery.data?.jobs.map((job) => {
+              {jobs.map((job) => {
                 const duration =
                   job.started_at && job.finished_at
                     ? Math.round(

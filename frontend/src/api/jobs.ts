@@ -18,6 +18,27 @@ export interface JobsListResponse {
   total: number;
 }
 
+function normalizeJobsListResponse(data: unknown): JobsListResponse {
+  if (Array.isArray(data)) {
+    return {
+      jobs: data as Job[],
+      total: data.length,
+    };
+  }
+
+  if (data && typeof data === "object") {
+    const parsed = data as { jobs?: unknown; total?: unknown };
+    if (Array.isArray(parsed.jobs)) {
+      return {
+        jobs: parsed.jobs as Job[],
+        total: typeof parsed.total === "number" ? parsed.total : parsed.jobs.length,
+      };
+    }
+  }
+
+  throw new Error("Formato de respuesta inválido al obtener jobs");
+}
+
 export async function listJobs(params?: {
   status?: string;
   limit?: number;
@@ -34,7 +55,8 @@ export async function listJobs(params?: {
   if (!res.ok) {
     throw new Error(data?.error ?? "Error al obtener jobs");
   }
-  return data;
+
+  return normalizeJobsListResponse(data);
 }
 
 export async function getJob(id: number): Promise<Job> {
