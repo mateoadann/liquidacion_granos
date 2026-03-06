@@ -6,6 +6,11 @@ import { LoginPage, HomePage } from "./pages";
 import { ClientsListPage } from "./pages/ClientsListPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientEditPage } from "./pages/ClientEditPage";
+import { CoesListPage } from "./pages/CoesListPage";
+import { CoeDetailPage } from "./pages/CoeDetailPage";
+import { ExportPage } from "./pages/ExportPage";
+import { ConfigPage } from "./pages/ConfigPage";
+import { UsersListPage } from "./pages/UsersListPage";
 
 const queryClient = new QueryClient();
 
@@ -24,15 +29,15 @@ export default function App() {
             <Route path="/clientes/nuevo" element={<Layout><ClientEditPage /></Layout>} />
             <Route path="/clientes/:id" element={<Layout><ClientDetailPage /></Layout>} />
             <Route path="/clientes/:id/editar" element={<Layout><ClientEditPage /></Layout>} />
-            {/* Placeholders para rutas futuras */}
-            <Route path="/coes" element={<Layout><div className="text-slate-600">COEs - Próximamente</div></Layout>} />
-            <Route path="/exportar" element={<Layout><div className="text-slate-600">Exportar - Próximamente</div></Layout>} />
+            <Route path="/coes" element={<Layout><CoesListPage /></Layout>} />
+            <Route path="/coes/:id" element={<Layout><CoeDetailPage /></Layout>} />
+            <Route path="/exportar" element={<Layout><ExportPage /></Layout>} />
           </Route>
 
           {/* Rutas admin */}
           <Route element={<ProtectedRoute requireAdmin />}>
-            <Route path="/configuracion" element={<Layout><div className="text-slate-600">Configuración - Próximamente</div></Layout>} />
-            <Route path="/configuracion/usuarios" element={<Layout><div className="text-slate-600">Usuarios - Próximamente</div></Layout>} />
+            <Route path="/configuracion" element={<Layout><ConfigPage /></Layout>} />
+            <Route path="/configuracion/usuarios" element={<Layout><UsersListPage /></Layout>} />
           </Route>
 
           {/* Fallback */}
