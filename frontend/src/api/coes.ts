@@ -10,6 +10,7 @@ export interface Coe {
   tipo_documento: string;
   created_at: string | null;
   raw_data: Record<string, unknown> | null;
+  datos_limpios: Record<string, unknown> | null;
   taxpayer?: {
     id: number;
     empresa: string;

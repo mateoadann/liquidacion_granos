@@ -104,6 +104,122 @@ def _safe_export_text(value: object) -> str:
     return text
 
 
+def _build_export_row(doc: LpgDocument) -> dict:
+    """Construye una fila de exportación con todos los campos del COE."""
+    # Use datos_limpios if available, otherwise fall back to raw_data
+    dl = doc.datos_limpios or {}
+    raw = doc.raw_data or {}
+    data = dl if dl else (raw.get("data", raw) if isinstance(raw, dict) else {})
+
+    # For deducciones/retenciones
+    deducciones = data.get("deducciones", [])
+    if not isinstance(deducciones, list):
+        deducciones = []
+    retenciones = data.get("retenciones", [])
+    if not isinstance(retenciones, list):
+        retenciones = []
+    ded = deducciones[0] if deducciones else {}
+    ret = retenciones[0] if retenciones else {}
+
+    def safe(val):
+        return _safe_export_text(val) if val is not None else ""
+
+    def num(val):
+        return str(val) if val is not None else ""
+
+    return {
+        # Document basics
+        "coe": safe(doc.coe),
+        "pto_emision": safe(doc.pto_emision),
+        "nro_orden": safe(doc.nro_orden),
+        "estado": safe(doc.estado),
+        "created_at": doc.created_at.isoformat() if doc.created_at else "",
+        # General
+        "codTipoOperacion": safe(data.get("codTipoOperacion")),
+        "descTipoOperacion": safe(data.get("descTipoOperacion")),
+        "fechaLiquidacion": safe(data.get("fechaLiquidacion")),
+        # Comprador/Vendedor
+        "cuitComprador": safe(data.get("cuitComprador")),
+        "cuitVendedor": safe(data.get("cuitVendedor")),
+        # Condiciones
+        "precioRefTn": num(data.get("precioRefTn")),
+        "codGradoRef": safe(data.get("codGradoRef")),
+        "descGradoRef": safe(data.get("descGradoRef")),
+        "codGrano": safe(data.get("codGrano")),
+        "descGrano": safe(data.get("descGrano")),
+        "precioFleteTn": num(data.get("precioFleteTn")),
+        "codPuerto": safe(data.get("codPuerto")),
+        "descPuerto": safe(data.get("descPuerto")),
+        # Mercaderia
+        "nroCertificadoDeposito": safe(data.get("nroCertificadoDeposito")),
+        "codGradoEnt": safe(data.get("codGradoEnt")),
+        "descGradoEnt": safe(data.get("descGradoEnt")),
+        "factorEnt": num(data.get("factorEnt")),
+        "contProteico": num(data.get("contProteico")),
+        "pesoNeto": num(data.get("pesoNeto")),
+        "codLocalidadProcedencia": safe(data.get("codLocalidadProcedencia")),
+        "codProvProcedencia": safe(data.get("codProvProcedencia")),
+        "descProvProcedencia": safe(data.get("descProvProcedencia")),
+        "descLocalidadProcedencia": safe(data.get("descLocalidadProcedencia")),
+        # Operacion
+        "totalPesoNeto": num(data.get("totalPesoNeto")),
+        "precioOperacion": num(data.get("precioOperacion")),
+        "subTotal": num(data.get("subTotal")),
+        "alicIvaOperacion": num(data.get("alicIvaOperacion")),
+        "importeIva": num(data.get("importeIva")),
+        "operacionConIva": num(data.get("operacionConIva")),
+        # Deduccion (primera)
+        "ded_codigoConcepto": safe(ded.get("codigoConcepto")),
+        "ded_descConcepto": safe(ded.get("descConcepto")),
+        "ded_detalleAclaratorio": safe(ded.get("detalleAclaratorio")),
+        "ded_baseCalculo": num(ded.get("baseCalculo")),
+        "ded_alicuotaIva": num(ded.get("alicuotaIva")),
+        "ded_importeIva": num(ded.get("importeIva")),
+        "ded_importeDeduccion": num(ded.get("importeDeduccion")),
+        # Retencion (primera)
+        "ret_codigoConcepto": safe(ret.get("codigoConcepto")),
+        "ret_descConcepto": safe(ret.get("descConcepto")),
+        "ret_detalleAclaratorio": safe(ret.get("detalleAclaratorio")),
+        "ret_nroCertificadoRetencion": safe(ret.get("nroCertificadoRetencion")),
+        "ret_importeCertificadoRetencion": num(ret.get("importeCertificadoRetencion")),
+        "ret_fechaCertificadoRetencion": safe(ret.get("fechaCertificadoRetencion")),
+        "ret_baseCalculo": num(ret.get("baseCalculo")),
+        "ret_alicuota": num(ret.get("alicuota")),
+        "ret_importeRetencion": num(ret.get("importeRetencion")),
+        # Totales
+        "totalRetencionAfip": num(data.get("totalRetencionAfip")),
+        "totalNetoAPagar": num(data.get("totalNetoAPagar")),
+        "totalPercepcion": num(data.get("totalPercepcion")),
+        "totalOtrasRetenciones": num(data.get("totalOtrasRetenciones")),
+        "totalIvaRg4310_18": num(data.get("totalIvaRg4310_18")),
+        "totalDeduccion": num(data.get("totalDeduccion")),
+        "totalPagoSegunCondicion": num(data.get("totalPagoSegunCondicion")),
+    }
+
+
+# Campos para la exportación en orden
+EXPORT_FIELDNAMES = [
+    "coe", "pto_emision", "nro_orden", "estado", "created_at",
+    "codTipoOperacion", "descTipoOperacion", "fechaLiquidacion",
+    "cuitComprador", "cuitVendedor",
+    "precioRefTn", "codGradoRef", "descGradoRef", "codGrano", "descGrano",
+    "precioFleteTn", "codPuerto", "descPuerto",
+    "nroCertificadoDeposito", "codGradoEnt", "descGradoEnt", "factorEnt", "contProteico",
+    "pesoNeto", "codLocalidadProcedencia", "codProvProcedencia",
+    "descProvProcedencia", "descLocalidadProcedencia",
+    "totalPesoNeto", "precioOperacion", "subTotal", "alicIvaOperacion",
+    "importeIva", "operacionConIva",
+    "ded_codigoConcepto", "ded_descConcepto", "ded_detalleAclaratorio", "ded_baseCalculo",
+    "ded_alicuotaIva", "ded_importeIva", "ded_importeDeduccion",
+    "ret_codigoConcepto", "ret_descConcepto", "ret_detalleAclaratorio", "ret_nroCertificadoRetencion",
+    "ret_importeCertificadoRetencion", "ret_fechaCertificadoRetencion",
+    "ret_baseCalculo", "ret_alicuota", "ret_importeRetencion",
+    "totalRetencionAfip", "totalNetoAPagar", "totalPercepcion",
+    "totalOtrasRetenciones", "totalIvaRg4310_18", "totalDeduccion",
+    "totalPagoSegunCondicion",
+]
+
+
 def _build_export_filename(client: Taxpayer, ext: str) -> str:
     company = "_".join((client.empresa or "cliente").split())
     safe = "".join(ch for ch in company if ch.isalnum() or ch in {"_", "-"}).strip("_")
@@ -400,22 +516,13 @@ def export_client_coes(client_id: int):
 
     documents = query.order_by(LpgDocument.created_at.asc(), LpgDocument.id.asc()).all()
 
-    rows = [
-        {
-            "coe": _safe_export_text(doc.coe),
-            "pto_emision": _safe_export_text(doc.pto_emision),
-            "nro_orden": _safe_export_text(doc.nro_orden),
-            "estado": _safe_export_text(doc.estado),
-            "created_at": doc.created_at.isoformat() if doc.created_at else "",
-        }
-        for doc in documents
-    ]
+    rows = [_build_export_row(doc) for doc in documents]
 
     if fmt == "csv":
         csv_buffer = io.StringIO()
         writer = csv.DictWriter(
             csv_buffer,
-            fieldnames=["coe", "pto_emision", "nro_orden", "estado", "created_at"],
+            fieldnames=EXPORT_FIELDNAMES,
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -441,10 +548,9 @@ def export_client_coes(client_id: int):
     sheet = workbook.create_sheet(title="COEs", index=0)
     if "Sheet" in workbook.sheetnames:
         del workbook["Sheet"]
-    headers = ["coe", "pto_emision", "nro_orden", "estado", "created_at"]
-    sheet.append(headers)
+    sheet.append(EXPORT_FIELDNAMES)
     for row in rows:
-        sheet.append([row[key] for key in headers])
+        sheet.append([row[key] for key in EXPORT_FIELDNAMES])
 
     output = io.BytesIO()
     workbook.save(output)

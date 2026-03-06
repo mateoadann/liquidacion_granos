@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
 import { Card, CardHeader, Badge, Button, Spinner, Alert } from "../components/ui";
@@ -21,10 +22,330 @@ function EstadoBadge({ estado }: { estado: string | null }) {
   );
 }
 
+// Helper para formatear números como moneda
+function formatCurrency(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  const num = typeof value === "number" ? value : parseFloat(String(value));
+  if (isNaN(num)) return "-";
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+  }).format(num);
+}
+
+// Helper para formatear números
+function formatNumber(value: unknown, decimals = 2): string {
+  if (value === null || value === undefined) return "-";
+  const num = typeof value === "number" ? value : parseFloat(String(value));
+  if (isNaN(num)) return "-";
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(num);
+}
+
+// Helper para formatear fechas
+function formatDate(value: unknown): string {
+  if (!value) return "-";
+  const date = new Date(String(value));
+  if (isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("es-AR");
+}
+
+// Helper: muestra descripción si existe, sino código, sino fallback
+function descOrCode(data: Record<string, unknown>, descKey: string, codKey: string, fallback = "-"): string {
+  const desc = data[descKey];
+  const cod = data[codKey];
+  if (desc && typeof desc === "string") return desc;
+  if (cod !== null && cod !== undefined) return String(cod);
+  return fallback;
+}
+
+interface Deduccion {
+  codigoConcepto?: string;
+  descConcepto?: string;
+  detalleAclaratorio?: string;
+  baseCalculo?: number;
+  alicuotaIva?: number;
+  importeIva?: number;
+  importeDeduccion?: number;
+}
+
+interface Retencion {
+  codigoConcepto?: string;
+  descConcepto?: string;
+  detalleAclaratorio?: string;
+  nroCertificadoRetencion?: string | null;
+  importeCertificadoRetencion?: number | null;
+  fechaCertificadoRetencion?: string | null;
+  baseCalculo?: number;
+  alicuota?: number;
+  importeRetencion?: number;
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="bg-slate-800 text-white px-3 py-2 text-sm font-semibold">
+      {title}
+    </div>
+  );
+}
+
+function DataRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between py-1.5 px-3 border-b border-slate-200 last:border-b-0">
+      <span className="text-slate-600 text-sm">{label}</span>
+      <span className={`text-slate-900 text-sm ${mono ? "font-mono" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+interface DatosLimpiosProps {
+  rawData: Record<string, unknown>;
+  datosLimpios: Record<string, unknown> | null;
+}
+
+function DatosLimpiosSection({ rawData, datosLimpios }: DatosLimpiosProps) {
+  // Use datos_limpios if available, otherwise unwrap raw_data.data or use raw_data directly
+  const data: Record<string, unknown> = datosLimpios
+    ?? (rawData.data && typeof rawData.data === "object" && !Array.isArray(rawData.data)
+        ? rawData.data as Record<string, unknown>
+        : rawData);
+
+  // Extraer deducciones y retenciones (pueden ser arrays)
+  const deducciones = (data["deducciones"] as Deduccion[]) ?? [];
+  const retenciones = (data["retenciones"] as Retencion[]) ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Encabezado tipo PDF */}
+      <div className="bg-slate-100 border border-slate-300 p-4 rounded-lg">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">LIQUIDACION PRIMARIA DE GRANOS</h3>
+            <p className="text-sm text-slate-600 mt-1">
+              Tipo de operación: {descOrCode(data, "descTipoOperacion", "codTipoOperacion", "Desconocido")}
+            </p>
+            <p className="text-sm font-mono text-slate-700">
+              C.O.E.: {String(data["coe"] ?? "-")}
+            </p>
+          </div>
+          <div className="text-right text-sm text-slate-600">
+            <p>Fecha: {formatDate(data["fechaLiquidacion"])}</p>
+          </div>
+        </div>
+
+        {/* Comprador y Vendedor */}
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div className="border border-slate-300 rounded">
+            <SectionHeader title="COMPRADOR" />
+            <div className="p-3">
+              <DataRow label="C.U.I.T." value={String(data["cuitComprador"] ?? "-")} mono />
+            </div>
+          </div>
+          <div className="border border-slate-300 rounded">
+            <SectionHeader title="VENDEDOR" />
+            <div className="p-3">
+              <DataRow label="C.U.I.T." value={String(data["cuitVendedor"] ?? "-")} mono />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Condiciones de la Operación */}
+      <div className="border border-slate-300 rounded">
+        <SectionHeader title="CONDICIONES DE LA OPERACION" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Precio/TN</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Grado</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Grano</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Flete por TN</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Puerto</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-slate-200">
+                <td className="px-3 py-2 font-mono">{formatCurrency(data["precioRefTn"])}</td>
+                <td className="px-3 py-2">{descOrCode(data, "descGradoRef", "codGradoRef")}</td>
+                <td className="px-3 py-2">{descOrCode(data, "descGrano", "codGrano")}</td>
+                <td className="px-3 py-2 font-mono">{formatCurrency(data["precioFleteTn"])}</td>
+                <td className="px-3 py-2">{descOrCode(data, "descPuerto", "codPuerto")}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Mercadería Entregada */}
+      <div className="border border-slate-300 rounded">
+        <SectionHeader title="MERCADERIA ENTREGADA" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Nro Comprobante</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Grado</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Factor</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Cont. Proteico</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Peso Neto</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Procedencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-slate-200">
+                <td className="px-3 py-2 font-mono">{String(data["nroCertificadoDeposito"] ?? "-")}</td>
+                <td className="px-3 py-2">{descOrCode(data, "descGradoEnt", "codGradoEnt")}</td>
+                <td className="px-3 py-2">{formatNumber(data["factorEnt"], 1)}</td>
+                <td className="px-3 py-2">{formatNumber(data["contProteico"], 1)}</td>
+                <td className="px-3 py-2 font-mono">{formatNumber(data["pesoNeto"], 0)} kg</td>
+                <td className="px-3 py-2">
+                  Loc: {descOrCode(data, "descLocalidadProcedencia", "codLocalidadProcedencia")} /
+                  Prov: {descOrCode(data, "descProvProcedencia", "codProvProcedencia")}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Operación */}
+      <div className="border border-slate-300 rounded">
+        <SectionHeader title="OPERACION" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Cantidad</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Precio/Kg</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Subtotal</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">% Alícuota IVA</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Importe IVA</th>
+                <th className="px-3 py-2 text-left text-slate-600 font-medium">Operación c/IVA</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-slate-200">
+                <td className="px-3 py-2 font-mono">{formatNumber(data["totalPesoNeto"], 0)} kg</td>
+                <td className="px-3 py-2 font-mono">{formatCurrency(data["precioOperacion"])}</td>
+                <td className="px-3 py-2 font-mono">{formatCurrency(data["subTotal"])}</td>
+                <td className="px-3 py-2">{formatNumber(data["alicIvaOperacion"], 1)}%</td>
+                <td className="px-3 py-2 font-mono">{formatCurrency(data["importeIva"])}</td>
+                <td className="px-3 py-2 font-mono font-semibold">{formatCurrency(data["operacionConIva"])}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Deducciones */}
+      {deducciones.length > 0 && (
+        <div className="border border-slate-300 rounded">
+          <SectionHeader title="DEDUCCIONES" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Concepto</th>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Detalle</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Base Cálculo</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Alícuota</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Importe IVA</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Deducciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deducciones.map((ded, idx) => (
+                  <tr key={idx} className="border-t border-slate-200">
+                    <td className="px-3 py-2">{ded.descConcepto ?? ded.codigoConcepto ?? "-"}</td>
+                    <td className="px-3 py-2">{ded.detalleAclaratorio ?? "-"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCurrency(ded.baseCalculo)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(ded.alicuotaIva, 1)}%</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCurrency(ded.importeIva)}</td>
+                    <td className="px-3 py-2 text-right font-mono font-semibold">{formatCurrency(ded.importeDeduccion)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Retenciones */}
+      {retenciones.length > 0 && (
+        <div className="border border-slate-300 rounded">
+          <SectionHeader title="RETENCIONES" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Concepto</th>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Detalle</th>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Cert. Ret.</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Imp. Cert.</th>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Fecha Cert.</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Base Cálculo</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Alícuota</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Retenciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {retenciones.map((ret, idx) => (
+                  <tr key={idx} className="border-t border-slate-200">
+                    <td className="px-3 py-2">{ret.descConcepto ?? ret.codigoConcepto ?? "-"}</td>
+                    <td className="px-3 py-2">{ret.detalleAclaratorio ?? "-"}</td>
+                    <td className="px-3 py-2 font-mono">{ret.nroCertificadoRetencion ?? "-"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCurrency(ret.importeCertificadoRetencion)}</td>
+                    <td className="px-3 py-2">{formatDate(ret.fechaCertificadoRetencion)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCurrency(ret.baseCalculo)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(ret.alicuota, 0)}%</td>
+                    <td className="px-3 py-2 text-right font-mono font-semibold">{formatCurrency(ret.importeRetencion)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Importes Totales */}
+      <div className="border border-slate-300 rounded">
+        <SectionHeader title="IMPORTES TOTALES DE LA LIQUIDACION" />
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4">
+          <div className="space-y-2">
+            <DataRow label="Total Operación" value={formatCurrency(data["operacionConIva"])} mono />
+            <DataRow label="Total Retenciones AFIP" value={formatCurrency(data["totalRetencionAfip"])} mono />
+            <DataRow label="Importe Neto a Pagar" value={formatCurrency(data["totalNetoAPagar"])} mono />
+          </div>
+          <div className="space-y-2">
+            <DataRow label="Total Percepciones" value={formatCurrency(data["totalPercepcion"])} mono />
+            <DataRow label="Total Otras Retenciones" value={formatCurrency(data["totalOtrasRetenciones"])} mono />
+            <DataRow label="IVA RG 4310/18" value={formatCurrency(data["totalIvaRg4310_18"])} mono />
+          </div>
+          <div className="space-y-2">
+            <DataRow label="Total Deducciones" value={formatCurrency(data["totalDeduccion"])} mono />
+            <div className="bg-green-50 border border-green-200 rounded p-2 mt-2">
+              <DataRow
+                label="Pago según condiciones"
+                value={formatCurrency(data["totalPagoSegunCondicion"])}
+                mono
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CoeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const coeId = Number(id);
+  const [datosExpanded, setDatosExpanded] = useState(true);
+  const [rawDataExpanded, setRawDataExpanded] = useState(false);
 
   const coeQuery = useCoeQuery(coeId);
   const coe = coeQuery.data;
@@ -125,12 +446,47 @@ export function CoeDetailPage() {
           )}
         </Card>
 
+        {/* Datos - Colapsable */}
         {coe.raw_data ? (
           <Card className="lg:col-span-2">
-            <CardHeader title="Datos Crudos" />
-            <pre className="bg-slate-50 p-4 rounded-lg text-xs overflow-x-auto">
-              {JSON.stringify(coe.raw_data, null, 2)}
-            </pre>
+            <button
+              type="button"
+              onClick={() => setDatosExpanded(!datosExpanded)}
+              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+            >
+              <h3 className="text-lg font-semibold text-slate-900">Datos</h3>
+              <span className="text-slate-500 text-sm">
+                {datosExpanded ? "▼ Colapsar" : "▶ Expandir"}
+              </span>
+            </button>
+            {datosExpanded && (
+              <div className="px-4 pb-4">
+                <DatosLimpiosSection rawData={coe.raw_data} datosLimpios={coe.datos_limpios} />
+              </div>
+            )}
+          </Card>
+        ) : null}
+
+        {/* Datos Crudos - Colapsable */}
+        {coe.raw_data ? (
+          <Card className="lg:col-span-2">
+            <button
+              type="button"
+              onClick={() => setRawDataExpanded(!rawDataExpanded)}
+              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+            >
+              <h3 className="text-lg font-semibold text-slate-900">Datos Crudos</h3>
+              <span className="text-slate-500 text-sm">
+                {rawDataExpanded ? "▼ Colapsar" : "▶ Expandir"}
+              </span>
+            </button>
+            {rawDataExpanded && (
+              <div className="px-4 pb-4">
+                <pre className="bg-slate-50 p-4 rounded-lg text-xs overflow-x-auto">
+                  {JSON.stringify(coe.raw_data, null, 2)}
+                </pre>
+              </div>
+            )}
           </Card>
         ) : null}
       </div>

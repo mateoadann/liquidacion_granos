@@ -6,6 +6,7 @@ import { LoginPage, HomePage } from "./pages";
 import { ClientsListPage } from "./pages/ClientsListPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientEditPage } from "./pages/ClientEditPage";
+import { ClientCertificatesPage } from "./pages/ClientCertificatesPage";
 import { CoesListPage } from "./pages/CoesListPage";
 import { CoeDetailPage } from "./pages/CoeDetailPage";
 import { ExportPage } from "./pages/ExportPage";
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/clientes/nuevo" element={<Layout><ClientEditPage /></Layout>} />
             <Route path="/clientes/:id" element={<Layout><ClientDetailPage /></Layout>} />
             <Route path="/clientes/:id/editar" element={<Layout><ClientEditPage /></Layout>} />
+            <Route path="/clientes/:id/certificados" element={<Layout><ClientCertificatesPage /></Layout>} />
             <Route path="/coes" element={<Layout><CoesListPage /></Layout>} />
             <Route path="/coes/:id" element={<Layout><CoeDetailPage /></Layout>} />
             <Route path="/exportar" element={<Layout><ExportPage /></Layout>} />
