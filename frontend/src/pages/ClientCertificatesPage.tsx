@@ -4,13 +4,7 @@ import { PageHeader } from "../components/layout";
 import { Card, Button, Alert, Spinner } from "../components/ui";
 import { useClientQuery } from "../hooks/useClient";
 import { useUploadCertificatesMutation } from "../useClients";
-
-function formatDate(value: string | null): string {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("es-AR");
-}
+import { formatDateTime } from "../dateUtils";
 
 export function ClientCertificatesPage() {
   const { id } = useParams<{ id: string }>();
@@ -103,7 +97,7 @@ export function ClientCertificatesPage() {
             </div>
             <div className="flex justify-between py-2">
               <dt className="text-slate-500">Fecha de carga</dt>
-              <dd className="text-slate-900">{formatDate(client.certUploadedAt)}</dd>
+              <dd className="text-slate-900">{formatDateTime(client.certUploadedAt)}</dd>
             </div>
           </dl>
         </Card>

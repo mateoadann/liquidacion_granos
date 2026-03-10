@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
 import { Card, CardHeader, Badge, Button, Spinner, Alert } from "../components/ui";
 import { useCoeQuery } from "../hooks/useCoes";
+import { formatDateOnly, formatDateTime } from "../dateUtils";
 
 function EstadoBadge({ estado }: { estado: string | null }) {
   const variants: Record<string, "success" | "warning" | "error" | "default"> = {
@@ -44,12 +45,10 @@ function formatNumber(value: unknown, decimals = 2): string {
   }).format(num);
 }
 
-// Helper para formatear fechas
+// Helper para formatear fechas (solo fecha, sin hora) — usa timezone Córdoba
 function formatDate(value: unknown): string {
   if (!value) return "-";
-  const date = new Date(String(value));
-  if (isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString("es-AR");
+  return formatDateOnly(String(value));
 }
 
 // Helper: muestra descripción si existe, sino código, sino fallback
@@ -411,9 +410,7 @@ export function CoeDetailPage() {
             <div>
               <dt className="text-sm font-medium text-slate-500">Fecha Creación</dt>
               <dd className="mt-1 text-slate-900">
-                {coe.created_at
-                  ? new Date(coe.created_at).toLocaleString("es-AR")
-                  : "-"}
+{formatDateTime(coe.created_at)}
               </dd>
             </div>
           </dl>

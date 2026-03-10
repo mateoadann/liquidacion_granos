@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatDateOnly } from "../dateUtils";
 import { PageHeader } from "../components/layout";
 import {
   Card,
@@ -140,9 +141,7 @@ export function CoesListPage() {
                       <TableCell className="font-mono">{coe.coe ?? "-"}</TableCell>
                       <TableCell>{client?.empresa ?? `ID: ${coe.taxpayer_id}`}</TableCell>
                       <TableCell className="text-slate-600">
-                        {coe.created_at
-                          ? new Date(coe.created_at).toLocaleDateString("es-AR")
-                          : "-"}
+{formatDateOnly(coe.created_at)}
                       </TableCell>
                       <TableCell>
                         <EstadoBadge estado={coe.estado} />
