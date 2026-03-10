@@ -19,14 +19,14 @@ def _create_taxpayer(*, cuit: str, empresa: str) -> Taxpayer:
     return item
 
 
-def test_run_playwright_requires_dates(client):
-    response = client.post("/api/playwright/lpg/run", json={})
+def test_run_playwright_requires_dates(client, auth_headers):
+    response = client.post("/api/playwright/lpg/run", json={}, headers=auth_headers)
 
     assert response.status_code == 400
     assert "fecha_desde" in response.get_json()["error"]
 
 
-def test_run_playwright_validates_taxpayer_ids(client):
+def test_run_playwright_validates_taxpayer_ids(client, auth_headers):
     response = client.post(
         "/api/playwright/lpg/run",
         json={
@@ -34,13 +34,14 @@ def test_run_playwright_validates_taxpayer_ids(client):
             "fecha_hasta": "26/02/2026",
             "taxpayer_ids": ["1", 2],
         },
+        headers=auth_headers,
     )
 
     assert response.status_code == 400
     assert "taxpayer_ids" in response.get_json()["error"]
 
 
-def test_run_playwright_enqueues_job(client, monkeypatch):
+def test_run_playwright_enqueues_job(client, monkeypatch, auth_headers):
     taxpayer_one = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
     taxpayer_two = _create_taxpayer(cuit="20222222222", empresa="Empresa Dos")
     captured: dict[str, object] = {}
@@ -71,6 +72,7 @@ def test_run_playwright_enqueues_job(client, monkeypatch):
             "timeout_ms": 45000,
             "type_delay_ms": 120,
         },
+        headers=auth_headers,
     )
 
     assert response.status_code == 202

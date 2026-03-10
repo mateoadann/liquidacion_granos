@@ -16,7 +16,7 @@ def _create_doc_with_raw_data(taxpayer_id: int) -> LpgDocument:
     return doc
 
 
-def test_rebuild_datos_limpios(client):
+def test_rebuild_datos_limpios(client, admin_headers):
     taxpayer = Taxpayer()
     taxpayer.cuit = "20111111111"
     taxpayer.empresa = "Test SA"
@@ -31,7 +31,7 @@ def test_rebuild_datos_limpios(client):
     db.session.add(WslpgParameter(tabla="puerto", codigo="14", descripcion="OTROS"))
     db.session.commit()
 
-    response = client.post("/api/admin/rebuild-datos-limpios")
+    response = client.post("/api/admin/rebuild-datos-limpios", headers=admin_headers)
     assert response.status_code == 200
     data = response.get_json()
     assert data["processed"] == 1
