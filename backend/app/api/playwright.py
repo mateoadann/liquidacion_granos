@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
+from ..middleware import require_auth
 from ..queue import get_queue
 from ..time_utils import now_cordoba_naive
 
@@ -111,6 +112,7 @@ def _parse_and_validate_run_payload(payload: dict) -> dict:
 
 
 @playwright_bp.post("/playwright/lpg/run")
+@require_auth
 def enqueue_lpg_playwright_pipeline():
     payload = request.get_json(silent=True) or {}
     try:
@@ -263,6 +265,7 @@ def enqueue_lpg_playwright_pipeline():
 
 
 @playwright_bp.get("/playwright/lpg/jobs/<int:job_id>")
+@require_auth
 def get_lpg_playwright_job(job_id: int):
     item = ExtractionJob.query.get_or_404(job_id)
     if item.operation != PLAYWRIGHT_OPERATION:

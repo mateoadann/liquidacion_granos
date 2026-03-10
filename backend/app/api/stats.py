@@ -5,11 +5,13 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Taxpayer, ExtractionJob, LpgDocument
+from ..middleware import require_auth
 
 stats_bp = Blueprint("stats", __name__)
 
 
 @stats_bp.get("/stats")
+@require_auth
 def get_stats():
     """Retorna estadisticas agregadas del sistema."""
     # Clientes

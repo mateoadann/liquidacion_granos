@@ -4,6 +4,7 @@ from flask import Blueprint, request
 
 from ..extensions import db
 from ..models import User
+from ..middleware import require_auth, require_admin
 
 users_bp = Blueprint("users", __name__)
 
@@ -31,12 +32,16 @@ def _is_last_active_admin(user: User) -> bool:
 
 
 @users_bp.get("/users")
+@require_auth
+@require_admin
 def list_users():
     users = User.query.order_by(User.nombre).all()
     return {"users": [_serialize_user(u) for u in users]}
 
 
 @users_bp.get("/users/<int:user_id>")
+@require_auth
+@require_admin
 def get_user(user_id: int):
     user = db.session.get(User, user_id)
     if not user:
@@ -45,6 +50,8 @@ def get_user(user_id: int):
 
 
 @users_bp.post("/users")
+@require_auth
+@require_admin
 def create_user():
     data = request.get_json(silent=True) or {}
 
@@ -76,6 +83,8 @@ def create_user():
 
 
 @users_bp.patch("/users/<int:user_id>")
+@require_auth
+@require_admin
 def update_user(user_id: int):
     user = db.session.get(User, user_id)
     if not user:
@@ -107,6 +116,8 @@ def update_user(user_id: int):
 
 
 @users_bp.delete("/users/<int:user_id>")
+@require_auth
+@require_admin
 def delete_user(user_id: int):
     user = db.session.get(User, user_id)
     if not user:
@@ -122,6 +133,8 @@ def delete_user(user_id: int):
 
 
 @users_bp.post("/users/<int:user_id>/reset-password")
+@require_auth
+@require_admin
 def reset_password(user_id: int):
     user = db.session.get(User, user_id)
     if not user:

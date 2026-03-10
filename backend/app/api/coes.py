@@ -4,6 +4,7 @@ from flask import Blueprint, request
 
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
+from ..middleware import require_auth
 
 coes_bp = Blueprint("coes", __name__)
 
@@ -33,6 +34,7 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
 
 
 @coes_bp.get("/coes")
+@require_auth
 def list_coes():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
@@ -81,6 +83,7 @@ def list_coes():
 
 
 @coes_bp.get("/coes/<int:coe_id>")
+@require_auth
 def get_coe(coe_id: int):
     doc = db.session.get(LpgDocument, coe_id)
     if not doc:
