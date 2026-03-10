@@ -442,6 +442,14 @@ class ArcaWslpgClient:
         response = self.send_request("liquidacionXCoeConsultar", payload)
         return self._serialize_response(response)
 
+    def call_ajuste_x_coe(self, coe: int, pdf: str = "N") -> dict[str, Any]:
+        value = (pdf or "N").upper()
+        if value not in {"S", "N"}:
+            raise ArcaIntegrationError("pdf debe ser 'S' o 'N'.")
+        payload = {"auth": self.get_auth_payload(), "coe": int(coe), "pdf": value}
+        response = self.send_request("ajusteXCoeConsultar", payload)
+        return self._serialize_response(response)
+
     def discovery_summary(self) -> dict[str, Any]:
         methods = self.list_methods()
         return {

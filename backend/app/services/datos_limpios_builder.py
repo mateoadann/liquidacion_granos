@@ -22,6 +22,11 @@ class DatosLimpiosBuilder:
         if not isinstance(data, dict):
             return {}
 
+        # Detectar si es un ajuste (estructura ajusteUnificado)
+        ajuste_unif = data.get("ajusteUnificado")
+        if isinstance(ajuste_unif, dict) and ajuste_unif:
+            return self._build_ajuste(ajuste_unif)
+
         # La estructura real es: data.autorizacion (totales, ded, ret) + data.liquidacion (grano, comprador, etc.)
         aut = data.get("autorizacion", {}) or {}
         liq = data.get("liquidacion", {}) or {}
@@ -130,6 +135,73 @@ class DatosLimpiosBuilder:
         db.session.commit()
         logger.info("DATOS_LIMPIOS_REBUILD | total=%d", count)
         return count
+
+    def _build_ajuste(self, ajuste: dict) -> dict[str, Any]:
+        """Construye datos limpios para un COE de tipo ajuste."""
+        result: dict[str, Any] = {"es_ajuste": True}
+
+        result["codTipoOperacion"] = ajuste.get("codTipoOperacion")
+        result["descTipoOperacion"] = self._resolve("tipoOperacion", result["codTipoOperacion"])
+        result["coe"] = ajuste.get("coe")
+        result["coeAjustado"] = ajuste.get("coeAjustado")
+        result["estado"] = ajuste.get("estado")
+        result["ptoEmision"] = ajuste.get("ptoEmision")
+        result["nroOrden"] = ajuste.get("nroOrden")
+        result["nroContrato"] = ajuste.get("nroContrato")
+
+        for lado in ("ajusteCredito", "ajusteDebito"):
+            sec = ajuste.get(lado, {}) or {}
+            if not isinstance(sec, dict):
+                continue
+            prefix = "credito" if "Credito" in lado else "debito"
+            result[f"{prefix}_fechaLiquidacion"] = sec.get("fechaLiquidacion")
+            result[f"{prefix}_precioOperacion"] = sec.get("precioOperacion")
+            result[f"{prefix}_subTotal"] = sec.get("subTotal")
+            result[f"{prefix}_importeIva"] = sec.get("importeIva")
+            result[f"{prefix}_operacionConIva"] = sec.get("operacionConIva")
+            result[f"{prefix}_totalPesoNeto"] = sec.get("totalPesoNeto")
+            result[f"{prefix}_totalDeduccion"] = sec.get("totalDeduccion")
+            result[f"{prefix}_totalRetencion"] = sec.get("totalRetencion")
+            result[f"{prefix}_totalRetencionAfip"] = sec.get("totalRetencionAfip")
+            result[f"{prefix}_totalOtrasRetenciones"] = sec.get("totalOtrasRetenciones")
+            result[f"{prefix}_totalNetoAPagar"] = sec.get("totalNetoAPagar")
+            result[f"{prefix}_totalPagoSegunCondicion"] = sec.get("totalPagoSegunCondicion")
+
+            # Deducciones y retenciones por lado
+            raw_deds_wrap = sec.get("deducciones", {})
+            if isinstance(raw_deds_wrap, dict):
+                raw_deds = raw_deds_wrap.get("deduccionReturn", [])
+            elif isinstance(raw_deds_wrap, list):
+                raw_deds = raw_deds_wrap
+            else:
+                raw_deds = []
+            if not isinstance(raw_deds, list):
+                raw_deds = [raw_deds] if raw_deds else []
+            result[f"{prefix}_deducciones"] = [self._enrich_deduccion(d) for d in raw_deds]
+
+            raw_rets_wrap = sec.get("retenciones", {})
+            if isinstance(raw_rets_wrap, dict):
+                raw_rets = raw_rets_wrap.get("retencionReturn", [])
+            elif isinstance(raw_rets_wrap, list):
+                raw_rets = raw_rets_wrap
+            else:
+                raw_rets = []
+            if not isinstance(raw_rets, list):
+                raw_rets = [raw_rets] if raw_rets else []
+            result[f"{prefix}_retenciones"] = [self._enrich_retencion(r) for r in raw_rets]
+
+        # Totales unificados
+        totales = ajuste.get("totalesUnificados", {}) or {}
+        if isinstance(totales, dict):
+            for key in (
+                "subTotalDebCred", "totalBaseDeducciones", "subTotalGeneral",
+                "ivaDeducciones", "iva105", "iva21", "retencionesGanancias",
+                "retencionesIVA", "importeOtrasRetenciones", "importeNeto",
+                "ivaRG4310_18", "pagoSCondicion",
+            ):
+                result[f"totales_{key}"] = totales.get(key)
+
+        return result
 
     def _resolve(self, tabla: str, codigo: Any) -> str:
         if codigo is None:

@@ -38,6 +38,15 @@ function EstadoBadge({ estado }: { estado: string | null }) {
   );
 }
 
+function TipoBadge({ tipo }: { tipo: string }) {
+  if (tipo === "AJUSTE") {
+    return (
+      <Badge variant="warning">Ajuste</Badge>
+    );
+  }
+  return null;
+}
+
 export function CoesListPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -127,6 +136,7 @@ export function CoesListPage() {
               <TableHeader>
                 <TableRow>
                   <TableCell header>COE</TableCell>
+                  <TableCell header>Tipo</TableCell>
                   <TableCell header>Cliente</TableCell>
                   <TableCell header>Fecha</TableCell>
                   <TableCell header>Estado</TableCell>
@@ -139,6 +149,10 @@ export function CoesListPage() {
                   return (
                     <TableRow key={coe.id}>
                       <TableCell className="font-mono">{coe.coe ?? "-"}</TableCell>
+                      <TableCell>
+                        <TipoBadge tipo={coe.tipo_documento} />
+                        {coe.tipo_documento === "LPG" ? <span className="text-slate-400 text-sm">Liquidacion</span> : null}
+                      </TableCell>
                       <TableCell>{client?.empresa ?? `ID: ${coe.taxpayer_id}`}</TableCell>
                       <TableCell className="text-slate-600">
 {formatDateOnly(coe.created_at)}
