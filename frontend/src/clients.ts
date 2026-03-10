@@ -1,3 +1,5 @@
+import { fetchWithAuth } from "./api/client";
+
 export type ClientEnvironment = "homologacion" | "produccion";
 
 export interface Client {
@@ -214,7 +216,7 @@ async function readResponseBody(res: Response): Promise<unknown> {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
+  const res = await fetchWithAuth(path, init);
   const payload = await readResponseBody(res);
 
   if (!res.ok) {
@@ -522,8 +524,8 @@ export async function downloadClientCoesExport(
   if (input.fechaDesde) params.set("fecha_desde", input.fechaDesde);
   if (input.fechaHasta) params.set("fecha_hasta", input.fechaHasta);
 
-  const res = await fetch(
-    `${API_BASE}/clients/${input.clientId}/coes/export?${params.toString()}`,
+  const res = await fetchWithAuth(
+    `/clients/${input.clientId}/coes/export?${params.toString()}`,
     {
       method: "GET",
     }
