@@ -339,6 +339,151 @@ function DatosLimpiosSection({ rawData, datosLimpios }: DatosLimpiosProps) {
   );
 }
 
+function AjusteLadoSection({ data, title }: { data: Record<string, unknown>; title: string }) {
+  const deducciones = (data["deducciones"] as Deduccion[]) ?? [];
+  const retenciones = (data["retenciones"] as Retencion[]) ?? [];
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-md font-bold text-slate-800">{title}</h4>
+      <div className="border border-slate-300 rounded">
+        <SectionHeader title="OPERACION" />
+        <div className="p-3 space-y-1">
+          <DataRow label="Fecha Liquidación" value={formatDate(data["fechaLiquidacion"])} />
+          <DataRow label="Precio Operación" value={formatCurrency(data["precioOperacion"])} mono />
+          <DataRow label="Subtotal" value={formatCurrency(data["subTotal"])} mono />
+          <DataRow label="Importe IVA" value={formatCurrency(data["importeIva"])} mono />
+          <DataRow label="Operación c/IVA" value={formatCurrency(data["operacionConIva"])} mono />
+          <DataRow label="Total Peso Neto" value={formatNumber(data["totalPesoNeto"], 0)} mono />
+        </div>
+      </div>
+      {deducciones.length > 0 && (
+        <div className="border border-slate-300 rounded">
+          <SectionHeader title="DEDUCCIONES" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Concepto</th>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Detalle</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Importe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deducciones.map((ded, idx) => (
+                  <tr key={idx} className="border-t border-slate-200">
+                    <td className="px-3 py-2">{ded.descConcepto ?? ded.codigoConcepto ?? "-"}</td>
+                    <td className="px-3 py-2">{ded.detalleAclaratorio ?? "-"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCurrency(ded.importeDeduccion)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {retenciones.length > 0 && (
+        <div className="border border-slate-300 rounded">
+          <SectionHeader title="RETENCIONES" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Concepto</th>
+                  <th className="px-3 py-2 text-left text-slate-600 font-medium">Detalle</th>
+                  <th className="px-3 py-2 text-right text-slate-600 font-medium">Importe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {retenciones.map((ret, idx) => (
+                  <tr key={idx} className="border-t border-slate-200">
+                    <td className="px-3 py-2">{ret.descConcepto ?? ret.codigoConcepto ?? "-"}</td>
+                    <td className="px-3 py-2">{ret.detalleAclaratorio ?? "-"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{formatCurrency(ret.importeRetencion)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <div className="p-3 space-y-1">
+        <DataRow label="Total Deducciones" value={formatCurrency(data["totalDeduccion"])} mono />
+        <DataRow label="Total Retenciones" value={formatCurrency(data["totalRetencion"])} mono />
+        <DataRow label="Total Retenciones AFIP" value={formatCurrency(data["totalRetencionAfip"])} mono />
+        <DataRow label="Neto a Pagar" value={formatCurrency(data["totalNetoAPagar"])} mono />
+        <DataRow label="Pago según condiciones" value={formatCurrency(data["totalPagoSegunCondicion"])} mono />
+      </div>
+    </div>
+  );
+}
+
+function AjusteLimpiosSection({ data }: { data: Record<string, unknown> }) {
+  // Extraer datos de crédito y débito
+  const credito: Record<string, unknown> = {};
+  const debito: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (key.startsWith("credito_")) credito[key.replace("credito_", "")] = val;
+    if (key.startsWith("debito_")) debito[key.replace("debito_", "")] = val;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-300 p-4 rounded-lg">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">AJUSTE DE LIQUIDACION</h3>
+            <p className="text-sm text-slate-600 mt-1">
+              Tipo de operación: {descOrCode(data, "descTipoOperacion", "codTipoOperacion", "Desconocido")}
+            </p>
+            <p className="text-sm font-mono text-slate-700">
+              C.O.E.: {String(data["coe"] ?? "-")}
+            </p>
+            {data["coeAjustado"] != null && Number(data["coeAjustado"]) !== 0 && (
+              <p className="text-sm font-mono text-slate-700">
+                COE Ajustado: {String(data["coeAjustado"])}
+              </p>
+            )}
+          </div>
+          <Badge variant="warning">Ajuste</Badge>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AjusteLadoSection data={credito} title="CREDITO" />
+        <AjusteLadoSection data={debito} title="DEBITO" />
+      </div>
+
+      {/* Totales Unificados */}
+      <div className="border border-slate-300 rounded">
+        <SectionHeader title="TOTALES UNIFICADOS" />
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4">
+          <div className="space-y-2">
+            <DataRow label="Subtotal Déb/Créd" value={formatCurrency(data["totales_subTotalDebCred"])} mono />
+            <DataRow label="Base Deducciones" value={formatCurrency(data["totales_totalBaseDeducciones"])} mono />
+            <DataRow label="Subtotal General" value={formatCurrency(data["totales_subTotalGeneral"])} mono />
+            <DataRow label="IVA Deducciones" value={formatCurrency(data["totales_ivaDeducciones"])} mono />
+          </div>
+          <div className="space-y-2">
+            <DataRow label="IVA 10.5%" value={formatCurrency(data["totales_iva105"])} mono />
+            <DataRow label="IVA 21%" value={formatCurrency(data["totales_iva21"])} mono />
+            <DataRow label="Ret. Ganancias" value={formatCurrency(data["totales_retencionesGanancias"])} mono />
+            <DataRow label="Ret. IVA" value={formatCurrency(data["totales_retencionesIVA"])} mono />
+          </div>
+          <div className="space-y-2">
+            <DataRow label="Otras Retenciones" value={formatCurrency(data["totales_importeOtrasRetenciones"])} mono />
+            <DataRow label="IVA RG 4310/18" value={formatCurrency(data["totales_ivaRG4310_18"])} mono />
+            <div className="bg-green-50 border border-green-200 rounded p-2 mt-2">
+              <DataRow label="Importe Neto" value={formatCurrency(data["totales_importeNeto"])} mono />
+              <DataRow label="Pago según condiciones" value={formatCurrency(data["totales_pagoSCondicion"])} mono />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CoeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -397,7 +542,13 @@ export function CoeDetailPage() {
             </div>
             <div>
               <dt className="text-sm font-medium text-slate-500">Tipo Documento</dt>
-              <dd className="mt-1 text-slate-900">{coe.tipo_documento}</dd>
+              <dd className="mt-1 text-slate-900">
+                {coe.tipo_documento === "AJUSTE" ? (
+                  <Badge variant="warning">Ajuste</Badge>
+                ) : (
+                  coe.tipo_documento
+                )}
+              </dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-slate-500">Punto Emisión</dt>
@@ -458,7 +609,11 @@ export function CoeDetailPage() {
             </button>
             {datosExpanded && (
               <div className="px-4 pb-4">
-                <DatosLimpiosSection rawData={coe.raw_data} datosLimpios={coe.datos_limpios} />
+                {coe.tipo_documento === "AJUSTE" && coe.datos_limpios ? (
+                  <AjusteLimpiosSection data={coe.datos_limpios} />
+                ) : (
+                  <DatosLimpiosSection rawData={coe.raw_data} datosLimpios={coe.datos_limpios} />
+                )}
               </div>
             )}
           </Card>
