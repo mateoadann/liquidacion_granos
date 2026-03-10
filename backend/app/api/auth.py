@@ -11,8 +11,9 @@ from ..services.auth_service import (
     decode_token,
     AuthError,
     ACCESS_TOKEN_EXPIRES_SECONDS,
+    REFRESH_TOKEN_EXPIRES_SECONDS,
 )
-from ..services.token_blacklist import add_to_blacklist
+from ..services.token_blacklist import add_to_blacklist, is_blacklisted
 from ..middleware import require_auth, get_current_user
 from ..time_utils import now_cordoba_naive
 from ..extensions import limiter
@@ -61,13 +62,26 @@ def login():
 @auth_bp.post("/auth/logout")
 @require_auth
 def logout():
+    # Blacklist access token
     token = request.headers.get("Authorization", "")[7:]
     try:
         payload = decode_token(token)
         token_id = str(payload.get("iat", ""))
         add_to_blacklist(token_id, ttl_seconds=ACCESS_TOKEN_EXPIRES_SECONDS)
     except AuthError:
-        pass  # Token ya inválido, ignorar
+        pass
+
+    # Blacklist refresh token si fue enviado
+    data = request.get_json(silent=True) or {}
+    rt = data.get("refresh_token", "")
+    if rt:
+        try:
+            rt_payload = decode_token(rt)
+            if rt_payload.get("type") == "refresh":
+                rt_id = str(rt_payload.get("iat", ""))
+                add_to_blacklist(rt_id, ttl_seconds=REFRESH_TOKEN_EXPIRES_SECONDS)
+        except AuthError:
+            pass
 
     return jsonify({"message": "Sesión cerrada"}), 200
 
@@ -98,6 +112,10 @@ def refresh():
 
     if payload.get("type") != "refresh":
         return jsonify({"error": "Tipo de token inválido"}), 400
+
+    rt_id = str(payload.get("iat", ""))
+    if is_blacklisted(rt_id):
+        return jsonify({"error": "Sesión revocada"}), 401
 
     user = db.session.get(User, payload["user_id"])
     if not user or not user.activo:
