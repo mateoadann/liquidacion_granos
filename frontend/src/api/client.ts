@@ -25,8 +25,8 @@ export async function fetchWithAuth(
     headers,
   });
 
-  // Si 401, limpiar auth y redirigir a login
-  if (res.status === 401) {
+  // Si 401 y no estamos restaurando sesión, limpiar auth y redirigir
+  if (res.status === 401 && !useAuthStore.getState().isRestoring) {
     useAuthStore.getState().clearAuth();
     window.location.href = "/login";
   }

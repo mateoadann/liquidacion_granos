@@ -19,11 +19,13 @@ interface AuthState {
   restoreSession: () => Promise<void>;
 }
 
+let restorePromise: Promise<void> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   accessToken: null,
   user: null,
   isAuthenticated: false,
-  isRestoring: false,
+  isRestoring: !!sessionStorage.getItem("refresh_token"),
 
   setAuth: (token, user) =>
     set({
@@ -47,20 +49,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }),
 
   restoreSession: async () => {
-    if (get().isAuthenticated || get().isRestoring) return;
+    if (get().isAuthenticated) return;
+    if (restorePromise) return restorePromise;
 
     const stored = sessionStorage.getItem("refresh_token");
-    if (!stored) return;
+    if (!stored) {
+      set({ isRestoring: false });
+      return;
+    }
 
     set({ isRestoring: true });
-    try {
-      const { access_token } = await apiRefresh(stored);
-      const user = await getMe(access_token);
-      set({ accessToken: access_token, user, isAuthenticated: true });
-    } catch {
-      sessionStorage.removeItem("refresh_token");
-    } finally {
-      set({ isRestoring: false });
-    }
+    restorePromise = (async () => {
+      try {
+        const { access_token } = await apiRefresh(stored);
+        const user = await getMe(access_token);
+        set({ accessToken: access_token, user, isAuthenticated: true });
+      } catch {
+        sessionStorage.removeItem("refresh_token");
+      } finally {
+        set({ isRestoring: false });
+        restorePromise = null;
+      }
+    })();
+    return restorePromise;
   },
 }));
