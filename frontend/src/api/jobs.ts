@@ -8,6 +8,7 @@ export interface Job {
   payload: Record<string, unknown>;
   result: Record<string, unknown> | null;
   error_message: string | null;
+  coe_count: number;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

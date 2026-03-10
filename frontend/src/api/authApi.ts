@@ -36,11 +36,14 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
 }
 
 export async function logout(accessToken: string): Promise<void> {
+  const rt = sessionStorage.getItem("refresh_token");
   await fetch(`${API_BASE}/auth/logout`, {
     method: "POST",
     headers: {
+      "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     },
+    body: JSON.stringify({ refresh_token: rt ?? undefined }),
   });
 }
 

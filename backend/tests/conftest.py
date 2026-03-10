@@ -17,6 +17,7 @@ if str(ROOT_DIR) not in sys.path:
 from app import create_app
 from app.extensions import db
 from app.time_utils import now_cordoba_aware
+from app.services.auth_service import create_access_token
 from app.services.token_blacklist import _reset_for_testing
 
 
@@ -49,6 +50,20 @@ def app(tmp_path):
 @pytest.fixture()
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture()
+def auth_headers():
+    """Headers con JWT de usuario autenticado (rol usuario)."""
+    token = create_access_token(user_id=999, username="testuser", rol="usuario")
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def admin_headers():
+    """Headers con JWT de usuario admin."""
+    token = create_access_token(user_id=1, username="admin", rol="admin")
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture()

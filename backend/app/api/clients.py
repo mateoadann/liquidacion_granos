@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
 from ..time_utils import now_cordoba_naive
+from ..middleware import require_auth
 from ..services import (
     CertificateValidationError,
     decrypt_secret,
@@ -229,6 +230,7 @@ def _build_export_filename(client: Taxpayer, ext: str) -> str:
 
 
 @clients_bp.get("/clients")
+@require_auth
 def list_clients():
     try:
         active = _parse_active_query(request.args.get("active"))
@@ -245,6 +247,7 @@ def list_clients():
 
 
 @clients_bp.post("/clients")
+@require_auth
 def create_client():
     payload = request.get_json(silent=True) or {}
 
@@ -292,12 +295,14 @@ def create_client():
 
 
 @clients_bp.get("/clients/<int:client_id>")
+@require_auth
 def get_client(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     return jsonify(_serialize_client(item))
 
 
 @clients_bp.patch("/clients/<int:client_id>")
+@require_auth
 def update_client(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     payload = request.get_json(silent=True) or {}
@@ -366,6 +371,7 @@ def update_client(client_id: int):
 
 
 @clients_bp.delete("/clients/<int:client_id>")
+@require_auth
 def delete_client(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     item.activo = False
@@ -375,6 +381,7 @@ def delete_client(client_id: int):
 
 
 @clients_bp.post("/clients/<int:client_id>/certificates")
+@require_auth
 def upload_client_certificates(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
 
@@ -409,6 +416,7 @@ def upload_client_certificates(client_id: int):
 
 
 @clients_bp.get("/clients/<int:client_id>/certificates/meta")
+@require_auth
 def get_certificates_meta(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     storage_meta = get_client_certificate_meta(item.id)
@@ -428,6 +436,7 @@ def get_certificates_meta(client_id: int):
 
 
 @clients_bp.delete("/clients/<int:client_id>/certificates")
+@require_auth
 def remove_client_certificates(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     delete_client_certificates(item.id)
@@ -444,6 +453,7 @@ def remove_client_certificates(client_id: int):
 
 
 @clients_bp.post("/clients/<int:client_id>/validate-config")
+@require_auth
 def validate_client_config(client_id: int):
     item = Taxpayer.query.get_or_404(client_id)
     storage_meta = get_client_certificate_meta(item.id)
@@ -494,6 +504,7 @@ def validate_client_config(client_id: int):
 
 
 @clients_bp.get("/clients/<int:client_id>/coes/export")
+@require_auth
 def export_client_coes(client_id: int):
     client = Taxpayer.query.get_or_404(client_id)
     fmt = (request.args.get("format") or "csv").strip().lower()

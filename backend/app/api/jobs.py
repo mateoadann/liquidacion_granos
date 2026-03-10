@@ -4,11 +4,21 @@ from flask import Blueprint, jsonify, request
 
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
+from ..middleware import require_auth
 from ..time_utils import now_cordoba_naive
 
 jobs_bp = Blueprint("jobs", __name__)
 
 ALLOWED_JOB_STATUS = {"pending", "running", "completed", "failed"}
+
+
+def _extract_coe_count(result: dict | None) -> int:
+    if not result or not isinstance(result, dict):
+        return 0
+    total = 0
+    for r in result.get("results", []):
+        total += r.get("total_coes_detectados", 0)
+    return total
 
 
 def _serialize_job(item: ExtractionJob) -> dict:
@@ -20,6 +30,7 @@ def _serialize_job(item: ExtractionJob) -> dict:
         "payload": item.payload,
         "result": item.result,
         "error_message": item.error_message,
+        "coe_count": _extract_coe_count(item.result),
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "started_at": item.started_at.isoformat() if item.started_at else None,
         "finished_at": item.finished_at.isoformat() if item.finished_at else None,
@@ -28,6 +39,7 @@ def _serialize_job(item: ExtractionJob) -> dict:
 
 
 @jobs_bp.get("/jobs")
+@require_auth
 def list_jobs():
     query = ExtractionJob.query.order_by(ExtractionJob.created_at.desc())
 
@@ -47,6 +59,7 @@ def list_jobs():
 
 
 @jobs_bp.post("/jobs")
+@require_auth
 def create_job():
     payload = request.get_json(silent=True) or {}
 
@@ -75,12 +88,14 @@ def create_job():
 
 
 @jobs_bp.get("/jobs/<int:job_id>")
+@require_auth
 def get_job(job_id: int):
     item = ExtractionJob.query.get_or_404(job_id)
     return jsonify(_serialize_job(item))
 
 
 @jobs_bp.patch("/jobs/<int:job_id>")
+@require_auth
 def update_job(job_id: int):
     item = ExtractionJob.query.get_or_404(job_id)
     payload = request.get_json(silent=True) or {}

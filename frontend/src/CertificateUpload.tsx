@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { Client } from "./clients";
+import { formatDateTime } from "./dateUtils";
 
 interface CertificateUploadProps {
   client: Client;
@@ -8,15 +9,6 @@ interface CertificateUploadProps {
   errorMessage: string | null;
   onUpload: (files: { certFile: File; keyFile: File }) => Promise<void> | void;
   onBack: () => void;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "-";
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  return parsed.toLocaleString("es-AR");
 }
 
 export default function CertificateUpload({
@@ -51,7 +43,7 @@ export default function CertificateUpload({
       <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
         <p>Certificado actual: {client.certFileName ?? "No cargado"}</p>
         <p>Key actual: {client.keyFileName ?? "No cargado"}</p>
-        <p>Fecha de carga: {formatDate(client.certUploadedAt)}</p>
+        <p>Fecha de carga: {formatDateTime(client.certUploadedAt)}</p>
       </div>
 
       <form onSubmit={submit} className="mt-4 space-y-4">

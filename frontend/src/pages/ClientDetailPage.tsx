@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { formatDateOnly } from "../dateUtils";
 import { PageHeader } from "../components/layout";
 import { Card, CardHeader, Badge, Button, Spinner, Alert } from "../components/ui";
 import { useClientQuery } from "../hooks/useClient";
@@ -102,7 +103,7 @@ export function ClientDetailPage() {
                     <Badge variant="success">Certificados válidos</Badge>
                     {client.certUploadedAt ? (
                       <p className="text-xs text-slate-500">
-                        Subido: {new Date(client.certUploadedAt).toLocaleDateString("es-AR")}
+                        Subido: {formatDateOnly(client.certUploadedAt)}
                       </p>
                     ) : null}
                   </div>

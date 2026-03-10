@@ -1,16 +1,6 @@
 import { Card, CardHeader, Badge, Spinner } from "../ui";
 import { useJobsQuery } from "../../hooks/useJobs";
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleString("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { formatDateTime } from "../../dateUtils";
 
 function JobStatusBadge({ status }: { status: string }) {
   const variants: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
@@ -36,7 +26,7 @@ export function RecentJobsPanel() {
     <Card padding="lg">
       <CardHeader
         title="Extracciones Recientes"
-        subtitle="Últimas 10 ejecuciones de Playwright"
+        subtitle="Últimas 10 ejecuciones de extracción."
       />
 
       {jobsQuery.isLoading ? (
@@ -55,6 +45,7 @@ export function RecentJobsPanel() {
                 <th className="text-left py-2 px-2 font-medium text-slate-600">ID</th>
                 <th className="text-left py-2 px-2 font-medium text-slate-600">Fecha</th>
                 <th className="text-left py-2 px-2 font-medium text-slate-600">Estado</th>
+                <th className="text-left py-2 px-2 font-medium text-slate-600">COEs</th>
                 <th className="text-left py-2 px-2 font-medium text-slate-600">Duración</th>
               </tr>
             </thead>
@@ -73,10 +64,13 @@ export function RecentJobsPanel() {
                   <tr key={job.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="py-2 px-2 text-slate-900">#{job.id}</td>
                     <td className="py-2 px-2 text-slate-600">
-                      {formatDate(job.created_at)}
+                      {formatDateTime(job.created_at)}
                     </td>
                     <td className="py-2 px-2">
                       <JobStatusBadge status={job.status} />
+                    </td>
+                    <td className="py-2 px-2 text-slate-600">
+                      {job.coe_count > 0 ? job.coe_count : "-"}
                     </td>
                     <td className="py-2 px-2 text-slate-600">
                       {duration !== null ? `${duration}s` : "-"}

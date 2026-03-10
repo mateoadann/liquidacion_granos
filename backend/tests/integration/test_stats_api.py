@@ -42,7 +42,7 @@ def _create_coe(*, taxpayer_id: int, coe: str) -> LpgDocument:
 
 
 class TestStatsEndpoint:
-    def test_stats_returns_counts(self, client):
+    def test_stats_returns_counts(self, client, auth_headers):
         t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa 1", activo=True)
         t2 = _create_taxpayer(cuit="20222222222", empresa="Empresa 2", activo=True)
         _create_taxpayer(cuit="20333333333", empresa="Empresa 3", activo=False)
@@ -55,7 +55,7 @@ class TestStatsEndpoint:
         _create_coe(taxpayer_id=t1.id, coe="123456790")
         _create_coe(taxpayer_id=t2.id, coe="123456791")
 
-        response = client.get("/api/stats")
+        response = client.get("/api/stats", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.get_json()
@@ -67,8 +67,8 @@ class TestStatsEndpoint:
         assert data["jobs_failed"] == 1
         assert data["coes_total"] == 3
 
-    def test_stats_empty_db(self, client):
-        response = client.get("/api/stats")
+    def test_stats_empty_db(self, client, auth_headers):
+        response = client.get("/api/stats", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.get_json()
