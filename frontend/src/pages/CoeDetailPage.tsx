@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
 import { Card, CardHeader, Badge, Button, Spinner, Alert } from "../components/ui";
 import { useCoeQuery } from "../hooks/useCoes";
+import { usePersonaQuery } from "../hooks/usePadron";
 import { formatDateOnly, formatDateTime } from "../dateUtils";
 
 function EstadoBadge({ estado }: { estado: string | null }) {
@@ -99,6 +100,34 @@ function DataRow({ label, value, mono = false }: { label: string; value: string;
   );
 }
 
+function PersonaCard({ title, cuit }: { title: string; cuit: string | null }) {
+  const cuitStr = cuit ? String(cuit) : null;
+  const query = usePersonaQuery(cuitStr);
+
+  return (
+    <div className="border border-slate-300 rounded">
+      <SectionHeader title={title} />
+      <div className="p-3 space-y-1">
+        <DataRow label="C.U.I.T." value={cuitStr ?? "-"} mono />
+        {query.isLoading && (
+          <p className="text-xs text-slate-400 py-1">Consultando padrón...</p>
+        )}
+        {query.isError && (
+          <p className="text-xs text-red-400 py-1">No se pudo consultar padrón</p>
+        )}
+        {query.data && (
+          <>
+            <DataRow label="Razón Social" value={query.data.razonSocial || "-"} />
+            <DataRow label="Domicilio" value={query.data.domicilio || "-"} />
+            <DataRow label="Localidad" value={[query.data.localidad, query.data.provincia].filter(Boolean).join(", ") || "-"} />
+            <DataRow label="I.V.A." value={query.data.condicionIva || "-"} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface DatosLimpiosProps {
   rawData: Record<string, unknown>;
   datosLimpios: Record<string, unknown> | null;
@@ -136,18 +165,8 @@ function DatosLimpiosSection({ rawData, datosLimpios }: DatosLimpiosProps) {
 
         {/* Comprador y Vendedor */}
         <div className="grid grid-cols-2 gap-4 mt-4">
-          <div className="border border-slate-300 rounded">
-            <SectionHeader title="COMPRADOR" />
-            <div className="p-3">
-              <DataRow label="C.U.I.T." value={String(data["cuitComprador"] ?? "-")} mono />
-            </div>
-          </div>
-          <div className="border border-slate-300 rounded">
-            <SectionHeader title="VENDEDOR" />
-            <div className="p-3">
-              <DataRow label="C.U.I.T." value={String(data["cuitVendedor"] ?? "-")} mono />
-            </div>
-          </div>
+          <PersonaCard title="COMPRADOR" cuit={data["cuitComprador"] as string | null} />
+          <PersonaCard title="VENDEDOR" cuit={data["cuitVendedor"] as string | null} />
         </div>
       </div>
 

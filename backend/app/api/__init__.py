@@ -10,6 +10,7 @@ from .operations import operations_bp
 from .playwright import playwright_bp
 from .stats import stats_bp
 from .taxpayers import taxpayers_bp
+from .padron import padron_bp
 from .users import users_bp
 from .wslpg_mvp import wslpg_mvp_bp
 
@@ -26,4 +27,5 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(stats_bp, url_prefix="/api")
     app.register_blueprint(wslpg_mvp_bp, url_prefix="/api")
     app.register_blueprint(coes_bp, url_prefix="/api")
+    app.register_blueprint(padron_bp, url_prefix="/api")
     app.register_blueprint(users_bp, url_prefix="/api")

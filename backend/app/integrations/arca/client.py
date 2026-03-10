@@ -54,8 +54,13 @@ def _default_wsdl_for(service_name: str, environment: str) -> str | None:
         return None
 
     env_hom = environment != "produccion"
-    if service_name == "wslpg":
-        return getattr(settings, "WSDL_LPG_HOM" if env_hom else "WSDL_LPG_PROD", None)
+    wsdl_map = {
+        "wslpg": ("WSDL_LPG_HOM", "WSDL_LPG_PROD"),
+        "ws_sr_constancia_inscripcion": ("WSDL_CONSTANCIA_HOM", "WSDL_CONSTANCIA_PROD"),
+    }
+    pair = wsdl_map.get(service_name)
+    if pair:
+        return getattr(settings, pair[0] if env_hom else pair[1], None)
     return None
 
 
@@ -462,6 +467,89 @@ class ArcaWslpgClient:
 
     def _serialize_response(self, value: Any) -> dict[str, Any]:
         return _safe_serialize(value)
+
+
+class ArcaConstanciaClient(ArcaWslpgClient):
+    """Cliente para ws_sr_constancia_inscripcion (padrón AFIP A5)."""
+
+    def __init__(self, config: ArcaDiscoveryConfig | None = None):
+        cfg = config or ArcaDiscoveryConfig.from_env()
+        cfg.service_name = "ws_sr_constancia_inscripcion"
+        if not cfg.wsdl_url or "wslpg" in (cfg.wsdl_url or ""):
+            cfg.wsdl_url = _default_wsdl_for("ws_sr_constancia_inscripcion", cfg.environment)
+        super().__init__(cfg)
+
+    def get_persona(self, cuit: int | str) -> dict[str, Any]:
+        """Consulta datos de un contribuyente por CUIT usando getPersona_v2."""
+        payload = {
+            "token": self.get_auth_payload()["token"],
+            "sign": self.get_auth_payload()["sign"],
+            "cuitRepresentada": int(self.config.cuit_representada or 0),
+            "idPersona": int(cuit),
+        }
+        response = self.send_request("getPersona_v2", payload)
+        return self._serialize_response(response)
+
+    def extract_persona_info(self, cuit: int | str) -> dict[str, Any]:
+        """Consulta y extrae los campos relevantes del contribuyente."""
+        raw = self.get_persona(cuit)
+        data = raw.get("data", {}) if isinstance(raw, dict) else {}
+
+        persona = data.get("personaReturn", data)
+        if not isinstance(persona, dict):
+            persona = {}
+
+        datos_gen = persona.get("datosGenerales", {}) or {}
+        domicilio = datos_gen.get("domicilioFiscal", {}) or {}
+
+        # Razón social o nombre+apellido
+        razon_social = datos_gen.get("razonSocial") or ""
+        if not razon_social:
+            nombre = datos_gen.get("nombre", "") or ""
+            apellido = datos_gen.get("apellido", "") or ""
+            razon_social = f"{apellido} {nombre}".strip()
+
+        # IVA: buscar en datosRegimenGeneral.impuesto o datosMonotributo.impuesto
+        condicion_iva = self._extract_condicion_iva(persona)
+
+        return {
+            "cuit": str(datos_gen.get("idPersona", cuit)),
+            "razonSocial": razon_social,
+            "domicilio": domicilio.get("direccion", ""),
+            "localidad": domicilio.get("localidad", ""),
+            "provincia": domicilio.get("descripcionProvincia", ""),
+            "codigoPostal": domicilio.get("codPostal", ""),
+            "condicionIva": condicion_iva,
+            "tipoPersona": datos_gen.get("tipoPersona", ""),
+            "estadoClave": datos_gen.get("estadoClave", ""),
+        }
+
+    def _extract_condicion_iva(self, persona: dict) -> str:
+        """Extrae la condición frente al IVA del contribuyente."""
+        # Si tiene datosRegimenGeneral con IVA activo → Responsable Inscripto
+        regimen = persona.get("datosRegimenGeneral", {}) or {}
+        impuestos = regimen.get("impuesto", [])
+        if isinstance(impuestos, dict):
+            impuestos = [impuestos]
+        for imp in impuestos:
+            if not isinstance(imp, dict):
+                continue
+            if str(imp.get("idImpuesto")) == "30" and imp.get("estadoImpuesto") == "AC":
+                return "Responsable Inscripto"
+
+        # Si es monotributista
+        mono = persona.get("datosMonotributo", {}) or {}
+        if mono.get("categoriaMonotributo") or mono.get("actividadMonotributista"):
+            return "Monotributo"
+
+        # IVA inactivo u otra situación
+        for imp in impuestos:
+            if not isinstance(imp, dict):
+                continue
+            if str(imp.get("idImpuesto")) == "30":
+                return "Exento"
+
+        return ""
 
 
 def _safe_serialize(value: Any) -> dict[str, Any]:
