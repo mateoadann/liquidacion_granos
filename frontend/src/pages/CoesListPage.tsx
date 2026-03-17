@@ -38,6 +38,7 @@ function EstadoBadge({ estado }: { estado: string | null }) {
   );
 }
 
+
 export function CoesListPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -127,6 +128,7 @@ export function CoesListPage() {
               <TableHeader>
                 <TableRow>
                   <TableCell header>COE</TableCell>
+                  <TableCell header>Tipo</TableCell>
                   <TableCell header>Cliente</TableCell>
                   <TableCell header>Fecha</TableCell>
                   <TableCell header>Estado</TableCell>
@@ -139,6 +141,13 @@ export function CoesListPage() {
                   return (
                     <TableRow key={coe.id}>
                       <TableCell className="font-mono">{coe.coe ?? "-"}</TableCell>
+                      <TableCell>
+                        {coe.tipo_documento === "AJUSTE" ? (
+                          <Badge variant="warning">Ajuste</Badge>
+                        ) : (
+                          <Badge variant="default">Liquidacion</Badge>
+                        )}
+                      </TableCell>
                       <TableCell>{client?.empresa ?? `ID: ${coe.taxpayer_id}`}</TableCell>
                       <TableCell className="text-slate-600">
 {formatDateOnly(coe.created_at)}

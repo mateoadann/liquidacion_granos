@@ -290,13 +290,22 @@ class LpgPlaywrightPipelineService:
             )
             try:
                 ws_result = ws_client.call_liquidacion_x_coe(int(coe), pdf="N")
-                self._save_lpg_document(taxpayer.id, coe, ws_result)
+                tipo_doc = "LPG"
+                if self._is_ajuste_error(ws_result):
+                    logger.info(
+                        "COE_IS_AJUSTE | taxpayer_id=%s coe=%s retrying with ajusteXCoeConsultar",
+                        taxpayer.id, coe,
+                    )
+                    ws_result = ws_client.call_ajuste_x_coe(int(coe), pdf="N")
+                    tipo_doc = "AJUSTE"
+                self._save_lpg_document(taxpayer.id, coe, ws_result, tipo_documento=tipo_doc)
                 base.total_procesados_ok += 1
                 logger.info(
-                    "COE_PROCESS_WS_OK | taxpayer_id=%s empresa=%s coe=%s",
+                    "COE_PROCESS_WS_OK | taxpayer_id=%s empresa=%s coe=%s tipo=%s",
                     taxpayer.id,
                     taxpayer.empresa,
                     coe,
+                    tipo_doc,
                 )
             except Exception as exc:
                 db.session.rollback()
@@ -367,11 +376,24 @@ class LpgPlaywrightPipelineService:
             is not None
         )
 
-    def _save_lpg_document(self, taxpayer_id: int, coe: str, ws_result: dict[str, Any]) -> None:
+    def _is_ajuste_error(self, ws_result: dict[str, Any]) -> bool:
+        """Detecta si la respuesta WSLPG contiene error 1861 (COE es un ajuste)."""
+        data = ws_result.get("data", {}) if isinstance(ws_result, dict) else {}
+        errores = data.get("errores", {}) if isinstance(data, dict) else {}
+        error_list = errores.get("error", []) if isinstance(errores, dict) else []
+        if isinstance(error_list, dict):
+            error_list = [error_list]
+        return any(str(e.get("codigo")) == "1861" for e in error_list if isinstance(e, dict))
+
+    def _save_lpg_document(
+        self, taxpayer_id: int, coe: str, ws_result: dict[str, Any],
+        tipo_documento: str = "LPG",
+    ) -> None:
         data = ws_result.get("data") if isinstance(ws_result, dict) else ws_result
         document = LpgDocument()
         document.taxpayer_id = taxpayer_id
         document.coe = coe
+        document.tipo_documento = tipo_documento
         document.pto_emision = self._to_int(self._find_key(data, {"ptoEmision", "pto_emision"}))
         document.nro_orden = self._to_int(self._find_key(data, {"nroOrden", "nro_orden"}))
         document.estado = self._to_str(self._find_key(data, {"estado", "estadoLiquidacion"}))
