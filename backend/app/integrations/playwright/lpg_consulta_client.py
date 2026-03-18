@@ -464,11 +464,21 @@ class ArcaLpgPlaywrightClient:
         search.click()
         search.fill("")
         search.type("liquidacion primaria de granos", delay=type_delay_ms)
-        search.press("Enter")
         logger.info(
-            "PLAYWRIGHT_SEARCH_SERVICE_TYPED | empresa=%s query=liquidacion primaria de granos",
+            "PLAYWRIGHT_SEARCH_SERVICE_TYPED | empresa=%s query=Liquidación primaria de granos",
             empresa,
         )
+
+        # El buscador de AFIP muestra un dropdown de sugerencias al tipear.
+        # Hacer click en la primera sugerencia que coincida es más robusto que presionar Enter,
+        # ya que Enter puede disparar una navegación en lugar de seleccionar la sugerencia.
+        clicked = self._click_dropdown_suggestion(login_page, timeout_ms, empresa)
+        if not clicked:
+            logger.warning(
+                "PLAYWRIGHT_SEARCH_DROPDOWN_FALLBACK | empresa=%s action=press_enter",
+                empresa,
+            )
+            search.press("Enter")
 
         service_link, link_text = self._wait_for_lpg_service_link(login_page, timeout_ms)
         logger.info(
@@ -507,6 +517,40 @@ class ArcaLpgPlaywrightClient:
         service_page = self._open_service_popup(login_page, exact_link, timeout_ms, empresa)
         self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
         return service_page
+
+    def _click_dropdown_suggestion(self, login_page: Page, timeout_ms: int, empresa: str) -> bool:
+        """Espera el dropdown de sugerencias del buscador AFIP y hace click en la sugerencia LPG.
+
+        El buscador muestra sugerencias como ítems de lista (li/div/option) mientras se tipea.
+        Hace click en la primera sugerencia que contenga 'Liquidación primaria de granos'.
+        Retorna True si se hizo click, False si no apareció ninguna sugerencia.
+        """
+        # Candidatos para los ítems del dropdown (el portal AFIP usa distintos elementos)
+        suggestion_locators = [
+            login_page.locator("li", has_text=re.compile(r"Liquidaci[oó]n\s+primaria\s+de\s+granos", re.IGNORECASE)),
+            login_page.locator("[role='option']", has_text=re.compile(r"Liquidaci[oó]n\s+primaria\s+de\s+granos", re.IGNORECASE)),
+            login_page.locator("[role='listbox'] *", has_text=re.compile(r"Liquidaci[oó]n\s+primaria\s+de\s+granos", re.IGNORECASE)),
+            login_page.locator(".suggestion, .autocomplete-item, .ui-menu-item", has_text=re.compile(r"Liquidaci[oó]n", re.IGNORECASE)),
+        ]
+
+        deadline = time.monotonic() + min(timeout_ms / 1000, 10)
+        while time.monotonic() < deadline:
+            for locator in suggestion_locators:
+                try:
+                    if locator.count() > 0 and locator.first.is_visible():
+                        label = _normalize_text(locator.first.inner_text())
+                        locator.first.click()
+                        logger.info(
+                            "PLAYWRIGHT_SEARCH_DROPDOWN_CLICKED | empresa=%s suggestion=%s",
+                            empresa,
+                            label,
+                        )
+                        return True
+                except Exception:
+                    continue
+            login_page.wait_for_timeout(200)
+
+        return False
 
     def _wait_for_lpg_service_link(self, login_page: Page, timeout_ms: int) -> tuple[Locator, str]:
         deadline = time.monotonic() + (timeout_ms / 1000)
