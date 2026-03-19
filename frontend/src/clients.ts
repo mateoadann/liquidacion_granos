@@ -123,11 +123,8 @@ export interface PlaywrightPipelineJob {
   updatedAt: string | null;
 }
 
-export type CoesExportFormat = "csv" | "xlsx";
-
 export interface DownloadClientCoesInput {
   clientId: number;
-  format: CoesExportFormat;
   fechaDesde?: string;
   fechaHasta?: string;
 }
@@ -520,16 +517,13 @@ export async function downloadClientCoesExport(
   input: DownloadClientCoesInput
 ): Promise<DownloadFileResult> {
   const params = new URLSearchParams();
-  params.set("format", input.format);
   if (input.fechaDesde) params.set("fecha_desde", input.fechaDesde);
   if (input.fechaHasta) params.set("fecha_hasta", input.fechaHasta);
 
-  const res = await fetchWithAuth(
-    `/clients/${input.clientId}/coes/export?${params.toString()}`,
-    {
-      method: "GET",
-    }
-  );
+  const qs = params.toString();
+  const url = `/clients/${input.clientId}/coes/export${qs ? `?${qs}` : ""}`;
+
+  const res = await fetchWithAuth(url, { method: "GET" });
 
   if (!res.ok) {
     const payload = await readResponseBody(res);
@@ -537,7 +531,7 @@ export async function downloadClientCoesExport(
   }
 
   const blob = await res.blob();
-  const fallbackName = `coes_cliente_${input.clientId}.${input.format}`;
+  const fallbackName = `coes_cliente_${input.clientId}.xlsx`;
   const fileName = resolveDownloadFileName(res.headers.get("content-disposition"), fallbackName);
   return { blob, fileName };
 }

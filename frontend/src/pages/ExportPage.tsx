@@ -3,14 +3,55 @@ import { PageHeader } from "../components/layout";
 import { Card, Button, Spinner, Alert } from "../components/ui";
 import { useClientsQuery, useDownloadClientCoesMutation } from "../useClients";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
+
+/**
+ * Return "YYYY-MM" for the previous calendar month relative to `now`.
+ */
+function getPreviousMonthValue(now = new Date()): string {
+  const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const month = now.getMonth() === 0 ? 12 : now.getMonth(); // 1-indexed
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/**
+ * Given "YYYY-MM", return { first: "YYYY-MM-01", last: "YYYY-MM-DD" }.
+ */
+function monthBounds(monthValue: string): { first: string; last: string } {
+  const [yearStr, monthStr] = monthValue.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const first = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const last = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { first, last };
+}
+
+/**
+ * Format "YYYY-MM-DD" as "DD/MM/AAAA" for display.
+ */
+function formatDateDisplay(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Format "YYYY-MM" as a human-friendly label, e.g. "Febrero 2026".
+ */
+function formatMonthLabel(monthValue: string): string {
+  const MONTH_NAMES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  ];
+  const [yearStr, monthStr] = monthValue.split("-");
+  const monthIndex = Number(monthStr) - 1;
+  return `${MONTH_NAMES[monthIndex] ?? monthStr} ${yearStr}`;
+}
 
 export function ExportPage() {
   const [step, setStep] = useState<Step>(1);
   const [selectedClients, setSelectedClients] = useState<number[]>([]);
-  const [fechaDesde, setFechaDesde] = useState("");
-  const [fechaHasta, setFechaHasta] = useState("");
-  const [formato, setFormato] = useState<"csv" | "xlsx">("csv");
+  const [selectedMonth, setSelectedMonth] = useState(getPreviousMonthValue);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState(false);
 
@@ -19,6 +60,8 @@ export function ExportPage() {
 
   const clients = clientsQuery.data ?? [];
   const activeClients = clients.filter((c) => c.activo);
+
+  const { first: fechaDesde, last: fechaHasta } = monthBounds(selectedMonth);
 
   function toggleClient(clientId: number) {
     setSelectedClients((prev) =>
@@ -43,16 +86,13 @@ export function ExportPage() {
     setExportSuccess(false);
 
     try {
-      // Exportar cada cliente seleccionado
       for (const clientId of selectedClients) {
         const result = await downloadMutation.mutateAsync({
           clientId,
-          fechaDesde: fechaDesde || undefined,
-          fechaHasta: fechaHasta || undefined,
-          format: formato,
+          fechaDesde,
+          fechaHasta,
         });
 
-        // Descargar el archivo al sistema del usuario
         const url = URL.createObjectURL(result.blob);
         const link = document.createElement("a");
         link.href = url;
@@ -71,9 +111,7 @@ export function ExportPage() {
   function resetWizard() {
     setStep(1);
     setSelectedClients([]);
-    setFechaDesde("");
-    setFechaHasta("");
-    setFormato("csv");
+    setSelectedMonth(getPreviousMonthValue());
     setExportError(null);
     setExportSuccess(false);
   }
@@ -82,12 +120,12 @@ export function ExportPage() {
     <div>
       <PageHeader
         title="Exportar COEs"
-        subtitle="Descarga COEs en formato CSV o Excel"
+        subtitle="Descarga COEs en formato Excel (.xlsx)"
       />
 
       {/* Progress Steps */}
       <div className="flex items-center justify-center mb-8">
-        {[1, 2, 3].map((s) => (
+        {[1, 2].map((s) => (
           <div key={s} className="flex items-center">
             <div
               className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${
@@ -98,7 +136,7 @@ export function ExportPage() {
             >
               {s}
             </div>
-            {s < 3 && (
+            {s < 2 && (
               <div
                 className={`w-20 h-1 ${
                   step > s ? "bg-green-600" : "bg-slate-200"
@@ -110,13 +148,30 @@ export function ExportPage() {
       </div>
 
       <Card className="max-w-2xl mx-auto">
-        {/* Step 1: Seleccionar clientes */}
+        {/* Step 1: Seleccionar clientes y mes */}
         {step === 1 && (
           <div className="p-6">
             <h3 className="text-lg font-medium text-slate-900 mb-4">
-              Paso 1: Seleccionar clientes
+              Paso 1: Seleccionar clientes y período
             </h3>
 
+            {/* Month selector */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Mes a exportar
+              </label>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm md:w-64"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Período: {formatDateDisplay(fechaDesde)} a {formatDateDisplay(fechaHasta)}
+              </p>
+            </div>
+
+            {/* Client list */}
             {clientsQuery.isLoading ? (
               <div className="flex justify-center py-8">
                 <Spinner size="lg" />
@@ -163,7 +218,7 @@ export function ExportPage() {
             <div className="flex justify-end mt-6">
               <Button
                 onClick={() => setStep(2)}
-                disabled={selectedClients.length === 0}
+                disabled={selectedClients.length === 0 || !selectedMonth}
               >
                 Siguiente
               </Button>
@@ -171,56 +226,11 @@ export function ExportPage() {
           </div>
         )}
 
-        {/* Step 2: Rango de fechas */}
+        {/* Step 2: Confirmación y exportación */}
         {step === 2 && (
           <div className="p-6">
             <h3 className="text-lg font-medium text-slate-900 mb-4">
-              Paso 2: Rango de fechas (opcional)
-            </h3>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Desde
-                </label>
-                <input
-                  type="date"
-                  value={fechaDesde}
-                  onChange={(e) => setFechaDesde(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Hasta
-                </label>
-                <input
-                  type="date"
-                  value={fechaHasta}
-                  onChange={(e) => setFechaHasta(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-            </div>
-
-            <p className="mt-4 text-sm text-slate-500">
-              Dejar vacío para exportar todas las fechas
-            </p>
-
-            <div className="flex justify-between mt-6">
-              <Button variant="secondary" onClick={() => setStep(1)}>
-                Anterior
-              </Button>
-              <Button onClick={() => setStep(3)}>Siguiente</Button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Formato y confirmación */}
-        {step === 3 && (
-          <div className="p-6">
-            <h3 className="text-lg font-medium text-slate-900 mb-4">
-              Paso 3: Formato y confirmación
+              Paso 2: Confirmación
             </h3>
 
             {exportSuccess ? (
@@ -236,36 +246,6 @@ export function ExportPage() {
               </div>
             ) : (
               <>
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Formato de exportación
-                  </label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="formato"
-                        value="csv"
-                        checked={formato === "csv"}
-                        onChange={() => setFormato("csv")}
-                        className="h-4 w-4 text-green-600"
-                      />
-                      <span className="text-sm">CSV</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="formato"
-                        value="xlsx"
-                        checked={formato === "xlsx"}
-                        onChange={() => setFormato("xlsx")}
-                        className="h-4 w-4 text-green-600"
-                      />
-                      <span className="text-sm">Excel (.xlsx)</span>
-                    </label>
-                  </div>
-                </div>
-
                 <div className="bg-slate-50 rounded-lg p-4 mb-6">
                   <h4 className="text-sm font-medium text-slate-900 mb-2">Resumen</h4>
                   <dl className="space-y-1 text-sm">
@@ -275,19 +255,15 @@ export function ExportPage() {
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-slate-500">Período:</dt>
-                      <dd className="text-slate-900">
-                        {fechaDesde && fechaHasta
-                          ? `${fechaDesde} a ${fechaHasta}`
-                          : fechaDesde
-                          ? `Desde ${fechaDesde}`
-                          : fechaHasta
-                          ? `Hasta ${fechaHasta}`
-                          : "Todas las fechas"}
-                      </dd>
+                      <dd className="text-slate-900">{formatMonthLabel(selectedMonth)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt className="text-slate-500">Fechas:</dt>
+                      <dd className="text-slate-900">{formatDateDisplay(fechaDesde)} a {formatDateDisplay(fechaHasta)}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-slate-500">Formato:</dt>
-                      <dd className="text-slate-900">{formato.toUpperCase()}</dd>
+                      <dd className="text-slate-900">Excel (.xlsx)</dd>
                     </div>
                   </dl>
                 </div>
@@ -299,7 +275,7 @@ export function ExportPage() {
                 )}
 
                 <div className="flex justify-between">
-                  <Button variant="secondary" onClick={() => setStep(2)}>
+                  <Button variant="secondary" onClick={() => setStep(1)}>
                     Anterior
                   </Button>
                   <Button

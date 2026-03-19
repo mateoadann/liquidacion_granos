@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import cast, Date
 
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
 from ..middleware import require_auth, require_admin
-from ..services import extract_fecha_liquidacion, fecha_liquidacion_expr
+from ..services import (
+    extract_fecha_liquidacion,
+    fecha_liquidacion_as_date,
+    fecha_liquidacion_expr,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +65,13 @@ def list_coes():
         query = query.filter(LpgDocument.estado == estado)
 
     fecha_liq_expr = fecha_liquidacion_expr()
+    fecha_liq_date = fecha_liquidacion_as_date(fecha_liq_expr)
 
     if fecha_desde:
-        query = query.filter(cast(fecha_liq_expr, Date) >= fecha_desde)
+        query = query.filter(fecha_liq_date >= fecha_desde)
 
     if fecha_hasta:
-        query = query.filter(cast(fecha_liq_expr, Date) <= fecha_hasta)
+        query = query.filter(fecha_liq_date <= fecha_hasta)
 
     if search:
         query = query.filter(LpgDocument.coe.ilike(f"%{search}%"))
@@ -76,7 +80,7 @@ def list_coes():
     pages = (total + per_page - 1) // per_page
 
     coes = (
-        query.order_by(cast(fecha_liq_expr, Date).desc(), LpgDocument.id.desc())
+        query.order_by(fecha_liq_date.desc(), LpgDocument.id.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()

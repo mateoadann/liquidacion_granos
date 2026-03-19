@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import csv
 import io
+import re
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, send_file
-from sqlalchemy import cast, Date
+from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
@@ -18,6 +18,7 @@ from ..services import (
     delete_client_certificates,
     encrypt_secret,
     extract_fecha_liquidacion,
+    fecha_liquidacion_as_date,
     fecha_liquidacion_expr,
     get_client_certificate_meta,
     is_placeholder_secret,
@@ -101,135 +102,72 @@ def _parse_export_date(value: str | None) -> datetime | None:
     raise ValueError(f"Fecha inválida: '{text}'. Use DD/MM/AAAA o AAAA-MM-DD.")
 
 
-def _safe_export_text(value: object) -> str:
-    text = "" if value is None else str(value)
-    if text.startswith(("=", "+", "-", "@")):
-        return f"'{text}"
-    return text
+def _map_codigo_comprobante(doc: LpgDocument) -> str:
+    """Map document type/operation code to Holistor comprobante code.
 
-
-def _build_export_row(doc: LpgDocument) -> dict:
-    """Construye una fila de exportación con todos los campos del COE."""
-    # Use datos_limpios if available, otherwise fall back to raw_data
+    - AJUSTE documents → "NL"
+    - codTipoOperacion 1 → "F1" (compra)
+    - codTipoOperacion 2 → "F2" (venta/consignación)
+    - Default → "F1"
+    """
+    if doc.tipo_documento == "AJUSTE":
+        return "NL"
     dl = doc.datos_limpios or {}
     raw = doc.raw_data or {}
     data = dl if dl else (raw.get("data", raw) if isinstance(raw, dict) else {})
+    cod = data.get("codTipoOperacion") if isinstance(data, dict) else None
+    if str(cod) == "2":
+        return "F2"
+    return "F1"
 
-    # For deducciones/retenciones
-    deducciones = data.get("deducciones", [])
-    if not isinstance(deducciones, list):
-        deducciones = []
-    retenciones = data.get("retenciones", [])
-    if not isinstance(retenciones, list):
-        retenciones = []
-    ded = deducciones[0] if deducciones else {}
-    ret = retenciones[0] if retenciones else {}
 
-    def safe(val):
-        return _safe_export_text(val) if val is not None else ""
+def _format_fecha_emision(fecha_str: str | None) -> str:
+    """Convert 'YYYY-MM-DD' to 'ddmmyyyy'. Returns '' for None/invalid."""
+    if not fecha_str:
+        return ""
+    try:
+        dt = datetime.strptime(str(fecha_str).strip(), "%Y-%m-%d")
+        return dt.strftime("%d%m%Y")
+    except ValueError:
+        return ""
 
-    def num(val):
-        return str(val) if val is not None else ""
 
+def _build_rpa_row(
+    doc: LpgDocument, empresa: str, mes: str, anio: str
+) -> dict:
+    """Build a single row for the RPA/Holistor export XLSX."""
+    coe = doc.coe or ""
+    tipo_pto_vta = coe[:4] if len(coe) >= 4 else coe
+    nro_comprobante = coe[4:] if len(coe) > 4 else ""
+    fecha_emision = _format_fecha_emision(extract_fecha_liquidacion(doc))
     return {
-        # Document basics
-        "coe": safe(doc.coe),
-        "pto_emision": safe(doc.pto_emision),
-        "nro_orden": safe(doc.nro_orden),
-        "estado": safe(doc.estado),
-        "created_at": doc.created_at.isoformat() if doc.created_at else "",
-        # General
-        "codTipoOperacion": safe(data.get("codTipoOperacion")),
-        "descTipoOperacion": safe(data.get("descTipoOperacion")),
-        "fechaLiquidacion": safe(extract_fecha_liquidacion(doc)),
-        # Comprador/Vendedor
-        "cuitComprador": safe(data.get("cuitComprador")),
-        "cuitVendedor": safe(data.get("cuitVendedor")),
-        # Condiciones
-        "precioRefTn": num(data.get("precioRefTn")),
-        "codGradoRef": safe(data.get("codGradoRef")),
-        "descGradoRef": safe(data.get("descGradoRef")),
-        "codGrano": safe(data.get("codGrano")),
-        "descGrano": safe(data.get("descGrano")),
-        "precioFleteTn": num(data.get("precioFleteTn")),
-        "codPuerto": safe(data.get("codPuerto")),
-        "descPuerto": safe(data.get("descPuerto")),
-        # Mercaderia
-        "nroCertificadoDeposito": safe(data.get("nroCertificadoDeposito")),
-        "codGradoEnt": safe(data.get("codGradoEnt")),
-        "descGradoEnt": safe(data.get("descGradoEnt")),
-        "factorEnt": num(data.get("factorEnt")),
-        "contProteico": num(data.get("contProteico")),
-        "pesoNeto": num(data.get("pesoNeto")),
-        "codLocalidadProcedencia": safe(data.get("codLocalidadProcedencia")),
-        "codProvProcedencia": safe(data.get("codProvProcedencia")),
-        "descProvProcedencia": safe(data.get("descProvProcedencia")),
-        "descLocalidadProcedencia": safe(data.get("descLocalidadProcedencia")),
-        # Operacion
-        "totalPesoNeto": num(data.get("totalPesoNeto")),
-        "precioOperacion": num(data.get("precioOperacion")),
-        "subTotal": num(data.get("subTotal")),
-        "alicIvaOperacion": num(data.get("alicIvaOperacion")),
-        "importeIva": num(data.get("importeIva")),
-        "operacionConIva": num(data.get("operacionConIva")),
-        # Deduccion (primera)
-        "ded_codigoConcepto": safe(ded.get("codigoConcepto")),
-        "ded_descConcepto": safe(ded.get("descConcepto")),
-        "ded_detalleAclaratorio": safe(ded.get("detalleAclaratorio")),
-        "ded_baseCalculo": num(ded.get("baseCalculo")),
-        "ded_alicuotaIva": num(ded.get("alicuotaIva")),
-        "ded_importeIva": num(ded.get("importeIva")),
-        "ded_importeDeduccion": num(ded.get("importeDeduccion")),
-        # Retencion (primera)
-        "ret_codigoConcepto": safe(ret.get("codigoConcepto")),
-        "ret_descConcepto": safe(ret.get("descConcepto")),
-        "ret_detalleAclaratorio": safe(ret.get("detalleAclaratorio")),
-        "ret_nroCertificadoRetencion": safe(ret.get("nroCertificadoRetencion")),
-        "ret_importeCertificadoRetencion": num(ret.get("importeCertificadoRetencion")),
-        "ret_fechaCertificadoRetencion": safe(ret.get("fechaCertificadoRetencion")),
-        "ret_baseCalculo": num(ret.get("baseCalculo")),
-        "ret_alicuota": num(ret.get("alicuota")),
-        "ret_importeRetencion": num(ret.get("importeRetencion")),
-        # Totales
-        "totalRetencionAfip": num(data.get("totalRetencionAfip")),
-        "totalNetoAPagar": num(data.get("totalNetoAPagar")),
-        "totalPercepcion": num(data.get("totalPercepcion")),
-        "totalOtrasRetenciones": num(data.get("totalOtrasRetenciones")),
-        "totalIvaRg4310_18": num(data.get("totalIvaRg4310_18")),
-        "totalDeduccion": num(data.get("totalDeduccion")),
-        "totalPagoSegunCondicion": num(data.get("totalPagoSegunCondicion")),
+        "empresa": empresa,
+        "mes": mes,
+        "anio": anio,
+        "codigo_comprobante": _map_codigo_comprobante(doc),
+        "tipo_pto_vta": tipo_pto_vta,
+        "nro_comprobante": nro_comprobante,
+        "fecha_emision": fecha_emision,
     }
 
 
-# Campos para la exportación en orden
-EXPORT_FIELDNAMES = [
-    "coe", "pto_emision", "nro_orden", "estado", "created_at",
-    "codTipoOperacion", "descTipoOperacion", "fechaLiquidacion",
-    "cuitComprador", "cuitVendedor",
-    "precioRefTn", "codGradoRef", "descGradoRef", "codGrano", "descGrano",
-    "precioFleteTn", "codPuerto", "descPuerto",
-    "nroCertificadoDeposito", "codGradoEnt", "descGradoEnt", "factorEnt", "contProteico",
-    "pesoNeto", "codLocalidadProcedencia", "codProvProcedencia",
-    "descProvProcedencia", "descLocalidadProcedencia",
-    "totalPesoNeto", "precioOperacion", "subTotal", "alicIvaOperacion",
-    "importeIva", "operacionConIva",
-    "ded_codigoConcepto", "ded_descConcepto", "ded_detalleAclaratorio", "ded_baseCalculo",
-    "ded_alicuotaIva", "ded_importeIva", "ded_importeDeduccion",
-    "ret_codigoConcepto", "ret_descConcepto", "ret_detalleAclaratorio", "ret_nroCertificadoRetencion",
-    "ret_importeCertificadoRetencion", "ret_fechaCertificadoRetencion",
-    "ret_baseCalculo", "ret_alicuota", "ret_importeRetencion",
-    "totalRetencionAfip", "totalNetoAPagar", "totalPercepcion",
-    "totalOtrasRetenciones", "totalIvaRg4310_18", "totalDeduccion",
-    "totalPagoSegunCondicion",
+# Column order for the RPA export spreadsheet
+_RPA_FIELDNAMES = [
+    "empresa",
+    "mes",
+    "anio",
+    "codigo_comprobante",
+    "tipo_pto_vta",
+    "nro_comprobante",
+    "fecha_emision",
 ]
 
 
-def _build_export_filename(client: Taxpayer, ext: str) -> str:
-    company = "_".join((client.empresa or "cliente").split())
-    safe = "".join(ch for ch in company if ch.isalnum() or ch in {"_", "-"}).strip("_")
-    safe = safe or f"cliente_{client.id}"
-    timestamp = now_cordoba_naive().strftime("%Y%m%d_%H%M%S")
-    return f"coes_{safe}_{timestamp}.{ext}"
+def _sanitize_filename(text: str) -> str:
+    """Sanitize a string for safe use in a filename."""
+    safe = re.sub(r"[^\w\-]", "_", text.strip())
+    safe = re.sub(r"_+", "_", safe).strip("_")
+    return safe or "export"
 
 
 @clients_bp.get("/clients")
@@ -510,69 +448,83 @@ def validate_client_config(client_id: int):
 @require_auth
 def export_client_coes(client_id: int):
     client = Taxpayer.query.get_or_404(client_id)
-    fmt = (request.args.get("format") or "csv").strip().lower()
-    if fmt not in {"csv", "xlsx"}:
-        return _error("format inválido. Valores permitidos: csv, xlsx.", 400)
 
+    # --- Parse and validate date range ---
     try:
         fecha_desde = _parse_export_date(request.args.get("fecha_desde"))
         fecha_hasta = _parse_export_date(request.args.get("fecha_hasta"))
     except ValueError as exc:
         return _error(str(exc), 400)
 
+    if fecha_desde is None or fecha_hasta is None:
+        return _error("fecha_desde and fecha_hasta are required", 400)
+
+    # Same calendar-month validation
+    if (
+        fecha_desde.month != fecha_hasta.month
+        or fecha_desde.year != fecha_hasta.year
+    ):
+        return _error(
+            "fecha_desde and fecha_hasta must be in the same calendar month",
+            400,
+        )
+
+    mes = str(fecha_desde.month)
+    anio = str(fecha_desde.year)
+
+    # --- Query documents ---
     query = LpgDocument.query.filter(LpgDocument.taxpayer_id == client.id)
 
     fecha_liq_expr = fecha_liquidacion_expr()
+    fecha_liq_date = fecha_liquidacion_as_date(fecha_liq_expr)
+    query = query.filter(fecha_liq_date >= fecha_desde.date())
+    query = query.filter(fecha_liq_date <= fecha_hasta.date())
 
-    if fecha_desde:
-        query = query.filter(cast(fecha_liq_expr, Date) >= fecha_desde.date())
-    if fecha_hasta:
-        query = query.filter(cast(fecha_liq_expr, Date) <= fecha_hasta.date())
+    documents = query.order_by(
+        fecha_liq_date.asc(), LpgDocument.id.asc()
+    ).all()
 
-    documents = query.order_by(cast(fecha_liq_expr, Date).asc(), LpgDocument.id.asc()).all()
+    # --- Build rows ---
+    rows = [
+        _build_rpa_row(doc, client.empresa or "", mes, anio)
+        for doc in documents
+    ]
 
-    rows = [_build_export_row(doc) for doc in documents]
-
-    if fmt == "csv":
-        csv_buffer = io.StringIO()
-        writer = csv.DictWriter(
-            csv_buffer,
-            fieldnames=EXPORT_FIELDNAMES,
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-
-        bytes_buffer = io.BytesIO(csv_buffer.getvalue().encode("utf-8-sig"))
-        bytes_buffer.seek(0)
-        return send_file(
-            bytes_buffer,
-            mimetype="text/csv",
-            as_attachment=True,
-            download_name=_build_export_filename(client, "csv"),
-        )
-
-    try:
-        from openpyxl import Workbook
-    except ModuleNotFoundError:
-        return _error(
-            "No se pudo generar XLSX porque falta dependencia openpyxl en backend.",
-            503,
-        )
-
+    # --- Generate XLSX with openpyxl ---
     workbook = Workbook()
-    sheet = workbook.create_sheet(title="COEs", index=0)
-    if "Sheet" in workbook.sheetnames:
-        del workbook["Sheet"]
-    sheet.append(EXPORT_FIELDNAMES)
-    for row in rows:
-        sheet.append([row[key] for key in EXPORT_FIELDNAMES])
+    sheet = workbook.active
+    sheet.title = "COEs"
+
+    # Header
+    sheet.append(_RPA_FIELDNAMES)
+
+    # Text-column indices (1-based): tipo_pto_vta=5, nro_comprobante=6, fecha_emision=7
+    # These columns contain numeric-looking strings that must remain as text
+    # (leading zeros in nro_comprobante, ddmmyyyy in fecha_emision, etc.).
+    _TEXT_COLS = {5, 6, 7}
+
+    for row_data in rows:
+        row_idx = sheet.max_row + 1
+        for col_idx, key in enumerate(_RPA_FIELDNAMES, start=1):
+            cell = sheet.cell(row=row_idx, column=col_idx)
+            if col_idx in _TEXT_COLS:
+                # Write as explicit text: set format BEFORE value so openpyxl
+                # does not infer a numeric type from the string content.
+                cell.number_format = "@"
+                cell.value = str(row_data[key])
+            else:
+                cell.value = row_data[key]
 
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)
+
+    empresa_safe = _sanitize_filename(client.empresa or f"cliente_{client.id}")
+    filename = f"{empresa_safe}_{mes}_{anio}_coes.xlsx"
+
     return send_file(
         output,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
-        download_name=_build_export_filename(client, "xlsx"),
+        download_name=filename,
     )
