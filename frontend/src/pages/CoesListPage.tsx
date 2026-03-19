@@ -150,7 +150,7 @@ export function CoesListPage() {
                       </TableCell>
                       <TableCell>{client?.empresa ?? `ID: ${coe.taxpayer_id}`}</TableCell>
                       <TableCell className="text-slate-600">
-{formatDateOnly(coe.created_at)}
+{formatDateOnly(coe.fecha_liquidacion)}
                       </TableCell>
                       <TableCell>
                         <EstadoBadge estado={coe.estado} />
