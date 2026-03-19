@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy import cast, Date
 
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
 from ..middleware import require_auth, require_admin
+from ..services import extract_fecha_liquidacion, fecha_liquidacion_expr
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "nro_orden": doc.nro_orden,
         "estado": doc.estado,
         "tipo_documento": doc.tipo_documento,
+        "fecha_liquidacion": extract_fecha_liquidacion(doc),
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "raw_data": doc.raw_data,
         "datos_limpios": doc.datos_limpios,
@@ -58,11 +61,13 @@ def list_coes():
     if estado:
         query = query.filter(LpgDocument.estado == estado)
 
+    fecha_liq_expr = fecha_liquidacion_expr()
+
     if fecha_desde:
-        query = query.filter(LpgDocument.created_at >= fecha_desde)
+        query = query.filter(cast(fecha_liq_expr, Date) >= fecha_desde)
 
     if fecha_hasta:
-        query = query.filter(LpgDocument.created_at <= fecha_hasta)
+        query = query.filter(cast(fecha_liq_expr, Date) <= fecha_hasta)
 
     if search:
         query = query.filter(LpgDocument.coe.ilike(f"%{search}%"))
@@ -71,7 +76,7 @@ def list_coes():
     pages = (total + per_page - 1) // per_page
 
     coes = (
-        query.order_by(LpgDocument.created_at.desc())
+        query.order_by(cast(fecha_liq_expr, Date).desc(), LpgDocument.id.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()

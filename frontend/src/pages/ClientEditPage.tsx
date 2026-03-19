@@ -26,8 +26,9 @@ const initialForm: FormData = {
 export function ClientEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const isNew = id === "nuevo";
-  const clientId = isNew ? 0 : Number(id);
+  const isNew = !id || id === "nuevo";
+  const parsedId = Number(id);
+  const clientId = isNew || !Number.isFinite(parsedId) ? 0 : parsedId;
 
   const clientQuery = useClientQuery(clientId);
   const updateMutation = useUpdateClientMutation();

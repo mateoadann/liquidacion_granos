@@ -8,6 +8,7 @@ export interface Coe {
   nro_orden: number | null;
   estado: string | null;
   tipo_documento: string;
+  fecha_liquidacion: string | null;
   created_at: string | null;
   raw_data: Record<string, unknown> | null;
   datos_limpios: Record<string, unknown> | null;

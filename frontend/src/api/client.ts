@@ -2,23 +2,39 @@ import { useAuthStore } from "../store/useAuthStore";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:5001/api";
 
-function getAuthHeaders(): Record<string, string> {
+function getAuthHeader(): string | null {
   const token = useAuthStore.getState().accessToken;
-  if (token) {
-    return { Authorization: `Bearer ${token}` };
+  return token ? `Bearer ${token}` : null;
+}
+
+function buildHeaders(options: RequestInit): Headers {
+  const headers = new Headers(options.headers);
+
+  const authHeader = getAuthHeader();
+  if (authHeader && !headers.has("Authorization")) {
+    headers.set("Authorization", authHeader);
   }
-  return {};
+
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
+  // Para FormData, dejar que el browser seteé automáticamente el boundary
+  if (isFormData) {
+    if (headers.has("Content-Type")) {
+      headers.delete("Content-Type");
+    }
+  } else if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  return headers;
 }
 
 export async function fetchWithAuth(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const headers = {
-    "Content-Type": "application/json",
-    ...getAuthHeaders(),
-    ...options.headers,
-  };
+  const headers = buildHeaders(options);
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,

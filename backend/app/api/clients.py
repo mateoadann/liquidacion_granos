@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request, send_file
+from sqlalchemy import cast, Date
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
@@ -16,6 +17,8 @@ from ..services import (
     decrypt_secret,
     delete_client_certificates,
     encrypt_secret,
+    extract_fecha_liquidacion,
+    fecha_liquidacion_expr,
     get_client_certificate_meta,
     is_placeholder_secret,
     is_valid_ambiente,
@@ -138,7 +141,7 @@ def _build_export_row(doc: LpgDocument) -> dict:
         # General
         "codTipoOperacion": safe(data.get("codTipoOperacion")),
         "descTipoOperacion": safe(data.get("descTipoOperacion")),
-        "fechaLiquidacion": safe(data.get("fechaLiquidacion")),
+        "fechaLiquidacion": safe(extract_fecha_liquidacion(doc)),
         # Comprador/Vendedor
         "cuitComprador": safe(data.get("cuitComprador")),
         "cuitVendedor": safe(data.get("cuitVendedor")),
@@ -518,14 +521,15 @@ def export_client_coes(client_id: int):
         return _error(str(exc), 400)
 
     query = LpgDocument.query.filter(LpgDocument.taxpayer_id == client.id)
-    if fecha_desde:
-        query = query.filter(LpgDocument.created_at >= fecha_desde)
-    if fecha_hasta:
-        query = query.filter(
-            LpgDocument.created_at < (fecha_hasta.replace(hour=0, minute=0, second=0) + timedelta(days=1))
-        )
 
-    documents = query.order_by(LpgDocument.created_at.asc(), LpgDocument.id.asc()).all()
+    fecha_liq_expr = fecha_liquidacion_expr()
+
+    if fecha_desde:
+        query = query.filter(cast(fecha_liq_expr, Date) >= fecha_desde.date())
+    if fecha_hasta:
+        query = query.filter(cast(fecha_liq_expr, Date) <= fecha_hasta.date())
+
+    documents = query.order_by(cast(fecha_liq_expr, Date).asc(), LpgDocument.id.asc()).all()
 
     rows = [_build_export_row(doc) for doc in documents]
 

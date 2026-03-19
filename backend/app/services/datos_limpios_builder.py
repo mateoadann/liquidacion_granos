@@ -149,6 +149,15 @@ class DatosLimpiosBuilder:
         result["nroOrden"] = ajuste.get("nroOrden")
         result["nroContrato"] = ajuste.get("nroContrato")
 
+        # Agregar fechaLiquidacion al nivel raíz para consistencia con LPG normales.
+        # Tomar de ajusteCredito o ajusteDebito (ambos tienen la misma fecha).
+        credito = ajuste.get("ajusteCredito", {}) or {}
+        debito = ajuste.get("ajusteDebito", {}) or {}
+        result["fechaLiquidacion"] = (
+            (credito.get("fechaLiquidacion") if isinstance(credito, dict) else None)
+            or (debito.get("fechaLiquidacion") if isinstance(debito, dict) else None)
+        )
+
         for lado in ("ajusteCredito", "ajusteDebito"):
             sec = ajuste.get(lado, {}) or {}
             if not isinstance(sec, dict):
