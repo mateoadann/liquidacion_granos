@@ -14,7 +14,11 @@ from .crypto_service import (
     encrypt_secret,
     is_placeholder_secret,
 )
-from .lpg_document_utils import extract_fecha_liquidacion, fecha_liquidacion_expr
+from .lpg_document_utils import (
+    extract_fecha_liquidacion,
+    fecha_liquidacion_as_date,
+    fecha_liquidacion_expr,
+)
 from .validators import is_valid_ambiente, is_valid_cuit
 
 __all__ = [
@@ -24,6 +28,7 @@ __all__ = [
     "delete_client_certificates",
     "encrypt_secret",
     "extract_fecha_liquidacion",
+    "fecha_liquidacion_as_date",
     "fecha_liquidacion_expr",
     "get_client_certificate_meta",
     "is_placeholder_secret",

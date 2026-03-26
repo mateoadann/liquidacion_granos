@@ -1,11 +1,33 @@
 import { useState } from "react";
-import type { Client, CoesExportFormat } from "./clients";
+import type { Client } from "./clients";
+
+/**
+ * Return "YYYY-MM" for the previous calendar month relative to `now`.
+ */
+function getPreviousMonthValue(now = new Date()): string {
+  const year = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const month = now.getMonth() === 0 ? 12 : now.getMonth(); // 1-indexed
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/**
+ * Given "YYYY-MM", return { first: "YYYY-MM-01", last: "YYYY-MM-DD" }.
+ */
+function monthBounds(monthValue: string): { first: string; last: string } {
+  const [yearStr, monthStr] = monthValue.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const first = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const last = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { first, last };
+}
 
 interface CoeExportPanelProps {
   client: Client;
   isDownloading: boolean;
   errorMessage: string | null;
-  onDownload: (format: CoesExportFormat, filters: { fechaDesde?: string; fechaHasta?: string }) => Promise<void>;
+  onDownload: (filters: { fechaDesde?: string; fechaHasta?: string }) => Promise<void>;
   onBack: () => void;
 }
 
@@ -16,14 +38,12 @@ export default function CoeExportPanel({
   onDownload,
   onBack,
 }: CoeExportPanelProps) {
-  const [fechaDesde, setFechaDesde] = useState("");
-  const [fechaHasta, setFechaHasta] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(getPreviousMonthValue);
 
-  async function handleDownload(format: CoesExportFormat) {
-    await onDownload(format, {
-      fechaDesde: fechaDesde || undefined,
-      fechaHasta: fechaHasta || undefined,
-    });
+  const { first, last } = monthBounds(selectedMonth);
+
+  async function handleDownload() {
+    await onDownload({ fechaDesde: first, fechaHasta: last });
   }
 
   return (
@@ -43,43 +63,29 @@ export default function CoeExportPanel({
         Cliente: <span className="font-medium text-slate-900">{client.empresa}</span> ({client.cuit})
       </p>
 
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="text-sm text-slate-700">
-          Fecha desde (opcional)
-          <input
-            type="date"
-            value={fechaDesde}
-            onChange={(event) => setFechaDesde(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-          />
+      <div className="mt-4">
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          Mes a exportar
         </label>
-        <label className="text-sm text-slate-700">
-          Fecha hasta (opcional)
-          <input
-            type="date"
-            value={fechaHasta}
-            onChange={(event) => setFechaHasta(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-          />
-        </label>
+        <input
+          type="month"
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm md:w-64"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Período: {first} a {last}
+        </p>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => void handleDownload("csv")}
-          disabled={isDownloading}
-          className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 disabled:opacity-50"
-        >
-          Descargar CSV
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleDownload("xlsx")}
-          disabled={isDownloading}
+          onClick={() => void handleDownload()}
+          disabled={isDownloading || !selectedMonth}
           className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50"
         >
-          Descargar XLSX
+          {isDownloading ? "Descargando..." : "Descargar XLSX"}
         </button>
       </div>
 

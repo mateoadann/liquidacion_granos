@@ -218,7 +218,6 @@ export default function ClientsPage() {
   }
 
   async function handleDownloadCoes(
-    format: "csv" | "xlsx",
     filters: { fechaDesde?: string; fechaHasta?: string }
   ) {
     if (!activeClient) return;
@@ -226,7 +225,6 @@ export default function ClientsPage() {
     try {
       const file = await downloadClientCoesMutation.mutateAsync({
         clientId: activeClient.id,
-        format,
         fechaDesde: filters.fechaDesde,
         fechaHasta: filters.fechaHasta,
       });

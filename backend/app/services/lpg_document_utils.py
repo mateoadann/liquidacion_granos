@@ -5,9 +5,10 @@ Centralises logic that was previously duplicated across API modules
 """
 from __future__ import annotations
 
-from sqlalchemy import text
-from sqlalchemy.sql.expression import TextClause
+from sqlalchemy import cast, Date, literal_column, text
+from sqlalchemy.sql.expression import ClauseElement, ColumnElement, TextClause
 
+from ..extensions import db
 from ..models import LpgDocument
 
 
@@ -49,18 +50,36 @@ def extract_fecha_liquidacion(doc: LpgDocument) -> str | None:
     return None
 
 
+def _is_sqlite() -> bool:
+    """Return True when the current engine is SQLite."""
+    return db.engine.dialect.name == "sqlite"
+
+
 def fecha_liquidacion_expr() -> TextClause:
     """Return a SQL COALESCE expression over datos_limpios JSON fields.
 
     Covers both LPG (``fechaLiquidacion``) and AJUSTE
     (``credito_fechaLiquidacion`` / ``debito_fechaLiquidacion``) types.
 
+    The expression is dialect-aware:
+    - **PostgreSQL**: uses ``->>`` JSON text extraction.
+    - **SQLite**: uses ``json_extract()`` for compatibility with the
+      test database.
+
     Usage::
 
         expr = fecha_liquidacion_expr()
-        query.filter(cast(expr, Date) >= some_date)
-        query.order_by(cast(expr, Date).desc())
+        query.filter(fecha_liquidacion_as_date(expr) >= some_date)
+        query.order_by(fecha_liquidacion_as_date(expr).desc())
     """
+    if _is_sqlite():
+        return text(
+            "COALESCE("
+            "json_extract(datos_limpios, '$.fechaLiquidacion'), "
+            "json_extract(datos_limpios, '$.credito_fechaLiquidacion'), "
+            "json_extract(datos_limpios, '$.debito_fechaLiquidacion')"
+            ")"
+        )
     return text(
         "COALESCE("
         "datos_limpios->>'fechaLiquidacion', "
@@ -68,3 +87,22 @@ def fecha_liquidacion_expr() -> TextClause:
         "datos_limpios->>'debito_fechaLiquidacion'"
         ")"
     )
+
+
+def fecha_liquidacion_as_date(expr: TextClause) -> ColumnElement:
+    """Wrap *expr* so it can be compared against Python ``date`` objects.
+
+    - **PostgreSQL**: ``CAST(expr AS DATE)`` — proper date type.
+    - **SQLite**: ``date(expr)`` — SQLite ``date()`` returns an ISO-8601
+      text value that compares correctly with date strings produced by
+      SQLAlchemy parameter binding.
+
+    Returns a :class:`ColumnElement` so that SQLAlchemy comparison
+    operators (``>=``, ``<=``, ``.asc()``, etc.) work correctly.
+    """
+    if _is_sqlite():
+        # SQLite date() returns 'YYYY-MM-DD' text — comparable as string.
+        # literal_column() wraps raw SQL as a ColumnElement with full
+        # operator support (>=, <=, .asc(), .desc()).
+        return literal_column(f"date({expr.text})")
+    return cast(expr, Date)
