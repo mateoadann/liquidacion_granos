@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from flask import Blueprint, jsonify, request
 
 from ..extensions import db
 from ..models import Taxpayer
+from ..time_utils import now_cordoba_naive
 
 taxpayers_bp = Blueprint("taxpayers", __name__)
 
@@ -54,12 +53,11 @@ def create_taxpayer():
     if Taxpayer.query.filter_by(cuit=cuit).first():
         return jsonify({"error": "La CUIT ya existe."}), 409
 
-    item = Taxpayer(
-        cuit=cuit,
-        razon_social=payload.get("razon_social"),
-        ambiente=ambiente,
-        activo=bool(payload.get("activo", True)),
-    )
+    item = Taxpayer()
+    item.cuit = cuit
+    item.razon_social = payload.get("razon_social")
+    item.ambiente = ambiente
+    item.activo = bool(payload.get("activo", True))
     db.session.add(item)
     db.session.commit()
 
@@ -88,8 +86,7 @@ def update_taxpayer(taxpayer_id: int):
     if "activo" in payload:
         item.activo = bool(payload["activo"])
 
-    item.updated_at = datetime.utcnow()
+    item.updated_at = now_cordoba_naive()
     db.session.commit()
 
     return jsonify(_serialize_taxpayer(item))
-

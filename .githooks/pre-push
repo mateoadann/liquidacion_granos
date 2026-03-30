@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "[pre-push] gitleaks scan"
+  gitleaks detect --source "$ROOT_DIR" --no-git --redact
+else
+  echo "[pre-push] gitleaks no instalado; se omite scan local"
+fi
+
+bash "$ROOT_DIR/scripts/pre-push-checks.sh"

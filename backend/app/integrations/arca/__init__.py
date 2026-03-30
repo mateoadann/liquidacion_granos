@@ -1,3 +1,3 @@
-from .client import ArcaIntegrationError, ArcaWslpgClient
+from .client import ArcaConstanciaClient, ArcaIntegrationError, ArcaWslpgClient
 
-__all__ = ["ArcaWslpgClient", "ArcaIntegrationError"]
+__all__ = ["ArcaConstanciaClient", "ArcaWslpgClient", "ArcaIntegrationError"]

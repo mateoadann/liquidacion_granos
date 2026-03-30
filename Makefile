@@ -8,9 +8,11 @@ DOCKER_COMPOSE ?= docker compose
 WEB_SERVICE ?= backend
 DB_SERVICE ?= postgres
 BACKEND_DIR ?= backend
+DATABASE_URL_LOCAL ?= postgresql+psycopg://liquidacion:liquidacion@localhost:5432/liquidacion_granos
 
 .PHONY: help \
 	venv install env run test test-local hooks-install \
+	create-admin create-admin-docker \
 	db-upgrade db-migrate db-downgrade \
 	build up up-build up-full down restart docker-ps logs \
 	docker-db-upgrade docker-db-migrate docker-db-downgrade docker-test \
@@ -32,6 +34,24 @@ env: ## Copiar .env.example a .env si no existe
 
 run: ## Levantar app local (Flask) en puerto 5001
 	cd $(BACKEND_DIR) && $(FLASK) run --port 5001
+
+create-admin: ## Crear admin local (usar USERNAME=admin PASSWORD=... NOMBRE="Administrador")
+	@if [ -z "$(USERNAME)" ] || [ -z "$(PASSWORD)" ] || [ -z "$(NOMBRE)" ]; then \
+		echo 'Uso: make create-admin USERNAME=admin PASSWORD=TuClave123 NOMBRE="Administrador"'; \
+		exit 1; \
+	fi
+	cd $(BACKEND_DIR) && if [ -x ".venv/bin/python" ]; then \
+		DATABASE_URL="$(DATABASE_URL_LOCAL)" .venv/bin/python -m flask --app run.py create-admin --username "$(USERNAME)" --password "$(PASSWORD)" --nombre "$(NOMBRE)"; \
+	else \
+		DATABASE_URL="$(DATABASE_URL_LOCAL)" $(FLASK) create-admin --username "$(USERNAME)" --password "$(PASSWORD)" --nombre "$(NOMBRE)"; \
+	fi
+
+create-admin-docker: ## Crear admin dentro de Docker (usar USERNAME=admin PASSWORD=... NOMBRE="Administrador")
+	@if [ -z "$(USERNAME)" ] || [ -z "$(PASSWORD)" ] || [ -z "$(NOMBRE)" ]; then \
+		echo 'Uso: make create-admin-docker USERNAME=admin PASSWORD=TuClave123 NOMBRE="Administrador"'; \
+		exit 1; \
+	fi
+	$(DOCKER_COMPOSE) exec $(WEB_SERVICE) flask --app run.py create-admin --username "$(USERNAME)" --password "$(PASSWORD)" --nombre "$(NOMBRE)"
 
 test-local: ## Ejecutar tests locales (si existen)
 	cd $(BACKEND_DIR) && pytest
@@ -129,4 +149,3 @@ prod-shell: ## Abrir shell en contenedor backend produccion
 
 prod-email-test: ## Enviar correo de prueba en produccion (si el comando existe)
 	$(PROD_COMPOSE) exec backend flask --app run.py send-test-email
-
