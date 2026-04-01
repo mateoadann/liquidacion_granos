@@ -75,7 +75,7 @@ def _parse_and_validate_run_payload(payload: dict) -> dict:
     type_delay_ms = int(payload.get("type_delay_ms", 80))
     slow_mo_ms = int(payload.get("slow_mo_ms", 0))
     post_action_delay_ms = int(payload.get("post_action_delay_ms", 0))
-    login_max_retries = int(payload.get("login_max_retries", 1))
+    login_max_retries = int(payload.get("login_max_retries", 2))
     # Resilience parameters
     humanize_delays = bool(payload.get("humanize_delays", True))
     retry_max_attempts = int(payload.get("retry_max_attempts", 2))

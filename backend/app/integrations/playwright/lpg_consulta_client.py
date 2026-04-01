@@ -54,7 +54,7 @@ class LpgConsultaRequest:
     type_delay_ms: int = 80
     slow_mo_ms: int = 0
     post_action_delay_ms: int = 0
-    login_max_retries: int = 1
+    login_max_retries: int = 2
     # Resilience parameters
     humanize_delays: bool = True
     retry_max_attempts: int = 2
@@ -427,6 +427,13 @@ class ArcaLpgPlaywrightClient:
         )
         page.wait_for_timeout(actual_delay)
 
+    # Known AFIP dashboard messages that are NOT login errors.
+    # These banners (e.g. "vencimientos") render before the Buscador combobox,
+    # so the old generic r"error" regex falsely classified them as transient failures.
+    _IGNORABLE_ERROR_PATTERNS = re.compile(
+        r"vencimientos|cargar tus vencimientos", re.IGNORECASE
+    )
+
     def _wait_for_login_result(
         self, login_page: Page, timeout_ms: int,
     ) -> tuple[bool, bool, str | None]:
@@ -448,7 +455,15 @@ class ArcaLpgPlaywrightClient:
             if search_locator.count() > 0 and search_locator.first.is_visible():
                 return True, False, None
             if transient_error_locator.count() > 0 and transient_error_locator.first.is_visible():
-                return False, True, _normalize_text(transient_error_locator.first.inner_text())
+                error_text = _normalize_text(transient_error_locator.first.inner_text())
+                if self._IGNORABLE_ERROR_PATTERNS.search(error_text):
+                    # Dashboard info banner, not a login failure — keep waiting for Buscador
+                    logger.debug(
+                        "PLAYWRIGHT_IGNORED_DASHBOARD_BANNER | text=%s", error_text,
+                    )
+                    login_page.wait_for_timeout(500)
+                    continue
+                return False, True, error_text
             login_page.wait_for_timeout(250)
         return False, False, "Timeout esperando confirmación de login (Buscador no visible)."
 
