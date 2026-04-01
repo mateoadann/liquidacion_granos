@@ -54,7 +54,7 @@ class LpgConsultaRequest:
     type_delay_ms: int = 80
     slow_mo_ms: int = 0
     post_action_delay_ms: int = 0
-    login_max_retries: int = 3
+    login_max_retries: int = 2
     # Resilience parameters
     humanize_delays: bool = True
     retry_max_attempts: int = 2

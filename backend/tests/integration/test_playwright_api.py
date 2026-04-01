@@ -92,7 +92,7 @@ def test_run_playwright_enqueues_job(client, monkeypatch, auth_headers):
         "type_delay_ms": 120,
         "slow_mo_ms": 0,
         "post_action_delay_ms": 0,
-        "login_max_retries": 3,
+        "login_max_retries": 2,
         "humanize_delays": True,
         "retry_max_attempts": 2,
         "retry_base_delay_ms": 1000,

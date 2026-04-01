@@ -1,6 +1,6 @@
 import { useAuthStore } from "../store/useAuthStore";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:5001/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 function getAuthHeader(): string | null {
   const token = useAuthStore.getState().accessToken;
