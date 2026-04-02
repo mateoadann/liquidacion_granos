@@ -54,6 +54,28 @@ export interface ClientValidationResult {
   checks: Record<string, boolean>;
 }
 
+export interface CertTestServiceResult {
+  ok: boolean;
+  message: string;
+  razonSocial?: string;
+}
+
+export interface CertTestResult {
+  config: {
+    ok: boolean;
+    checks: Record<string, boolean>;
+  };
+  wslpg: CertTestServiceResult;
+  constancia: CertTestServiceResult;
+  certificate_info: {
+    subject: string;
+    issuer: string;
+    not_before: string;
+    not_after: string;
+    expired: boolean;
+  } | null;
+}
+
 export interface RunPlaywrightPipelineInput {
   fechaDesde: string;
   fechaHasta: string;
@@ -472,6 +494,14 @@ export async function validateClientConfig(
   });
 
   return normalizeValidation(payload);
+}
+
+export async function testClientCertificates(
+  clientId: number
+): Promise<CertTestResult> {
+  return requestJson<CertTestResult>(`/clients/${clientId}/test-certificates`, {
+    method: "POST",
+  });
 }
 
 export async function runPlaywrightPipeline(
