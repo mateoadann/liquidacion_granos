@@ -504,6 +504,22 @@ export async function testClientCertificates(
   });
 }
 
+export async function generateClientCsr(
+  clientId: number,
+  nombreCertificado: string
+): Promise<Blob> {
+  const res = await fetchWithAuth(`/clients/${clientId}/generate-csr`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre_certificado: nombreCertificado }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as Record<string, string>)?.error ?? "Error al generar CSR");
+  }
+  return res.blob();
+}
+
 export async function runPlaywrightPipeline(
   input: RunPlaywrightPipelineInput
 ): Promise<PlaywrightPipelineJob> {

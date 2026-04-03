@@ -5,7 +5,7 @@ import { Card, Button, Alert, Spinner } from "../components/ui";
 import { useClientQuery } from "../hooks/useClient";
 import { useUploadCertificatesMutation, useTestCertificatesMutation } from "../useClients";
 import { formatDateTime } from "../dateUtils";
-import type { CertTestResult } from "../clients";
+import { generateClientCsr, type CertTestResult } from "../clients";
 
 export function ClientCertificatesPage() {
   const { id } = useParams<{ id: string }>();
@@ -105,8 +105,10 @@ export function ClientCertificatesPage() {
           </dl>
         </Card>
 
+        <GenerateCsrSection clientId={clientId} />
+
         <Card>
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Subir nuevos certificados</h3>
+          <h3 className="text-lg font-medium text-slate-900 mb-4">Subir certificado (.crt)</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -149,7 +151,285 @@ export function ClientCertificatesPage() {
           <TestCertificatesSection clientId={clientId} hasCertificates={client.certificadosCargados} />
         </div>
       </div>
+
+      <CertificateTutorial />
     </div>
+  );
+}
+
+function GenerateCsrSection({ clientId }: { clientId: number }) {
+  const [certName, setCertName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [csrError, setCsrError] = useState<string | null>(null);
+  const [csrSuccess, setCsrSuccess] = useState<string | null>(null);
+
+  async function handleGenerate(e: FormEvent) {
+    e.preventDefault();
+    if (!certName.trim()) {
+      setCsrError("Ingrese un nombre para el certificado");
+      return;
+    }
+    setCsrError(null);
+    setCsrSuccess(null);
+    setLoading(true);
+    try {
+      const blob = await generateClientCsr(clientId, certName.trim());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${certName.trim()}.csr`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setCsrSuccess(`Archivos generados. El .key se guardo en el servidor. Suba el archivo ${certName.trim()}.csr a ARCA para obtener el .crt`);
+    } catch (err) {
+      setCsrError(err instanceof Error ? err.message : "Error al generar CSR");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h3 className="text-lg font-medium text-slate-900 mb-2">Generar clave privada y CSR</h3>
+      <p className="text-sm text-slate-500 mb-4">
+        Genera el archivo .key (se guarda en el servidor) y descarga el .csr para subir a ARCA.
+      </p>
+      <form onSubmit={handleGenerate} className="space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Nombre del certificado (CN)
+          </label>
+          <input
+            type="text"
+            value={certName}
+            onChange={(e) => setCertName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
+            placeholder="ej: manassero_prod"
+            className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
+          />
+          <p className="text-xs text-slate-400 mt-1">Solo letras, numeros y guion bajo.</p>
+        </div>
+
+        {csrError && <Alert variant="error">{csrError}</Alert>}
+        {csrSuccess && <Alert variant="success">{csrSuccess}</Alert>}
+
+        <div className="flex justify-end pt-2 border-t border-slate-200">
+          <Button type="submit" isLoading={loading}>
+            Generar key + CSR
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+function TutorialImg({ src, alt }: { src: string; alt: string }) {
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="rounded border border-slate-200 mt-2 max-w-full"
+      loading="lazy"
+    />
+  );
+}
+
+function TutorialStep({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-green-600 text-white text-sm font-bold flex items-center justify-center">
+        {number}
+      </div>
+      <div className="flex-1 min-w-0">
+        <h5 className="text-sm font-medium text-slate-900 mb-1">{title}</h5>
+        <div className="text-sm text-slate-600 space-y-2">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function TutorialSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-slate-200 rounded">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
+      >
+        <span className="text-sm font-medium text-slate-800">{title}</span>
+        <span className="text-slate-400 text-xs">{open ? "Colapsar" : "Expandir"}</span>
+      </button>
+      {open && <div className="px-4 pb-4 space-y-4">{children}</div>}
+    </div>
+  );
+}
+
+function CertificateTutorial() {
+  const [expanded, setExpanded] = useState(false);
+  const T = "/tutorial";
+
+  return (
+    <Card className="mt-6">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between"
+      >
+        <div>
+          <h3 className="text-lg font-medium text-slate-900 text-left">Tutorial: Configurar certificados de ARCA</h3>
+          <p className="text-sm text-slate-500 text-left mt-1">
+            Guia paso a paso para habilitar, generar y autorizar certificados digitales en ARCA/AFIP.
+          </p>
+        </div>
+        <span className="text-sm text-green-600 font-medium flex-shrink-0 ml-4">
+          {expanded ? "Ocultar" : "Ver tutorial"}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mt-4 space-y-4">
+          <TutorialSection title="Paso 1: Habilitar Administrador de Certificados Digitales">
+            <TutorialStep number={1} title="Ingresar al Administrador de Relaciones de Clave Fiscal">
+              <p>
+                Desde el escritorio de ARCA, buscar y acceder al servicio{" "}
+                <strong>Administrador de Relaciones de Clave Fiscal</strong>.
+              </p>
+              <TutorialImg src={`${T}/paso1-01-admin-relaciones.png`} alt="Administrador de Relaciones de Clave Fiscal" />
+            </TutorialStep>
+            <TutorialStep number={2} title="Seleccionar el contribuyente">
+              <p>
+                Si se administran relaciones de otros contribuyentes, seleccionar el contribuyente deseado.
+                De lo contrario, se selecciona automaticamente la cuenta propia.
+              </p>
+              <TutorialImg src={`${T}/paso1-02-seleccionar-contribuyente.png`} alt="Seleccionar contribuyente" />
+            </TutorialStep>
+            <TutorialStep number={3} title='Elegir "Adherir servicio"'>
+              <p>Hacer clic en la opcion <strong>Adherir servicio</strong>.</p>
+              <TutorialImg src={`${T}/paso1-03-adherir-servicio.png`} alt="Adherir servicio" />
+            </TutorialStep>
+            <TutorialStep number={4} title="Seleccionar el servicio de certificados">
+              <p>
+                Navegar a:{" "}
+                <strong>ARCA &gt; Servicios interactivos &gt; Administracion de Certificados Digitales</strong>.
+              </p>
+              <TutorialImg src={`${T}/paso1-04-cert-digitales.png`} alt="Administracion de Certificados Digitales" />
+            </TutorialStep>
+            <TutorialStep number={5} title="Confirmar">
+              <p>
+                Hacer clic en <strong>Confirmar</strong>. El servicio quedara disponible en el escritorio de ARCA.
+              </p>
+              <TutorialImg src={`${T}/paso1-05-confirmar.png`} alt="Confirmar servicio" />
+            </TutorialStep>
+          </TutorialSection>
+
+          <TutorialSection title="Paso 2: Generar el certificado digital">
+            <TutorialStep number={1} title="Generar la clave privada (key)">
+              <p>Ejecutar en una terminal:</p>
+              <code className="block bg-slate-100 rounded px-3 py-2 text-xs font-mono text-slate-800 overflow-x-auto">
+                openssl genrsa -traditional -out certificado.key 2048
+              </code>
+              <p className="text-xs text-slate-400">
+                En versiones antiguas de OpenSSL, quitar el parametro <code>-traditional</code>.
+              </p>
+            </TutorialStep>
+            <TutorialStep number={2} title="Generar el CSR (solicitud de certificado)">
+              <p>Ejecutar reemplazando los datos del contribuyente:</p>
+              <code className="block bg-slate-100 rounded px-3 py-2 text-xs font-mono text-slate-800 overflow-x-auto whitespace-pre-wrap">
+                {"openssl req -new -key certificado.key -subj \"/C=AR/O=NOMBRE_EMPRESA/CN=nombre_certificado/serialNumber=CUIT XXXXXXXXXXX\" -out certificado.csr"}
+              </code>
+              <p className="text-xs text-slate-400">
+                <strong>CN</strong>: nombre identificador del certificado (solo alfanumerico).{" "}
+                <strong>serialNumber</strong>: CUIT del contribuyente representado con formato &quot;CUIT XXXXXXXXXXX&quot;.
+              </p>
+            </TutorialStep>
+            <TutorialStep number={3} title="Subir el CSR a ARCA">
+              <p>
+                Acceder a <strong>Administracion de Certificados Digitales</strong> desde el escritorio de ARCA.
+              </p>
+              <TutorialImg src={`${T}/paso2-01-admin-cert.png`} alt="Administracion de Certificados Digitales" />
+              <ol className="list-decimal list-inside space-y-1 text-sm mt-2">
+                <li>Seleccionar <strong>Agregar alias</strong></li>
+                <li>Ingresar el nombre del certificado (mismo que el CN del CSR)</li>
+                <li>Subir el archivo <strong>.csr</strong> generado</li>
+                <li>Hacer clic en <strong>Agregar Alias</strong></li>
+              </ol>
+              <TutorialImg src={`${T}/paso2-02-agregar-alias.png`} alt="Agregar alias" />
+              <TutorialImg src={`${T}/paso2-03-subir-csr.png`} alt="Subir CSR" />
+            </TutorialStep>
+            <TutorialStep number={4} title="Descargar el certificado (.crt)">
+              <p>
+                En la lista de alias, buscar el certificado recien creado, hacer clic en <strong>Ver</strong>{" "}
+                y descargar el archivo <strong>.crt</strong>.
+              </p>
+              <TutorialImg src={`${T}/paso2-04-descargar-crt.png`} alt="Descargar certificado" />
+              <p className="text-xs text-slate-400 mt-2">
+                El archivo .csr ya no es necesario. Los archivos importantes son el <strong>.crt</strong> (certificado) y el <strong>.key</strong> (clave privada).
+              </p>
+            </TutorialStep>
+          </TutorialSection>
+
+          <TutorialSection title="Paso 3: Autorizar los Web Services de produccion">
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800">
+              <strong>Importante:</strong> Este paso debe realizarse <strong>dos veces</strong>, una por cada web service requerido:
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li><strong>ws_sr_constancia_inscripcion</strong> — Consulta de Constancia de Inscripcion (Padron)</li>
+                <li><strong>wslpg</strong> — Liquidacion Primaria de Granos</li>
+              </ul>
+            </div>
+            <TutorialStep number={1} title="Acceder al Administrador de Relaciones">
+              <p>Desde el escritorio de ARCA, abrir <strong>Administrador de Relaciones de Clave Fiscal</strong>.</p>
+              <TutorialImg src={`${T}/paso1-01-admin-relaciones.png`} alt="Administrador de Relaciones" />
+            </TutorialStep>
+            <TutorialStep number={2} title="Seleccionar contribuyente">
+              <p>Si corresponde, elegir el contribuyente para el cual se va a autorizar el servicio.</p>
+              <TutorialImg src={`${T}/paso1-02-seleccionar-contribuyente.png`} alt="Seleccionar contribuyente" />
+            </TutorialStep>
+            <TutorialStep number={3} title='Crear "Nueva Relacion"'>
+              <p>Hacer clic en <strong>Nueva Relacion</strong>.</p>
+              <TutorialImg src={`${T}/paso3-01-nueva-relacion.png`} alt="Nueva Relacion" />
+            </TutorialStep>
+            <TutorialStep number={4} title="Configurar representado">
+              <p>
+                En el campo <strong>Representado</strong>, seleccionar el CUIT del contribuyente que delega
+                el acceso (si aplica). Luego hacer clic en <strong>Buscar</strong>.
+              </p>
+              <TutorialImg src={`${T}/paso3-02-representado.png`} alt="Configurar representado" />
+            </TutorialStep>
+            <TutorialStep number={5} title="Seleccionar el Web Service">
+              <p>
+                Navegar a <strong>ARCA &gt; Web Services</strong> y elegir el servicio a autorizar:
+              </p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li><strong>ws_sr_constancia_inscripcion</strong> para consultas de padron</li>
+                <li><strong>wslpg</strong> para liquidacion primaria de granos</li>
+              </ul>
+              <TutorialImg src={`${T}/paso3-03-web-services.png`} alt="Seleccionar Web Service" />
+            </TutorialStep>
+            <TutorialStep number={6} title="Asociar el certificado">
+              <p>
+                Hacer clic en <strong>Buscar</strong> para ver los certificados disponibles.
+                Seleccionar el certificado creado en el paso anterior y hacer clic en <strong>Confirmar</strong>.
+              </p>
+              <TutorialImg src={`${T}/paso3-04-seleccionar-cert.png`} alt="Seleccionar certificado" />
+              <TutorialImg src={`${T}/paso3-05-confirmar-cert.png`} alt="Confirmar certificado" />
+            </TutorialStep>
+            <TutorialStep number={7} title="Confirmar la autorizacion">
+              <p>
+                Hacer clic en <strong>Confirmar</strong> nuevamente para completar la autorizacion.
+              </p>
+              <TutorialImg src={`${T}/paso3-06-confirmar-final.png`} alt="Confirmar autorizacion" />
+              <p className="text-xs text-slate-400 mt-2">
+                Repetir desde el paso 3 para autorizar el segundo web service.
+              </p>
+            </TutorialStep>
+          </TutorialSection>
+
+          <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800">
+            Una vez completados los 3 pasos, suba los archivos <strong>.crt</strong> y <strong>.key</strong>{" "}
+            en el formulario de arriba y luego use <strong>Probar certificados</strong> para verificar que
+            ambos web services estan correctamente autorizados.
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

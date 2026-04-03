@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, current_app, jsonify, request, send_file
 from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 
@@ -319,6 +320,76 @@ def delete_client(client_id: int):
     item.updated_at = now_cordoba_naive()
     db.session.commit()
     return jsonify(_serialize_client(item))
+
+
+@clients_bp.post("/clients/<int:client_id>/generate-csr")
+@require_auth
+def generate_client_csr(client_id: int):
+    """Genera key + CSR para el cliente usando sus datos (cuit_representado)."""
+    from pathlib import Path
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography import x509 as x509_mod
+    from cryptography.x509.oid import NameOID
+
+    item = Taxpayer.query.get_or_404(client_id)
+
+    payload = request.get_json(silent=True) or {}
+    cert_name = (payload.get("nombre_certificado") or "").strip()
+    if not cert_name or not re.match(r"^[a-zA-Z0-9_]+$", cert_name):
+        return jsonify({"error": "nombre_certificado es requerido (solo alfanumerico y guion bajo)"}), 400
+
+    if not is_valid_cuit(item.cuit_representado):
+        return jsonify({"error": "El cliente no tiene un CUIT representado valido"}), 400
+
+    # Generar key RSA 2048
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    # Guardar key en filesystem del cliente
+    base_path = Path(
+        current_app.config.get("CLIENT_CERTIFICATES_BASE_PATH")
+        or os.environ.get("CLIENT_CERTIFICATES_BASE_PATH", "/app/certificados_clientes")
+    )
+    client_dir = base_path / str(item.id)
+    client_dir.mkdir(parents=True, exist_ok=True)
+
+    key_path = client_dir / "private.key"
+    key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    key_path.write_bytes(key_pem)
+    key_path.chmod(0o600)
+
+    # Actualizar paths en DB
+    item.cert_key_path = str(key_path)
+    item.cert_key_filename = f"{cert_name}.key"
+    item.cert_crt_path = None
+    item.cert_crt_filename = None
+    item.cert_uploaded_at = None
+    item.updated_at = now_cordoba_naive()
+    db.session.commit()
+
+    # Generar CSR
+    subject = x509_mod.Name([
+        x509_mod.NameAttribute(NameOID.COMMON_NAME, cert_name),
+        x509_mod.NameAttribute(NameOID.SERIAL_NUMBER, f"CUIT {item.cuit_representado}"),
+    ])
+    csr = (
+        x509_mod.CertificateSigningRequestBuilder()
+        .subject_name(subject)
+        .sign(private_key, hashes.SHA256())
+    )
+    csr_pem = csr.public_bytes(serialization.Encoding.PEM)
+
+    return send_file(
+        io.BytesIO(csr_pem),
+        mimetype="application/pkcs10",
+        as_attachment=True,
+        download_name=f"{cert_name}.csr",
+    )
 
 
 @clients_bp.post("/clients/<int:client_id>/certificates")
