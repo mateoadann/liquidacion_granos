@@ -12,9 +12,11 @@ import {
   getPlaywrightPipelineJob,
   listClients,
   runPlaywrightPipeline,
+  testClientCertificates,
   updateClient,
   uploadClientCertificates,
   validateClientConfig,
+  type CertTestResult,
   type Client,
   type ClientCertificateMeta,
   type ClientValidationResult,
@@ -121,6 +123,16 @@ export function useValidateConfigMutation(): UseMutationResult<
         queryKey: clientsQueryKeys.detail(clientId),
       });
     },
+  });
+}
+
+export function useTestCertificatesMutation(): UseMutationResult<
+  CertTestResult,
+  Error,
+  number
+> {
+  return useMutation({
+    mutationFn: testClientCertificates,
   });
 }
 

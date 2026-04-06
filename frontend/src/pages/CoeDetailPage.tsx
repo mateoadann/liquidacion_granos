@@ -100,9 +100,9 @@ function DataRow({ label, value, mono = false }: { label: string; value: string;
   );
 }
 
-function PersonaCard({ title, cuit }: { title: string; cuit: string | null }) {
+function PersonaCard({ title, cuit, taxpayerId }: { title: string; cuit: string | null; taxpayerId: number | null }) {
   const cuitStr = cuit ? String(cuit) : null;
-  const query = usePersonaQuery(cuitStr);
+  const query = usePersonaQuery(cuitStr, taxpayerId);
 
   return (
     <div className="border border-slate-300 rounded">
@@ -131,9 +131,10 @@ function PersonaCard({ title, cuit }: { title: string; cuit: string | null }) {
 interface DatosLimpiosProps {
   rawData: Record<string, unknown>;
   datosLimpios: Record<string, unknown> | null;
+  taxpayerId: number | null;
 }
 
-function DatosLimpiosSection({ rawData, datosLimpios }: DatosLimpiosProps) {
+function DatosLimpiosSection({ rawData, datosLimpios, taxpayerId }: DatosLimpiosProps) {
   // Use datos_limpios if available, otherwise unwrap raw_data.data or use raw_data directly
   const data: Record<string, unknown> = datosLimpios
     ?? (rawData.data && typeof rawData.data === "object" && !Array.isArray(rawData.data)
@@ -165,8 +166,8 @@ function DatosLimpiosSection({ rawData, datosLimpios }: DatosLimpiosProps) {
 
         {/* Comprador y Vendedor */}
         <div className="grid grid-cols-2 gap-4 mt-4">
-          <PersonaCard title="COMPRADOR" cuit={data["cuitComprador"] as string | null} />
-          <PersonaCard title="VENDEDOR" cuit={data["cuitVendedor"] as string | null} />
+          <PersonaCard title="COMPRADOR" cuit={data["cuitComprador"] as string | null} taxpayerId={taxpayerId} />
+          <PersonaCard title="VENDEDOR" cuit={data["cuitVendedor"] as string | null} taxpayerId={taxpayerId} />
         </div>
       </div>
 
@@ -631,7 +632,7 @@ export function CoeDetailPage() {
                 {coe.tipo_documento === "AJUSTE" && coe.datos_limpios ? (
                   <AjusteLimpiosSection data={coe.datos_limpios} />
                 ) : (
-                  <DatosLimpiosSection rawData={coe.raw_data} datosLimpios={coe.datos_limpios} />
+                  <DatosLimpiosSection rawData={coe.raw_data} datosLimpios={coe.datos_limpios} taxpayerId={coe.taxpayer_id} />
                 )}
               </div>
             )}
