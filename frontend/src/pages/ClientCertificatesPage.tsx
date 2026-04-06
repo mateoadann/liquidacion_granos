@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
-import { Card, Button, Alert, Spinner } from "../components/ui";
+import { Card, Button, Alert, Spinner, Modal } from "../components/ui";
 import { useClientQuery } from "../hooks/useClient";
 import { useUploadCertificatesMutation, useTestCertificatesMutation } from "../useClients";
 import { formatDateTime } from "../dateUtils";
@@ -19,6 +19,7 @@ export function ClientCertificatesPage() {
   const [keyFile, setKeyFile] = useState<File | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const client = clientQuery.data;
 
@@ -62,9 +63,8 @@ export function ClientCertificatesPage() {
       setSuccessMessage(response.message ?? "Certificados cargados correctamente");
       setCertFile(null);
       setKeyFile(null);
-      // Reset file inputs
-      const form = event.target as HTMLFormElement;
-      form.reset();
+      setShowUploadModal(false);
+      clientQuery.refetch();
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Error al subir certificados");
     }
@@ -78,15 +78,20 @@ export function ClientCertificatesPage() {
         title="Certificados"
         subtitle={client.empresa}
         actions={
-          <Button variant="secondary" onClick={() => navigate(`/clientes/${client.id}`)}>
-            Volver al cliente
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setShowUploadModal(true)}>
+              Subir certificados
+            </Button>
+            <Button variant="secondary" onClick={() => navigate(`/clientes/${client.id}`)}>
+              Volver al cliente
+            </Button>
+          </div>
         }
       />
 
+      {successMessage && <Alert variant="success" className="mb-6">{successMessage}</Alert>}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Columna izquierda */}
-        <div className="space-y-6">
         <Card>
           <h3 className="text-lg font-medium text-slate-900 mb-4">Estado actual</h3>
           <dl className="space-y-2 text-sm">
@@ -105,59 +110,65 @@ export function ClientCertificatesPage() {
           </dl>
         </Card>
 
-        <GenerateCsrSection clientId={clientId} />
-
-        <Card>
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Subir certificado (.crt)</h3>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Certificado (.crt / .pem)
-              </label>
-              <input
-                type="file"
-                accept=".crt,.pem"
-                onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Key (.key)
-              </label>
-              <input
-                type="file"
-                accept=".key"
-                onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
-              />
-            </div>
-
-            {error ? <Alert variant="error">{error}</Alert> : null}
-            {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
-
-            <div className="flex justify-end pt-4 border-t border-slate-200">
-              <Button type="submit" isLoading={uploadMutation.isPending}>
-                Subir certificados
-              </Button>
-            </div>
-          </form>
-        </Card>
-        </div>
-
-        {/* Columna derecha */}
-        <div>
-          <TestCertificatesSection clientId={clientId} hasCertificates={client.certificadosCargados} />
-        </div>
+        <TestCertificatesSection clientId={clientId} hasCertificates={client.certificadosCargados} />
       </div>
 
+      {!client.certificadosCargados && (
+        <div className="mt-6">
+          <GenerateCsrSection clientId={clientId} onGenerated={() => clientQuery.refetch()} />
+        </div>
+      )}
+
       <CertificateTutorial />
+
+      <Modal
+        isOpen={showUploadModal}
+        onClose={() => { setShowUploadModal(false); setLocalError(null); }}
+        title="Subir certificados"
+        size="md"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Certificado (.crt / .pem)
+            </label>
+            <input
+              type="file"
+              accept=".crt,.pem"
+              onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Key (.key)
+            </label>
+            <input
+              type="file"
+              accept=".key"
+              onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+            />
+          </div>
+
+          {error ? <Alert variant="error">{error}</Alert> : null}
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+            <Button variant="secondary" onClick={() => { setShowUploadModal(false); setLocalError(null); }}>
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={uploadMutation.isPending}>
+              Subir certificados
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
 
-function GenerateCsrSection({ clientId }: { clientId: number }) {
+function GenerateCsrSection({ clientId, onGenerated }: { clientId: number; onGenerated: () => void }) {
   const [certName, setCertName] = useState("");
   const [loading, setLoading] = useState(false);
   const [csrError, setCsrError] = useState<string | null>(null);
@@ -181,6 +192,7 @@ function GenerateCsrSection({ clientId }: { clientId: number }) {
       a.click();
       URL.revokeObjectURL(url);
       setCsrSuccess(`Archivos generados. El .key se guardo en el servidor. Suba el archivo ${certName.trim()}.csr a ARCA para obtener el .crt`);
+      onGenerated();
     } catch (err) {
       setCsrError(err instanceof Error ? err.message : "Error al generar CSR");
     } finally {
