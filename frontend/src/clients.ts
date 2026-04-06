@@ -54,6 +54,28 @@ export interface ClientValidationResult {
   checks: Record<string, boolean>;
 }
 
+export interface CertTestServiceResult {
+  ok: boolean;
+  message: string;
+  razonSocial?: string;
+}
+
+export interface CertTestResult {
+  config: {
+    ok: boolean;
+    checks: Record<string, boolean>;
+  };
+  wslpg: CertTestServiceResult;
+  constancia: CertTestServiceResult;
+  certificate_info: {
+    subject: string;
+    issuer: string;
+    not_before: string;
+    not_after: string;
+    expired: boolean;
+  } | null;
+}
+
 export interface RunPlaywrightPipelineInput {
   fechaDesde: string;
   fechaHasta: string;
@@ -472,6 +494,30 @@ export async function validateClientConfig(
   });
 
   return normalizeValidation(payload);
+}
+
+export async function testClientCertificates(
+  clientId: number
+): Promise<CertTestResult> {
+  return requestJson<CertTestResult>(`/clients/${clientId}/test-certificates`, {
+    method: "POST",
+  });
+}
+
+export async function generateClientCsr(
+  clientId: number,
+  nombreCertificado: string
+): Promise<Blob> {
+  const res = await fetchWithAuth(`/clients/${clientId}/generate-csr`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre_certificado: nombreCertificado }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as Record<string, string>)?.error ?? "Error al generar CSR");
+  }
+  return res.blob();
 }
 
 export async function runPlaywrightPipeline(

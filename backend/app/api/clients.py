@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, current_app, jsonify, request, send_file
 from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 
@@ -321,6 +322,76 @@ def delete_client(client_id: int):
     return jsonify(_serialize_client(item))
 
 
+@clients_bp.post("/clients/<int:client_id>/generate-csr")
+@require_auth
+def generate_client_csr(client_id: int):
+    """Genera key + CSR para el cliente usando sus datos (cuit_representado)."""
+    from pathlib import Path
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography import x509 as x509_mod
+    from cryptography.x509.oid import NameOID
+
+    item = Taxpayer.query.get_or_404(client_id)
+
+    payload = request.get_json(silent=True) or {}
+    cert_name = (payload.get("nombre_certificado") or "").strip()
+    if not cert_name or not re.match(r"^[a-zA-Z0-9_]+$", cert_name):
+        return jsonify({"error": "nombre_certificado es requerido (solo alfanumerico y guion bajo)"}), 400
+
+    if not is_valid_cuit(item.cuit_representado):
+        return jsonify({"error": "El cliente no tiene un CUIT representado valido"}), 400
+
+    # Generar key RSA 2048
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    # Guardar key en filesystem del cliente
+    base_path = Path(
+        current_app.config.get("CLIENT_CERTIFICATES_BASE_PATH")
+        or os.environ.get("CLIENT_CERTIFICATES_BASE_PATH", "/app/certificados_clientes")
+    )
+    client_dir = base_path / str(item.id)
+    client_dir.mkdir(parents=True, exist_ok=True)
+
+    key_path = client_dir / "private.key"
+    key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    key_path.write_bytes(key_pem)
+    key_path.chmod(0o600)
+
+    # Actualizar paths en DB
+    item.cert_key_path = str(key_path)
+    item.cert_key_filename = f"{cert_name}.key"
+    item.cert_crt_path = None
+    item.cert_crt_filename = None
+    item.cert_uploaded_at = None
+    item.updated_at = now_cordoba_naive()
+    db.session.commit()
+
+    # Generar CSR
+    subject = x509_mod.Name([
+        x509_mod.NameAttribute(NameOID.COMMON_NAME, cert_name),
+        x509_mod.NameAttribute(NameOID.SERIAL_NUMBER, f"CUIT {item.cuit_representado}"),
+    ])
+    csr = (
+        x509_mod.CertificateSigningRequestBuilder()
+        .subject_name(subject)
+        .sign(private_key, hashes.SHA256())
+    )
+    csr_pem = csr.public_bytes(serialization.Encoding.PEM)
+
+    return send_file(
+        io.BytesIO(csr_pem),
+        mimetype="application/pkcs10",
+        as_attachment=True,
+        download_name=f"{cert_name}.csr",
+    )
+
+
 @clients_bp.post("/clients/<int:client_id>/certificates")
 @require_auth
 def upload_client_certificates(client_id: int):
@@ -442,6 +513,111 @@ def validate_client_config(client_id: int):
             "ready_for_playwright": ready_for_playwright,
         }
     )
+
+
+@clients_bp.post("/clients/<int:client_id>/test-certificates")
+@require_auth
+def test_client_certificates(client_id: int):
+    """Prueba real de certificados contra ARCA: config local + WSLPG + Constancia."""
+    import os
+    from pathlib import Path
+    from cryptography import x509
+
+    from ..integrations.arca.client import (
+        ArcaConstanciaClient,
+        ArcaDiscoveryConfig,
+        ArcaIntegrationError,
+        ArcaWslpgClient,
+    )
+
+    item = Taxpayer.query.get_or_404(client_id)
+
+    # --- 1) Config local (reutiliza lógica de validate-config) ---
+    storage_meta = get_client_certificate_meta(item.id)
+    checks = {
+        "has_empresa": bool(item.empresa and item.empresa.strip()),
+        "has_cuit": is_valid_cuit(item.cuit),
+        "has_cuit_representado": is_valid_cuit(item.cuit_representado),
+        "has_clave_fiscal": _has_clave_fiscal(item),
+        "has_certificates": bool(
+            item.cert_crt_path
+            and item.cert_key_path
+            and storage_meta["cert_crt_exists"]
+            and storage_meta["cert_key_exists"]
+        ),
+        "certificates_valid": False,
+    }
+
+    if checks["has_certificates"]:
+        try:
+            validate_certificate_and_key_paths(item.cert_crt_path, item.cert_key_path)
+            checks["certificates_valid"] = True
+        except CertificateValidationError:
+            pass
+
+    config_ok = all(checks.values())
+
+    # --- 2) Info del certificado ---
+    cert_info = None
+    if checks["has_certificates"]:
+        try:
+            cert_data = open(item.cert_crt_path, "rb").read()
+            cert = x509.load_pem_x509_certificate(cert_data)
+            now = datetime.utcnow()
+            cert_info = {
+                "subject": cert.subject.rfc4514_string(),
+                "issuer": cert.issuer.rfc4514_string(),
+                "not_before": cert.not_valid_before_utc.strftime("%Y-%m-%d"),
+                "not_after": cert.not_valid_after_utc.strftime("%Y-%m-%d"),
+                "expired": now > cert.not_valid_after_utc.replace(tzinfo=None),
+            }
+        except Exception:
+            pass
+
+    # --- 3) Test WSLPG ---
+    wslpg_result = {"ok": False, "message": "No ejecutado"}
+    if config_ok:
+        try:
+            config = ArcaDiscoveryConfig.from_env()
+            config.environment = item.ambiente or config.environment
+            config.cuit_representada = item.cuit_representado
+            config.cert_path = item.cert_crt_path
+            config.key_path = item.cert_key_path
+            ta_base = config.ta_path or os.getenv("ARCA_TA_PATH") or "/tmp/ta"
+            config.ta_path = str(Path(ta_base) / f"taxpayer_{item.id}")
+            ws = ArcaWslpgClient(config=config)
+            ws.call_dummy()
+            wslpg_result = {"ok": True, "message": "Conexión exitosa a WSLPG"}
+        except (ArcaIntegrationError, Exception) as exc:
+            wslpg_result = {"ok": False, "message": str(exc)}
+
+    # --- 4) Test Constancia ---
+    constancia_result = {"ok": False, "message": "No ejecutado"}
+    if config_ok:
+        try:
+            config = ArcaDiscoveryConfig.from_env()
+            config.environment = item.ambiente or config.environment
+            config.cuit_representada = item.cuit_representado
+            config.cert_path = item.cert_crt_path
+            config.key_path = item.cert_key_path
+            ta_base = config.ta_path or os.getenv("ARCA_TA_PATH") or "/tmp/ta"
+            config.ta_path = str(Path(ta_base) / f"taxpayer_{item.id}_constancia")
+            client = ArcaConstanciaClient(config=config)
+            info = client.extract_persona_info(item.cuit_representado)
+            constancia_result = {
+                "ok": True,
+                "message": "Conexión exitosa a Padrón",
+                "razonSocial": info.get("razonSocial", ""),
+            }
+        except (ArcaIntegrationError, Exception) as exc:
+            constancia_result = {"ok": False, "message": str(exc)}
+
+    return jsonify({
+        "config": {"ok": config_ok, "checks": checks},
+        "wslpg": wslpg_result,
+        "constancia": constancia_result,
+        "certificate_info": cert_info,
+    })
 
 
 @clients_bp.get("/clients/<int:client_id>/coes/export")
