@@ -215,7 +215,7 @@ function GenerateCsrSection({ clientId, onGenerated }: { clientId: number; onGen
             type="text"
             value={certName}
             onChange={(e) => setCertName(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
-            placeholder="ej: manassero_prod"
+            placeholder="ej: mi_certificado"
             className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
           />
           <p className="text-xs text-slate-400 mt-1">Solo letras, numeros y guion bajo.</p>
