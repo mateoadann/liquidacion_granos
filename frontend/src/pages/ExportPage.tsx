@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PageHeader } from "../components/layout";
 import { Card, Button, Spinner, Alert } from "../components/ui";
-import { useClientsQuery, useDownloadClientCoesMutation } from "../useClients";
+import { useClientsQuery, useDownloadClientJsonV7Mutation } from "../useClients";
 
 type Step = 1 | 2;
 
@@ -56,7 +56,7 @@ export function ExportPage() {
   const [exportSuccess, setExportSuccess] = useState(false);
 
   const clientsQuery = useClientsQuery();
-  const downloadMutation = useDownloadClientCoesMutation();
+  const downloadJsonV7Mutation = useDownloadClientJsonV7Mutation();
 
   const clients = clientsQuery.data ?? [];
   const activeClients = clients.filter((c) => c.activo);
@@ -85,12 +85,16 @@ export function ExportPage() {
     setExportError(null);
     setExportSuccess(false);
 
+    const [yearStr, monthStr] = selectedMonth.split("-");
+
     try {
       for (const clientId of selectedClients) {
-        const result = await downloadMutation.mutateAsync({
+        const result = await downloadJsonV7Mutation.mutateAsync({
           clientId,
           fechaDesde,
           fechaHasta,
+          mes: Number(monthStr),
+          anio: Number(yearStr),
         });
 
         const url = URL.createObjectURL(result.blob);
@@ -120,7 +124,7 @@ export function ExportPage() {
     <div>
       <PageHeader
         title="Exportar COEs"
-        subtitle="Descarga COEs en formato Excel (.xlsx)"
+        subtitle="Descarga COEs en formato JSON v7"
       />
 
       {/* Progress Steps */}
@@ -203,7 +207,7 @@ export function ExportPage() {
                       />
                       <span className="text-sm text-slate-900">{client.empresa}</span>
                       <span className="text-xs text-slate-500 font-mono">
-                        {client.cuit}
+                        {client.cuitRepresentado}
                       </span>
                     </label>
                   ))}
@@ -263,7 +267,7 @@ export function ExportPage() {
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-slate-500">Formato:</dt>
-                      <dd className="text-slate-900">Excel (.xlsx)</dd>
+                      <dd className="text-slate-900">JSON v7 (RPA)</dd>
                     </div>
                   </dl>
                 </div>
@@ -280,7 +284,7 @@ export function ExportPage() {
                   </Button>
                   <Button
                     onClick={handleExport}
-                    isLoading={downloadMutation.isPending}
+                    isLoading={downloadJsonV7Mutation.isPending}
                   >
                     Exportar
                   </Button>
