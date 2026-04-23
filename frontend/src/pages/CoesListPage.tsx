@@ -19,6 +19,7 @@ import {
 } from "../components/ui";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
+import { downloadCoePdf } from "../api/coes";
 
 function EstadoBadge({ estado }: { estado: string | null }) {
   const variants: Record<string, "success" | "warning" | "error" | "default"> = {
@@ -45,6 +46,7 @@ export function CoesListPage() {
   const [search, setSearch] = useState("");
   const [taxpayerId, setTaxpayerId] = useState<number | undefined>();
   const [estado, setEstado] = useState<string>("");
+  const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
 
   const clientsQuery = useClientsQuery();
   const coesQuery = useCoesQuery({
@@ -70,6 +72,25 @@ export function CoesListPage() {
   function handleEstadoChange(value: string) {
     setEstado(value);
     setPage(1);
+  }
+
+  async function handleDownloadPdf(docId: number, coe: string) {
+    setDownloadingPdfId(docId);
+    try {
+      const blob = await downloadCoePdf(docId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `liquidacion_${coe}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al descargar PDF");
+    } finally {
+      setDownloadingPdfId(null);
+    }
   }
 
   return (
@@ -156,13 +177,23 @@ export function CoesListPage() {
                         <EstadoBadge estado={coe.estado} />
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => navigate(`/coes/${coe.id}`)}
-                        >
-                          Ver
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/coes/${coe.id}`)}
+                          >
+                            Ver
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadPdf(coe.id, coe.coe)}
+                            disabled={downloadingPdfId === coe.id}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-50"
+                          >
+                            {downloadingPdfId === coe.id ? "..." : "PDF"}
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

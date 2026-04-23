@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import decimal
 import inspect
@@ -572,7 +573,10 @@ def _normalize_json_safe(value: Any) -> Any:
     if isinstance(value, (dt.datetime, dt.date, dt.time)):
         return value.isoformat()
     if isinstance(value, bytes):
-        return value.decode("utf-8", errors="ignore")
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            return base64.b64encode(value).decode("ascii")
     if isinstance(value, dict):
         return {str(k): _normalize_json_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
