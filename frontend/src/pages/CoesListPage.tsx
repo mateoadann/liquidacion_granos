@@ -177,7 +177,7 @@ export function CoesListPage() {
                         <EstadoBadge estado={coe.estado} />
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -185,11 +185,12 @@ export function CoesListPage() {
                           >
                             Ver
                           </Button>
+                          <span className="text-slate-300">|</span>
                           <button
                             type="button"
                             onClick={() => handleDownloadPdf(coe.id, coe.coe)}
                             disabled={downloadingPdfId === coe.id}
-                            className="text-blue-600 hover:text-blue-800 text-xs font-medium disabled:opacity-50"
+                            className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 disabled:opacity-50"
                           >
                             {downloadingPdfId === coe.id ? "..." : "PDF"}
                           </button>
