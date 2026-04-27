@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import hmac
 from functools import wraps
 from typing import Callable
 
-from flask import g, request, jsonify
+from flask import current_app, g, request, jsonify
 
 from ..services.auth_service import decode_token, AuthError
 from ..services.token_blacklist import is_blacklisted
@@ -50,6 +51,20 @@ def require_auth(f: Callable) -> Callable:
             "rol": payload["rol"],
         }
 
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def require_api_key(f: Callable) -> Callable:
+    """Decorator que requiere X-API-Key valida (timing-safe)."""
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get("X-API-Key", "")
+        expected = current_app.config.get("LIQUIDADOR_API_KEY", "")
+        if not expected or not hmac.compare_digest(api_key, expected):
+            return jsonify({"error": "api_key_invalida", "mensaje": "X-API-Key faltante o inválida."}), 401
         return f(*args, **kwargs)
 
     return decorated
