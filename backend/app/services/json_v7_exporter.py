@@ -36,11 +36,8 @@ def _build_comprobante(doc: Any, datos: dict) -> dict:
 
     coe = getattr(doc, "coe", "") or ""
 
-    # nro from doc fields or COE split
-    nro_orden = getattr(doc, "nro_orden", None)
-    nro = int(nro_orden) if nro_orden is not None else (
-        int(coe[4:]) if len(coe) > 4 else 0
-    )
+    # nro is ALWAYS the COE digits after the first 4 (punto de venta)
+    nro = int(coe[4:]) if len(coe) > 4 else 0
 
     # tipo_pto_vta is FIXED per comprobante type, NOT from the LPG
     tipo_pto_vta = TIPO_PTO_VTA_POR_CODIGO.get(codigo, 0)

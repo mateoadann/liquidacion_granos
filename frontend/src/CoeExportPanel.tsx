@@ -25,25 +25,27 @@ function monthBounds(monthValue: string): { first: string; last: string } {
 
 interface CoeExportPanelProps {
   client: Client;
-  isDownloading: boolean;
+  isDownloadingJsonV7: boolean;
   errorMessage: string | null;
-  onDownload: (filters: { fechaDesde?: string; fechaHasta?: string }) => Promise<void>;
+  onDownloadJsonV7: (filters: { fechaDesde?: string; fechaHasta?: string; mes?: number; anio?: number }) => Promise<void>;
   onBack: () => void;
 }
 
 export default function CoeExportPanel({
   client,
-  isDownloading,
+  isDownloadingJsonV7,
   errorMessage,
-  onDownload,
+  onDownloadJsonV7,
   onBack,
 }: CoeExportPanelProps) {
   const [selectedMonth, setSelectedMonth] = useState(getPreviousMonthValue);
 
   const { first, last } = monthBounds(selectedMonth);
 
-  async function handleDownload() {
-    await onDownload({ fechaDesde: first, fechaHasta: last });
+  async function handleDownloadJsonV7() {
+    const [, monthStr] = selectedMonth.split("-");
+    const [yearStr] = selectedMonth.split("-");
+    await onDownloadJsonV7({ fechaDesde: first, fechaHasta: last, mes: Number(monthStr), anio: Number(yearStr) });
   }
 
   return (
@@ -81,11 +83,11 @@ export default function CoeExportPanel({
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => void handleDownload()}
-          disabled={isDownloading || !selectedMonth}
-          className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50"
+          onClick={() => void handleDownloadJsonV7()}
+          disabled={isDownloadingJsonV7 || !selectedMonth}
+          className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 disabled:opacity-50"
         >
-          {isDownloading ? "Descargando..." : "Descargar XLSX"}
+          {isDownloadingJsonV7 ? "Descargando..." : "Exportar JSON v7"}
         </button>
       </div>
 
