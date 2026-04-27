@@ -20,6 +20,7 @@ def health():
     return jsonify({
         "status": "ok",
         "timestamp": now_cordoba_naive().isoformat(),
+        "version": "1.0.0",
     })
 
 
