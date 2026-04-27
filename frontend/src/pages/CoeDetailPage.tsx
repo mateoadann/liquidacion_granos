@@ -24,6 +24,27 @@ function EstadoBadge({ estado }: { estado: string | null }) {
   );
 }
 
+function CoeEstadoBadge({ estado }: { estado: string | null }) {
+  const variants: Record<string, "success" | "warning" | "error" | "default"> = {
+    pendiente: "warning",
+    descargado: "default",
+    cargado: "success",
+    error: "error",
+  };
+  const labels: Record<string, string> = {
+    pendiente: "Pendiente",
+    descargado: "Descargado",
+    cargado: "Cargado",
+    error: "Error",
+  };
+  if (!estado) return <span className="text-sm text-slate-400">Sin tracking</span>;
+  return (
+    <Badge variant={variants[estado] ?? "default"}>
+      {labels[estado] ?? estado}
+    </Badge>
+  );
+}
+
 // Helper para formatear números como moneda
 function formatCurrency(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -555,9 +576,15 @@ export function CoeDetailPage() {
               <dd className="mt-1 font-mono text-slate-900">{coe.coe ?? "-"}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-500">Estado</dt>
+              <dt className="text-sm font-medium text-slate-500">Estado ARCA</dt>
               <dd className="mt-1">
                 <EstadoBadge estado={coe.estado} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-slate-500">Estado Ciclo</dt>
+              <dd className="mt-1">
+                <CoeEstadoBadge estado={coe.coe_estado?.estado ?? null} />
               </dd>
             </div>
             <div>
