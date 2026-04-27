@@ -73,3 +73,17 @@ export async function getCoe(id: number): Promise<Coe> {
   }
   return data;
 }
+
+export async function downloadCoePdf(docId: number): Promise<Blob> {
+  const res = await fetchWithAuth(`/coes/${docId}/pdf`, { method: "GET" });
+  if (!res.ok) {
+    const text = await res.text();
+    let errorMsg = "No se pudo descargar el PDF";
+    try {
+      const json = JSON.parse(text);
+      if (json.error) errorMsg = json.error;
+    } catch { /* ignore */ }
+    throw new Error(errorMsg);
+  }
+  return res.blob();
+}

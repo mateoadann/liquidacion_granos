@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import io
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
@@ -115,6 +116,36 @@ def get_coe(coe_id: int):
     if not doc:
         return {"error": "COE no encontrado"}, 404
     return _serialize_coe(doc, include_taxpayer=True)
+
+
+@coes_bp.get("/coes/<int:doc_id>/pdf")
+@require_auth
+def download_coe_pdf(doc_id):
+    """Download the PDF for a given LpgDocument."""
+    from ..services.pdf_service import (
+        get_or_fetch_pdf,
+        PdfNotFoundError,
+        PdfNoCertificatesError,
+        PdfFetchError,
+    )
+
+    try:
+        pdf_bytes, filename = get_or_fetch_pdf(doc_id)
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+    except PdfNotFoundError:
+        return {"error": "COE no encontrado"}, 404
+    except PdfNoCertificatesError as exc:
+        return {"error": str(exc)}, 503
+    except PdfFetchError as exc:
+        return {"error": str(exc)}, 502
+    except Exception:
+        logger.exception("PDF_DOWNLOAD_ERROR | doc_id=%s", doc_id)
+        return {"error": "Error interno al descargar PDF"}, 500
 
 
 @coes_bp.post("/coes/refetch-ajustes")
