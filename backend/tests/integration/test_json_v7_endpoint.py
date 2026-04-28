@@ -154,7 +154,9 @@ def test_export_json_v7_empty_result(client, auth_headers):
 
     assert response.status_code == 200
     body = response.get_json()
-    assert body == {"liquidaciones": []}
+    assert body["liquidaciones"] == []
+    assert body["schema_version"] == "v7.1"
+    assert "meta" in body
 
 
 # ─── Content-Disposition ────────────────────────────────────────────
