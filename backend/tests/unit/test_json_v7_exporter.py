@@ -397,7 +397,7 @@ class TestTransformSingle:
 
 
 class TestBuildJsonV7:
-    def test_build_json_v7_wrapper(self):
+    def test_build_json_v7_wrapper(self, app):
         doc = _make_doc(coe="330230384112", datos_limpios=SAMPLE_DATOS)
         taxpayer = _make_taxpayer("30500120882")
         result = build_json_v7([doc], taxpayer, mes=12, anio=2025)
@@ -406,7 +406,7 @@ class TestBuildJsonV7:
         assert isinstance(result["liquidaciones"], list)
         assert len(result["liquidaciones"]) == 1
 
-    def test_build_json_v7_no_og_in_any_output(self):
+    def test_build_json_v7_no_og_in_any_output(self, app):
         datos_with_og = {
             **SAMPLE_DATOS,
             "retenciones": [
