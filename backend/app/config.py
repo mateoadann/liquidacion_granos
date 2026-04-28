@@ -20,6 +20,9 @@ class Config:
     ]
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+    # API key para integración con liquidador externo
+    LIQUIDADOR_API_KEY = os.getenv("LIQUIDADOR_API_KEY", "")
+
     # Rate limiting
     RATELIMIT_STORAGE_URI = REDIS_URL
     RATELIMIT_STRATEGY = "fixed-window"

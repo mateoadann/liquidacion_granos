@@ -12,6 +12,13 @@ export interface Coe {
   created_at: string | null;
   raw_data: Record<string, unknown> | null;
   datos_limpios: Record<string, unknown> | null;
+  coe_estado?: {
+    estado: string;
+    descargado_en: string | null;
+    cargado_en: string | null;
+    error_fase: string | null;
+    error_mensaje: string | null;
+  } | null;
   taxpayer?: {
     id: number;
     empresa: string;
@@ -65,4 +72,18 @@ export async function getCoe(id: number): Promise<Coe> {
     throw new Error(data?.error ?? "Error al obtener COE");
   }
   return data;
+}
+
+export async function downloadCoePdf(docId: number): Promise<Blob> {
+  const res = await fetchWithAuth(`/coes/${docId}/pdf`, { method: "GET" });
+  if (!res.ok) {
+    const text = await res.text();
+    let errorMsg = "No se pudo descargar el PDF";
+    try {
+      const json = JSON.parse(text);
+      if (json.error) errorMsg = json.error;
+    } catch { /* ignore */ }
+    throw new Error(errorMsg);
+  }
+  return res.blob();
 }

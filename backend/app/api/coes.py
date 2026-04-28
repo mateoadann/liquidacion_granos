@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import io
 import logging
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from ..extensions import db
 from ..models import LpgDocument, Taxpayer
 from ..middleware import require_auth, require_admin
 from ..services import (
+    PdfFetchError,
+    PdfNoCertificatesError,
+    PdfNotFoundError,
     extract_fecha_liquidacion,
     fecha_liquidacion_as_date,
     fecha_liquidacion_expr,
+    get_or_fetch_pdf,
 )
 
 logger = logging.getLogger(__name__)
@@ -19,6 +24,18 @@ coes_bp = Blueprint("coes", __name__)
 
 
 def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
+    # Include lifecycle estado from CoeEstado if exists
+    coe_estado_info = None
+    if doc.coe_estado:
+        ce = doc.coe_estado
+        coe_estado_info = {
+            "estado": ce.estado,
+            "descargado_en": ce.descargado_en.isoformat() if ce.descargado_en else None,
+            "cargado_en": ce.cargado_en.isoformat() if ce.cargado_en else None,
+            "error_fase": ce.error_fase,
+            "error_mensaje": ce.error_mensaje,
+        }
+
     result = {
         "id": doc.id,
         "taxpayer_id": doc.taxpayer_id,
@@ -31,6 +48,7 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         "raw_data": doc.raw_data,
         "datos_limpios": doc.datos_limpios,
+        "coe_estado": coe_estado_info,
     }
     if include_taxpayer and doc.taxpayer_id:
         taxpayer = db.session.get(Taxpayer, doc.taxpayer_id)
@@ -102,6 +120,29 @@ def get_coe(coe_id: int):
     if not doc:
         return {"error": "COE no encontrado"}, 404
     return _serialize_coe(doc, include_taxpayer=True)
+
+
+@coes_bp.get("/coes/<int:doc_id>/pdf")
+@require_auth
+def download_coe_pdf(doc_id):
+    """Download the PDF for a given LpgDocument."""
+    try:
+        pdf_bytes, filename = get_or_fetch_pdf(doc_id)
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+    except PdfNotFoundError:
+        return {"error": "COE no encontrado"}, 404
+    except PdfNoCertificatesError as exc:
+        return {"error": str(exc)}, 503
+    except PdfFetchError as exc:
+        return {"error": str(exc)}, 502
+    except Exception:
+        logger.exception("PDF_DOWNLOAD_ERROR | doc_id=%s", doc_id)
+        return {"error": "Error interno al descargar PDF"}, 500
 
 
 @coes_bp.post("/coes/refetch-ajustes")

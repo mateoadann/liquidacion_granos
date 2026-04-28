@@ -1,0 +1,29 @@
+{
+  "description": "Shared hash contract between liquidador-granos and rpa-holistor",
+  "test_cases": [
+    {
+      "input": {
+        "cuit_empresa": "30711165378",
+        "mes": 2,
+        "anio": 2026,
+        "cuit_comprador": "30502874353",
+        "cuit_proveedor": "30502874353",
+        "comprobante": {
+          "codigo": "F2",
+          "tipo_pto_vta": 3302,
+          "nro": 30384112,
+          "fecha_emision": "2026-02-26"
+        },
+        "grano": {
+          "cod_grano": 15,
+          "precio_unitario": 205.6,
+          "cantidad_kg": 38193,
+          "neto_total": 7852593.91,
+          "iva_monto": 824522.36,
+          "subtotal": 8677116.27
+        }
+      },
+      "expected_hash": "sha256:5e0760231e633522c2665f5fea7b2ac8d49f12478ae44c0ae54b35b819ae53b7"
+    }
+  ]
+}

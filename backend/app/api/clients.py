@@ -28,6 +28,7 @@ from ..services import (
     save_client_certificates,
     validate_certificate_and_key_paths,
 )
+from ..services.json_v7_exporter import build_json_v7
 
 clients_bp = Blueprint("clients", __name__)
 
@@ -704,3 +705,58 @@ def export_client_coes(client_id: int):
         as_attachment=True,
         download_name=filename,
     )
+
+
+@clients_bp.get("/clients/<int:client_id>/export/json-v7")
+@require_auth
+def export_json_v7(client_id):
+    taxpayer = Taxpayer.query.get(client_id)
+    if taxpayer is None:
+        return _error("Cliente no encontrado.", 404)
+
+    # --- Validate required params: mes, anio ---
+    raw_mes = request.args.get("mes")
+    raw_anio = request.args.get("anio")
+    if raw_mes is None or raw_anio is None:
+        return _error("mes y anio son obligatorios.", 400)
+
+    try:
+        mes = int(raw_mes)
+        anio = int(raw_anio)
+    except (ValueError, TypeError):
+        return _error("mes y anio deben ser enteros.", 400)
+
+    if mes < 1 or mes > 12:
+        return _error("mes debe estar entre 1 y 12.", 400)
+
+    # --- Parse optional date range ---
+    try:
+        fecha_desde = _parse_export_date(request.args.get("fecha_desde"))
+        fecha_hasta = _parse_export_date(request.args.get("fecha_hasta"))
+    except ValueError as exc:
+        return _error(str(exc), 400)
+
+    # --- Query documents ---
+    query = LpgDocument.query.filter(LpgDocument.taxpayer_id == taxpayer.id)
+    query = query.filter(LpgDocument.datos_limpios.isnot(None))
+
+    fecha_liq_expr = fecha_liquidacion_expr()
+    fecha_liq_date = fecha_liquidacion_as_date(fecha_liq_expr)
+
+    if fecha_desde is not None:
+        query = query.filter(fecha_liq_date >= fecha_desde.date())
+    if fecha_hasta is not None:
+        query = query.filter(fecha_liq_date <= fecha_hasta.date())
+
+    documents = query.order_by(
+        fecha_liq_date.asc(), LpgDocument.id.asc()
+    ).all()
+
+    # --- Build JSON v7 ---
+    result = build_json_v7(documents, taxpayer, mes, anio)
+
+    response = jsonify(result)
+    cuit = taxpayer.cuit_representado or "00000000000"
+    filename = f"liquidaciones_v7_{cuit}_{mes}_{anio}.json"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response

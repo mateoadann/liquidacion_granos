@@ -28,6 +28,7 @@ class TestConfig:
     SECRET_KEY = "test-secret"
     CLIENT_SECRET_KEY = "test-client-secret"
     CORS_ORIGINS = ["http://localhost:5173"]
+    LIQUIDADOR_API_KEY = "test-integration-key"
     # No incluir REDIS_URL - se usará fallback en memoria
 
 

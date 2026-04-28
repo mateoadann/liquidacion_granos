@@ -4,7 +4,8 @@ import click
 from flask import Flask
 
 from .extensions import db
-from .models import User
+from .models import User, LpgDocument, CoeEstado
+from .models.taxpayer import Taxpayer
 from .services.auth_service import hash_password
 
 
@@ -40,3 +41,31 @@ def register_cli(app: Flask) -> None:
         db.session.commit()
 
         click.echo(f"Admin creado exitosamente: {username}")
+
+    @app.cli.command("backfill-coe-estado")
+    def backfill_coe_estado():
+        """Crea CoeEstado(pendiente) para LpgDocuments que no tienen tracking."""
+        docs = (
+            LpgDocument.query
+            .filter(LpgDocument.coe.isnot(None), LpgDocument.coe != "")
+            .all()
+        )
+        created = 0
+        skipped = 0
+        for doc in docs:
+            existing = CoeEstado.query.filter_by(coe=doc.coe).first()
+            if existing:
+                skipped += 1
+                continue
+            taxpayer = db.session.get(Taxpayer, doc.taxpayer_id)
+            cuit_empresa = taxpayer.cuit_representado if taxpayer else ""
+            entry = CoeEstado(
+                coe=doc.coe,
+                lpg_document_id=doc.id,
+                cuit_empresa=cuit_empresa,
+                estado="pendiente",
+            )
+            db.session.add(entry)
+            created += 1
+        db.session.commit()
+        click.echo(f"Backfill completado: {created} creados, {skipped} ya existían.")

@@ -19,6 +19,22 @@ from .lpg_document_utils import (
     fecha_liquidacion_as_date,
     fecha_liquidacion_expr,
 )
+from .coe_estado_service import (
+    HashMismatchError,
+    TransicionInvalidaError,
+    calcular_hash,
+    consultar_estado,
+    crear_pendiente,
+    listar_estados,
+    marcar_descargado,
+    reportar_cargado,
+)
+from .pdf_service import (
+    PdfFetchError,
+    PdfNoCertificatesError,
+    PdfNotFoundError,
+    get_or_fetch_pdf,
+)
 from .validators import is_valid_ambiente, is_valid_cuit
 
 __all__ = [
@@ -34,7 +50,19 @@ __all__ = [
     "is_placeholder_secret",
     "is_valid_ambiente",
     "is_valid_cuit",
+    "get_or_fetch_pdf",
+    "PdfFetchError",
+    "PdfNoCertificatesError",
+    "PdfNotFoundError",
     "save_client_certificates",
     "validate_certificate_and_key",
     "validate_certificate_and_key_paths",
+    "HashMismatchError",
+    "TransicionInvalidaError",
+    "calcular_hash",
+    "consultar_estado",
+    "crear_pendiente",
+    "listar_estados",
+    "marcar_descargado",
+    "reportar_cargado",
 ]

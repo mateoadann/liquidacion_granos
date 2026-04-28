@@ -9,7 +9,7 @@ import type { Client, ClientValidationResult, PlaywrightPipelineRunResult } from
 import {
   useClientsQuery,
   useCreateClientMutation,
-  useDownloadClientCoesMutation,
+  useDownloadClientJsonV7Mutation,
   usePlaywrightJobQuery,
   useDeleteClientMutation,
   useRunPlaywrightPipelineMutation,
@@ -56,7 +56,7 @@ export default function ClientsPage() {
   const deleteClientMutation = useDeleteClientMutation();
   const uploadCertificatesMutation = useUploadCertificatesMutation();
   const validateConfigMutation = useValidateConfigMutation();
-  const downloadClientCoesMutation = useDownloadClientCoesMutation();
+  const downloadClientJsonV7Mutation = useDownloadClientJsonV7Mutation();
   const runPlaywrightMutation = useRunPlaywrightPipelineMutation();
   const runJobQuery = usePlaywrightJobQuery(runJobId);
 
@@ -80,7 +80,7 @@ export default function ClientsPage() {
   const anyRowActionLoading =
     deleteClientMutation.isPending ||
     uploadCertificatesMutation.isPending ||
-    downloadClientCoesMutation.isPending ||
+    downloadClientJsonV7Mutation.isPending ||
     validateConfigMutation.isPending ||
     runPlaywrightMutation.isPending;
 
@@ -217,16 +217,18 @@ export default function ClientsPage() {
     setView("exports");
   }
 
-  async function handleDownloadCoes(
-    filters: { fechaDesde?: string; fechaHasta?: string }
+  async function handleDownloadJsonV7(
+    filters: { fechaDesde?: string; fechaHasta?: string; mes?: number; anio?: number }
   ) {
     if (!activeClient) return;
     setExportError(null);
     try {
-      const file = await downloadClientCoesMutation.mutateAsync({
+      const file = await downloadClientJsonV7Mutation.mutateAsync({
         clientId: activeClient.id,
         fechaDesde: filters.fechaDesde,
         fechaHasta: filters.fechaHasta,
+        mes: filters.mes,
+        anio: filters.anio,
       });
 
       const url = URL.createObjectURL(file.blob);
@@ -495,9 +497,9 @@ export default function ClientsPage() {
       {view === "exports" && activeClient ? (
         <CoeExportPanel
           client={activeClient}
-          isDownloading={downloadClientCoesMutation.isPending}
+          isDownloadingJsonV7={downloadClientJsonV7Mutation.isPending}
           errorMessage={exportError}
-          onDownload={handleDownloadCoes}
+          onDownloadJsonV7={handleDownloadJsonV7}
           onBack={goToList}
         />
       ) : null}

@@ -149,6 +149,8 @@ export interface DownloadClientCoesInput {
   clientId: number;
   fechaDesde?: string;
   fechaHasta?: string;
+  mes?: number;
+  anio?: number;
 }
 
 export interface DownloadFileResult {
@@ -578,6 +580,38 @@ export async function downloadClientCoesExport(
 
   const blob = await res.blob();
   const fallbackName = `coes_cliente_${input.clientId}.xlsx`;
+  const fileName = resolveDownloadFileName(res.headers.get("content-disposition"), fallbackName);
+  return { blob, fileName };
+}
+
+export async function downloadClientJsonV7Export(
+  input: DownloadClientCoesInput
+): Promise<DownloadFileResult> {
+  const params = new URLSearchParams();
+  if (input.fechaDesde) params.set("fecha_desde", input.fechaDesde);
+  if (input.fechaHasta) params.set("fecha_hasta", input.fechaHasta);
+  if (input.mes != null) params.set("mes", String(input.mes));
+  if (input.anio != null) params.set("anio", String(input.anio));
+
+  const qs = params.toString();
+  const url = `/clients/${input.clientId}/export/json-v7${qs ? `?${qs}` : ""}`;
+
+  const res = await fetchWithAuth(url, { method: "GET" });
+
+  if (!res.ok) {
+    const payload = await readResponseBody(res);
+    throw new Error(parseApiError(payload, "No se pudo descargar el archivo JSON v7"));
+  }
+
+  const text = await res.text();
+  const data = JSON.parse(text) as Record<string, unknown>;
+  const liquidaciones = Array.isArray(data.liquidaciones) ? data.liquidaciones : [];
+  if (liquidaciones.length === 0) {
+    throw new Error("No se encontraron liquidaciones para el período seleccionado");
+  }
+
+  const blob = new Blob([text], { type: "application/json" });
+  const fallbackName = `liquidaciones_v7_${input.clientId}.json`;
   const fileName = resolveDownloadFileName(res.headers.get("content-disposition"), fallbackName);
   return { blob, fileName };
 }
