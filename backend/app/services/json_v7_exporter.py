@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
+import uuid
+from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _format_cuit(cuit_value: Any) -> str:
@@ -148,8 +153,15 @@ def _build_deducciones(datos: dict) -> list[dict]:
     return result
 
 
-def transform_single(doc: Any, taxpayer: Any, mes: int, anio: int) -> dict:
-    """Build a single v7 liquidacion dict from an LpgDocument."""
+def transform_single(
+    doc: Any,
+    taxpayer: Any,
+    mes: int,
+    anio: int,
+    id_liquidacion: str | None = None,
+    estado_origen: str | None = None,
+) -> dict:
+    """Build a single v7.1 liquidacion dict from an LpgDocument."""
     datos = getattr(doc, "datos_limpios", None) or {}
 
     cuit_empresa = _format_cuit(getattr(taxpayer, "cuit_representado", None))
@@ -160,7 +172,12 @@ def transform_single(doc: Any, taxpayer: Any, mes: int, anio: int) -> dict:
     retenciones = _build_retenciones(datos)
     deducciones = _build_deducciones(datos)
 
+    coe = getattr(doc, "coe", None) or ""
+
     liquidacion: dict[str, Any] = {
+        "coe": coe,
+        "id_liquidacion": id_liquidacion or f"liq_{uuid.uuid4().hex[:12]}",
+        "estado_origen": estado_origen or "pendiente",
         "cuit_empresa": cuit_empresa,
         "cuit_comprador": cuit_comprador,
         "mes": mes,
@@ -178,10 +195,58 @@ def transform_single(doc: Any, taxpayer: Any, mes: int, anio: int) -> dict:
 
 
 def build_json_v7(documents: list, taxpayer: Any, mes: int, anio: int) -> dict:
-    """Build the full v7 JSON export from a list of LpgDocuments."""
+    """Build the full v7.1 JSON export from a list of LpgDocuments.
+
+    Includes schema_version, meta block, and per-liquidation coe/id/estado.
+    Transitions CoeEstado from pendiente→descargado and persists hash.
+    Filters out COEs with estado='cargado'.
+    """
+    from .coe_estado_service import calcular_hash, marcar_descargado
+    from ..models.coe_estado import CoeEstado
+
+    now = datetime.now().astimezone()
+    batch_id = f"b_{now.strftime('%Y%m%d_%H%M%S')}"
+
+    liquidaciones = []
+    for doc in documents:
+        coe = getattr(doc, "coe", None) or ""
+
+        # Check CoeEstado — skip if already cargado
+        coe_estado_entry = None
+        if coe:
+            coe_estado_entry = CoeEstado.query.filter_by(coe=coe).first()
+            if coe_estado_entry and coe_estado_entry.estado == "cargado":
+                logger.info("EXPORT_SKIP_CARGADO | coe=%s", coe)
+                continue
+
+        # Determine estado_origen and id_liquidacion from CoeEstado
+        estado_origen = coe_estado_entry.estado if coe_estado_entry else "pendiente"
+        id_liquidacion = (
+            coe_estado_entry.id_liquidacion if coe_estado_entry else None
+        ) or f"liq_{uuid.uuid4().hex[:12]}"
+
+        liq = transform_single(
+            doc, taxpayer, mes, anio,
+            id_liquidacion=id_liquidacion,
+            estado_origen=estado_origen,
+        )
+
+        # Calculate hash and transition to descargado
+        if coe and coe_estado_entry:
+            h = calcular_hash(liq)
+            try:
+                marcar_descargado(coe, h, id_liquidacion)
+            except Exception:
+                logger.exception("EXPORT_MARCAR_DESCARGADO_ERROR | coe=%s", coe)
+
+        liquidaciones.append(liq)
+
     return {
-        "liquidaciones": [
-            transform_single(doc, taxpayer, mes, anio)
-            for doc in documents
-        ],
+        "schema_version": "v7.1",
+        "meta": {
+            "generado_en": now.isoformat(timespec="seconds"),
+            "generador": "liquidador-granos@1.0.0",
+            "batch_id": batch_id,
+        },
+        "liquidaciones": liquidaciones,
     }

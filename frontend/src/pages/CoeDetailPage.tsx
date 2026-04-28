@@ -4,6 +4,7 @@ import { PageHeader } from "../components/layout";
 import { Card, CardHeader, Badge, Button, Spinner, Alert } from "../components/ui";
 import { useCoeQuery } from "../hooks/useCoes";
 import { usePersonaQuery } from "../hooks/usePadron";
+import { downloadCoePdf } from "../api/coes";
 import { formatDateOnly, formatDateTime } from "../dateUtils";
 
 function EstadoBadge({ estado }: { estado: string | null }) {
@@ -20,6 +21,27 @@ function EstadoBadge({ estado }: { estado: string | null }) {
   return (
     <Badge variant={variants[estado ?? ""] ?? "default"}>
       {labels[estado ?? ""] ?? estado ?? "-"}
+    </Badge>
+  );
+}
+
+function CoeEstadoBadge({ estado }: { estado: string | null }) {
+  const variants: Record<string, "success" | "warning" | "error" | "default"> = {
+    pendiente: "warning",
+    descargado: "default",
+    cargado: "success",
+    error: "error",
+  };
+  const labels: Record<string, string> = {
+    pendiente: "Pendiente",
+    descargado: "Descargado",
+    cargado: "Cargado",
+    error: "Error",
+  };
+  if (!estado) return <span className="text-sm text-slate-400">Sin tracking</span>;
+  return (
+    <Badge variant={variants[estado] ?? "default"}>
+      {labels[estado] ?? estado}
     </Badge>
   );
 }
@@ -510,9 +532,30 @@ export function CoeDetailPage() {
   const coeId = Number(id);
   const [datosExpanded, setDatosExpanded] = useState(true);
   const [rawDataExpanded, setRawDataExpanded] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const coeQuery = useCoeQuery(coeId);
   const coe = coeQuery.data;
+
+  async function handleDownloadPdf() {
+    if (!coe) return;
+    setDownloadingPdf(true);
+    try {
+      const blob = await downloadCoePdf(coe.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `liquidacion_${coe.coe}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al descargar PDF");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
 
   if (coeQuery.isLoading) {
     return (
@@ -549,39 +592,40 @@ export function CoeDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader title="Información del Documento" />
-          <dl className="space-y-4">
+          <dl className="grid grid-cols-3 gap-4">
             <div>
               <dt className="text-sm font-medium text-slate-500">COE</dt>
               <dd className="mt-1 font-mono text-slate-900">{coe.coe ?? "-"}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-500">Estado</dt>
+              <dt className="text-sm font-medium text-slate-500">Estado ARCA</dt>
               <dd className="mt-1">
                 <EstadoBadge estado={coe.estado} />
               </dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-slate-500">Tipo Documento</dt>
-              <dd className="mt-1 text-slate-900">
-                {coe.tipo_documento === "AJUSTE" ? (
-                  <Badge variant="warning">Ajuste</Badge>
-                ) : (
-                  coe.tipo_documento
-                )}
+              <dt className="text-sm font-medium text-slate-500">Estado Ciclo</dt>
+              <dd className="mt-1">
+                <CoeEstadoBadge estado={coe.coe_estado?.estado ?? null} />
               </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Punto Emisión</dt>
-              <dd className="mt-1 text-slate-900">{coe.pto_emision ?? "-"}</dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Número Orden</dt>
-              <dd className="mt-1 text-slate-900">{coe.nro_orden ?? "-"}</dd>
             </div>
             <div>
               <dt className="text-sm font-medium text-slate-500">Fecha Creación</dt>
               <dd className="mt-1 text-slate-900">
-{formatDateTime(coe.created_at)}
+                {formatDateTime(coe.created_at)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-slate-500">Documento PDF</dt>
+              <dd className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPdf()}
+                  disabled={downloadingPdf}
+                  className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 disabled:opacity-50"
+                >
+                  {downloadingPdf ? "Descargando..." : "Descargar PDF"}
+                </button>
               </dd>
             </div>
           </dl>

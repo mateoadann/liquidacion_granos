@@ -12,6 +12,13 @@ export interface Coe {
   created_at: string | null;
   raw_data: Record<string, unknown> | null;
   datos_limpios: Record<string, unknown> | null;
+  coe_estado?: {
+    estado: string;
+    descargado_en: string | null;
+    cargado_en: string | null;
+    error_fase: string | null;
+    error_mensaje: string | null;
+  } | null;
   taxpayer?: {
     id: number;
     empresa: string;

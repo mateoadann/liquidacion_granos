@@ -404,6 +404,15 @@ class LpgPlaywrightPipelineService:
         builder = DatosLimpiosBuilder()
         builder.process_document(document)
 
+        # Auto-create CoeEstado tracking entry
+        if document.coe:
+            try:
+                from .coe_estado_service import crear_pendiente
+                crear_pendiente(document)
+            except Exception:
+                # Never block document save — crear_pendiente is best-effort
+                pass
+
     def _find_key(self, value: Any, keys: set[str]) -> Any:
         lowered = {item.casefold() for item in keys}
         stack = [value]

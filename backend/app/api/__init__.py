@@ -5,6 +5,7 @@ from .clients import clients_bp
 from .coes import coes_bp
 from .discovery import discovery_bp
 from .health import health_bp
+from .integration import integration_bp
 from .jobs import jobs_bp
 from .operations import operations_bp
 from .playwright import playwright_bp
@@ -29,3 +30,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(coes_bp, url_prefix="/api")
     app.register_blueprint(padron_bp, url_prefix="/api")
     app.register_blueprint(users_bp, url_prefix="/api")
+    app.register_blueprint(integration_bp, url_prefix="/api")
