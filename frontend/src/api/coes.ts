@@ -39,6 +39,7 @@ export interface CoesListParams {
   per_page?: number;
   taxpayer_id?: number;
   estado?: string;
+  estado_ciclo?: string;
   fecha_desde?: string;
   fecha_hasta?: string;
   search?: string;
@@ -50,6 +51,7 @@ export async function listCoes(params?: CoesListParams): Promise<CoesListRespons
   if (params?.per_page) searchParams.set("per_page", params.per_page.toString());
   if (params?.taxpayer_id) searchParams.set("taxpayer_id", params.taxpayer_id.toString());
   if (params?.estado) searchParams.set("estado", params.estado);
+  if (params?.estado_ciclo) searchParams.set("estado_ciclo", params.estado_ciclo);
   if (params?.fecha_desde) searchParams.set("fecha_desde", params.fecha_desde);
   if (params?.fecha_hasta) searchParams.set("fecha_hasta", params.fecha_hasta);
   if (params?.search) searchParams.set("search", params.search);
