@@ -258,6 +258,102 @@ def listar_estados(
     }
 
 
+def forzar_sincronizado(coe: str, payload: dict) -> dict:
+    """Forza el estado de un COE saltando validaciones normales (admin only).
+
+    Acepta transición desde CUALQUIER estado actual hacia 'cargado' o 'error'.
+    Persiste audit completo (forzado_en, forzado_por, forzado_razon,
+    forzado_estado_previo, hash_payload_forzado).
+
+    Idempotencia: si ya está en el estado destino con la MISMA razón Y mismo
+    hash_payload_forzado → no-op, retorna duplicado=True.
+
+    Lanza ValueError si el COE no existe (el endpoint lo mapea a 404).
+    """
+    entry = CoeEstado.query.filter_by(coe=coe).first()
+    if not entry:
+        raise ValueError(f"CoeEstado no encontrado para COE {coe}")
+
+    estado_nuevo = payload["estado"]
+    razon = payload["razon"]
+    hash_local = payload["hash_payload_local"]
+    forzado_en_str = payload["forzado_en"]
+
+    # Idempotencia: ya forzado al mismo estado, misma razón, mismo hash
+    if (
+        entry.estado == estado_nuevo
+        and entry.forzado_razon == razon
+        and entry.hash_payload_forzado == hash_local
+    ):
+        return {
+            "coe": coe,
+            "estado_anterior": entry.forzado_estado_previo or entry.estado,
+            "estado_nuevo": entry.estado,
+            "forzado_en": entry.forzado_en.isoformat() if entry.forzado_en else None,
+            "duplicado": True,
+        }
+
+    estado_anterior = entry.estado
+
+    # Aplicar override
+    entry.estado = estado_nuevo
+    try:
+        entry.forzado_en = datetime.fromisoformat(forzado_en_str)
+    except (ValueError, TypeError):
+        entry.forzado_en = now_cordoba_naive()
+    entry.forzado_por = payload["usuario"]
+    entry.forzado_razon = razon
+    entry.forzado_estado_previo = estado_anterior
+    entry.hash_payload_forzado = hash_local
+    # Reflejar en hash_payload_cargado lo que el RPA tiene (per spec §6 side effects)
+    entry.hash_payload_cargado = hash_local
+
+    if estado_nuevo == "cargado":
+        cargado_en_str = payload.get("cargado_en")
+        if cargado_en_str:
+            try:
+                entry.cargado_en = datetime.fromisoformat(cargado_en_str)
+            except (ValueError, TypeError):
+                entry.cargado_en = now_cordoba_naive()
+        else:
+            entry.cargado_en = now_cordoba_naive()
+
+        comprobante = payload.get("comprobante", {}) or {}
+        entry.codigo_comprobante = comprobante.get("codigo")
+        entry.tipo_pto_vta = comprobante.get("tipo_pto_vta")
+        entry.nro_comprobante = comprobante.get("nro")
+        entry.fecha_emision = comprobante.get("fecha_emision")
+        entry.ultima_ejecucion_id = payload.get("ejecucion_id")
+        entry.error_mensaje = None
+        entry.error_fase = None
+    else:  # error
+        entry.error_fase = payload.get("error_fase")
+        entry.error_mensaje = payload.get("error_mensaje")
+
+    entry.ultimo_usuario = payload["usuario"]
+
+    db.session.commit()
+
+    # Logging WARNING (per spec sección 6)
+    logger.warning(
+        "ADMIN_FORZAR_SINCRONIZADO | coe=%s user=%s estado_previo=%s estado_nuevo=%s razon=%r hash_local=%s",
+        coe,
+        entry.ultimo_usuario,
+        estado_anterior,
+        estado_nuevo,
+        razon,
+        hash_local,
+    )
+
+    return {
+        "coe": coe,
+        "estado_anterior": estado_anterior,
+        "estado_nuevo": estado_nuevo,
+        "forzado_en": entry.forzado_en.isoformat() if entry.forzado_en else None,
+        "duplicado": False,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Serialización
 # ---------------------------------------------------------------------------
@@ -284,5 +380,11 @@ def _serialize_coe_estado(entry: CoeEstado) -> dict:
         "ultimo_usuario": entry.ultimo_usuario,
         "hash_payload_emitido": entry.hash_payload_emitido,
         "hash_payload_cargado": entry.hash_payload_cargado,
+        "forzado_en": entry.forzado_en.isoformat() if entry.forzado_en else None,
+        "forzado_por": entry.forzado_por,
+        "forzado_razon": entry.forzado_razon,
+        "forzado_estado_previo": entry.forzado_estado_previo,
+        "hash_payload_forzado": entry.hash_payload_forzado,
+        "forzado": entry.forzado_en is not None,
         "actualizado_en": entry.actualizado_en.isoformat() if entry.actualizado_en else None,
     }

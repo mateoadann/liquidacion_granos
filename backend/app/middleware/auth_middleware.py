@@ -70,6 +70,20 @@ def require_api_key(f: Callable) -> Callable:
     return decorated
 
 
+def require_admin_token(f: Callable) -> Callable:
+    """Decorator que requiere X-Admin-Token valida (timing-safe)."""
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        admin_token = request.headers.get("X-Admin-Token", "")
+        expected = current_app.config.get("LIQUIDADOR_API_ADMIN_TOKEN", "")
+        if not expected or not hmac.compare_digest(admin_token, expected):
+            return jsonify({"error": "admin_token_invalido", "mensaje": "X-Admin-Token faltante o inválido."}), 403
+        return f(*args, **kwargs)
+
+    return decorated
+
+
 def require_admin(f: Callable) -> Callable:
     """Decorator que requiere rol admin. Debe usarse despues de require_auth."""
 
