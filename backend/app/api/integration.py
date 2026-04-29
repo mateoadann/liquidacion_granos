@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from ..middleware import require_api_key
+from ..middleware import require_api_key, require_admin_token
 from ..services.coe_estado_service import (
     reportar_cargado,
     consultar_estado,
     listar_estados,
+    forzar_sincronizado,
     TransicionInvalidaError,
     HashMismatchError,
 )
@@ -102,3 +103,71 @@ def get_coes_estados():
         offset=offset,
     )
     return jsonify(result), 200
+
+
+@integration_bp.post("/v1/coes/<coe>/forzar-sincronizado")
+@require_api_key
+@require_admin_token
+def post_coe_forzar_sincronizado(coe):
+    body = request.get_json(silent=True) or {}
+
+    estado = body.get("estado")
+    if estado not in ("cargado", "error"):
+        return jsonify({
+            "error": "validacion_fallida",
+            "mensaje": "Campo 'estado' debe ser 'cargado' o 'error'.",
+        }), 422
+
+    razon = body.get("razon", "")
+    if not razon or len(razon) < 3:
+        return jsonify({
+            "error": "validacion_fallida",
+            "mensaje": "Campo 'razon' requerido (>= 3 chars).",
+        }), 422
+
+    required = ["usuario", "forzado_en", "hash_payload_local"]
+    missing = [f for f in required if not body.get(f)]
+    if missing:
+        return jsonify({
+            "error": "validacion_fallida",
+            "mensaje": f"Campos requeridos faltantes: {', '.join(missing)}",
+        }), 422
+
+    if estado == "cargado":
+        if not body.get("comprobante"):
+            return jsonify({
+                "error": "validacion_fallida",
+                "mensaje": "'comprobante' requerido cuando estado='cargado'.",
+            }), 422
+        if not body.get("ejecucion_id"):
+            return jsonify({
+                "error": "validacion_fallida",
+                "mensaje": "'ejecucion_id' requerido cuando estado='cargado'.",
+            }), 422
+        if not body.get("cargado_en"):
+            return jsonify({
+                "error": "validacion_fallida",
+                "mensaje": "'cargado_en' requerido cuando estado='cargado'.",
+            }), 422
+    else:  # error
+        if not body.get("error_fase"):
+            return jsonify({
+                "error": "validacion_fallida",
+                "mensaje": "'error_fase' requerido cuando estado='error'.",
+            }), 422
+        if not body.get("error_mensaje"):
+            return jsonify({
+                "error": "validacion_fallida",
+                "mensaje": "'error_mensaje' requerido cuando estado='error'.",
+            }), 422
+
+    try:
+        result = forzar_sincronizado(coe, body)
+        return jsonify(result), 200
+    except ValueError as e:
+        return jsonify({
+            "error": "coe_no_encontrado",
+            "mensaje": str(e),
+        }), 404
+    except Exception as e:
+        return jsonify({"error": "interno", "mensaje": str(e)}), 500
