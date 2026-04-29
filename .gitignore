@@ -43,3 +43,5 @@ certificados_clientes/**
 ui_clientes_crud.md
 manual_wslpg_*.txt
 ejemplo_playwright.txt
+respuestas_sincronizacion_rpa.md
+scripts/diag_coe_estado.py
