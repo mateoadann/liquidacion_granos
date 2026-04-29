@@ -19,24 +19,34 @@ import {
 } from "../components/ui";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
-import { downloadCoePdf } from "../api/coes";
+import { downloadCoePdf, type Coe } from "../api/coes";
 
-function EstadoBadge({ estado }: { estado: string | null }) {
+function EstadoCicloBadge({ estado }: { estado: string | null | undefined }) {
   const variants: Record<string, "success" | "warning" | "error" | "default"> = {
-    AC: "success",
-    AN: "error",
-    PE: "warning",
+    pendiente: "warning",
+    descargado: "default",
+    cargado: "success",
+    error: "error",
   };
   const labels: Record<string, string> = {
-    AC: "Activo",
-    AN: "Anulado",
-    PE: "Pendiente",
+    pendiente: "Pendiente",
+    descargado: "Descargado",
+    cargado: "Cargado",
+    error: "Error",
   };
+  const key = estado ?? "";
   return (
-    <Badge variant={variants[estado ?? ""] ?? "default"}>
-      {labels[estado ?? ""] ?? estado ?? "-"}
+    <Badge variant={variants[key] ?? "default"}>
+      {labels[key] ?? "-"}
     </Badge>
   );
+}
+
+function getTipoCte(coe: Coe): "F1" | "F2" | "NL" | "-" {
+  if (coe.tipo_documento === "AJUSTE") return "NL";
+  if (coe.coe?.startsWith("3301")) return "F1";
+  if (coe.coe?.startsWith("3302")) return "F2";
+  return "-";
 }
 
 
@@ -45,7 +55,7 @@ export function CoesListPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [taxpayerId, setTaxpayerId] = useState<number | undefined>();
-  const [estado, setEstado] = useState<string>("");
+  const [estadoCiclo, setEstadoCiclo] = useState<string>("");
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
 
   const clientsQuery = useClientsQuery();
@@ -53,7 +63,7 @@ export function CoesListPage() {
     page,
     per_page: 20,
     taxpayer_id: taxpayerId,
-    estado: estado || undefined,
+    estado_ciclo: estadoCiclo || undefined,
     search: search || undefined,
   });
 
@@ -69,8 +79,8 @@ export function CoesListPage() {
     setPage(1);
   }
 
-  function handleEstadoChange(value: string) {
-    setEstado(value);
+  function handleEstadoCicloChange(value: string) {
+    setEstadoCiclo(value);
     setPage(1);
   }
 
@@ -118,13 +128,14 @@ export function CoesListPage() {
               ]}
             />
             <Select
-              value={estado}
-              onChange={(e) => handleEstadoChange(e.target.value)}
+              value={estadoCiclo}
+              onChange={(e) => handleEstadoCicloChange(e.target.value)}
               options={[
                 { value: "", label: "Todos los estados" },
-                { value: "AC", label: "Activo" },
-                { value: "AN", label: "Anulado" },
-                { value: "PE", label: "Pendiente" },
+                { value: "pendiente", label: "Pendiente" },
+                { value: "descargado", label: "Descargado" },
+                { value: "cargado", label: "Cargado" },
+                { value: "error", label: "Error" },
               ]}
             />
           </div>
@@ -150,9 +161,10 @@ export function CoesListPage() {
                 <TableRow>
                   <TableCell header>COE</TableCell>
                   <TableCell header>Tipo</TableCell>
+                  <TableCell header>Tipo Cte</TableCell>
                   <TableCell header>Cliente</TableCell>
                   <TableCell header>Fecha</TableCell>
-                  <TableCell header>Estado</TableCell>
+                  <TableCell header>Estado Ciclo</TableCell>
                   <TableCell header className="w-20"></TableCell>
                 </TableRow>
               </TableHeader>
@@ -169,12 +181,13 @@ export function CoesListPage() {
                           <Badge variant="default">Liquidacion</Badge>
                         )}
                       </TableCell>
+                      <TableCell className="font-mono">{getTipoCte(coe)}</TableCell>
                       <TableCell>{client?.empresa ?? `ID: ${coe.taxpayer_id}`}</TableCell>
                       <TableCell className="text-slate-600">
-{formatDateOnly(coe.fecha_liquidacion)}
+                        {formatDateOnly(coe.fecha_liquidacion)}
                       </TableCell>
                       <TableCell>
-                        <EstadoBadge estado={coe.estado} />
+                        <EstadoCicloBadge estado={coe.coe_estado?.estado} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">

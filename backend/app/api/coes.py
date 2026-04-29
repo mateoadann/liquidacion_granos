@@ -6,7 +6,7 @@ import logging
 from flask import Blueprint, jsonify, request, send_file
 
 from ..extensions import db
-from ..models import LpgDocument, Taxpayer
+from ..models import CoeEstado, LpgDocument, Taxpayer
 from ..middleware import require_auth, require_admin
 from ..services import (
     PdfFetchError,
@@ -70,6 +70,7 @@ def list_coes():
 
     taxpayer_id = request.args.get("taxpayer_id", type=int)
     estado = request.args.get("estado", type=str)
+    estado_ciclo = request.args.get("estado_ciclo", type=str)
     fecha_desde = request.args.get("fecha_desde", type=str)
     fecha_hasta = request.args.get("fecha_hasta", type=str)
     search = request.args.get("search", type=str)
@@ -81,6 +82,11 @@ def list_coes():
 
     if estado:
         query = query.filter(LpgDocument.estado == estado)
+
+    if estado_ciclo:
+        query = query.outerjoin(
+            CoeEstado, CoeEstado.lpg_document_id == LpgDocument.id
+        ).filter(CoeEstado.estado == estado_ciclo)
 
     fecha_liq_expr = fecha_liquidacion_expr()
     fecha_liq_date = fecha_liquidacion_as_date(fecha_liq_expr)
