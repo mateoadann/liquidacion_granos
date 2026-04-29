@@ -32,6 +32,12 @@ class CoeEstado(db.Model):
     hash_payload_emitido = db.Column(db.String(100), nullable=True)
     hash_payload_cargado = db.Column(db.String(100), nullable=True)
 
+    forzado_en = db.Column(db.DateTime, nullable=True)
+    forzado_por = db.Column(db.String(100), nullable=True)
+    forzado_razon = db.Column(db.Text, nullable=True)
+    forzado_estado_previo = db.Column(db.String(20), nullable=True)
+    hash_payload_forzado = db.Column(db.String(100), nullable=True)
+
     actualizado_en = db.Column(
         db.DateTime,
         nullable=False,

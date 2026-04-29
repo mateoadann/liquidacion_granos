@@ -22,6 +22,7 @@ class Config:
 
     # API key para integración con liquidador externo
     LIQUIDADOR_API_KEY = os.getenv("LIQUIDADOR_API_KEY", "")
+    LIQUIDADOR_API_ADMIN_TOKEN = os.getenv("LIQUIDADOR_API_ADMIN_TOKEN", "")
 
     # Rate limiting
     RATELIMIT_STORAGE_URI = REDIS_URL
