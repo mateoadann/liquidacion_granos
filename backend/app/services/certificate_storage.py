@@ -27,28 +27,38 @@ def _client_dir(client_id: int) -> Path:
 def save_client_certificates(
     client_id: int,
     cert_file: FileStorage,
-    key_file: FileStorage,
+    key_file: FileStorage | None = None,
 ) -> dict:
     cert_filename = secure_filename(cert_file.filename or "")
-    key_filename = secure_filename(key_file.filename or "")
     if not cert_filename:
         raise ValueError("El archivo cert_file es obligatorio.")
-    if not key_filename:
-        raise ValueError("El archivo key_file es obligatorio.")
 
     cert_bytes = cert_file.read()
-    key_bytes = key_file.read()
-
-    validate_certificate_and_key(cert_bytes, key_bytes)
 
     client_directory = _client_dir(client_id)
-    client_directory.mkdir(parents=True, exist_ok=True)
-
     cert_path = client_directory / "cert.crt"
     key_path = client_directory / "private.key"
 
+    if key_file is not None:
+        key_filename = secure_filename(key_file.filename or "")
+        if not key_filename:
+            raise ValueError("El archivo key_file es obligatorio.")
+        key_bytes = key_file.read()
+    else:
+        if not key_path.is_file():
+            raise ValueError(
+                "No hay una private key generada. Genere primero la clave privada o suba ambos archivos."
+            )
+        key_filename = None
+        key_bytes = key_path.read_bytes()
+
+    validate_certificate_and_key(cert_bytes, key_bytes)
+
+    client_directory.mkdir(parents=True, exist_ok=True)
+
     cert_path.write_bytes(cert_bytes)
-    key_path.write_bytes(key_bytes)
+    if key_file is not None:
+        key_path.write_bytes(key_bytes)
 
     try:
         os.chmod(key_path, 0o600)

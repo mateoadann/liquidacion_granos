@@ -14,6 +14,7 @@ import {
   getPlaywrightPipelineJob,
   listClients,
   listClientsPaginated,
+  removeClientCertificates,
   runPlaywrightPipeline,
   testClientCertificates,
   updateClient,
@@ -132,6 +133,24 @@ export function useUploadCertificatesMutation(): UseMutationResult<
       void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
       void queryClient.invalidateQueries({
         queryKey: clientsQueryKeys.detail(variables.clientId),
+      });
+    },
+  });
+}
+
+export function useRemoveCertificatesMutation(): UseMutationResult<
+  void,
+  Error,
+  number
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: removeClientCertificates,
+    onSuccess: (_, clientId) => {
+      void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: clientsQueryKeys.detail(clientId),
       });
     },
   });

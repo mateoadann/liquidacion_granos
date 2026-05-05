@@ -39,7 +39,7 @@ export interface UpdateClientInput {
 export interface UploadCertificatesInput {
   clientId: number;
   certFile: File;
-  keyFile: File;
+  keyFile?: File | null;
 }
 
 export interface ClientCertificateMeta {
@@ -539,7 +539,9 @@ export async function uploadClientCertificates(
 ): Promise<ClientCertificateMeta> {
   const formData = new FormData();
   formData.append("cert_file", input.certFile);
-  formData.append("key_file", input.keyFile);
+  if (input.keyFile) {
+    formData.append("key_file", input.keyFile);
+  }
 
   const payload = await requestJson<unknown>(`/clients/${input.clientId}/certificates`, {
     method: "POST",
@@ -547,6 +549,12 @@ export async function uploadClientCertificates(
   });
 
   return normalizeCertificatesMeta(payload);
+}
+
+export async function removeClientCertificates(clientId: number): Promise<void> {
+  await requestJson<unknown>(`/clients/${clientId}/certificates`, {
+    method: "DELETE",
+  });
 }
 
 export async function validateClientConfig(
