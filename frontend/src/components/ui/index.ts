@@ -9,4 +9,6 @@ export { Pagination } from "./Pagination";
 export { Table, TableHeader, TableBody, TableRow, TableCell } from "./Table";
 export { Dropdown, DropdownItem, DropdownDivider } from "./Dropdown";
 export { Modal, ConfirmModal } from "./Modal";
+export { Drawer } from "./Drawer";
+export { Combobox, type ComboboxOption } from "./Combobox";
 export { SearchInput } from "./SearchInput";
