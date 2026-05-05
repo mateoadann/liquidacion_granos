@@ -491,8 +491,8 @@ def upload_client_certificates(client_id: int):
     cert_file = request.files.get("cert_file")
     key_file = request.files.get("key_file")
 
-    if cert_file is None or key_file is None:
-        return _error("Debe enviar cert_file y key_file.", 400)
+    if cert_file is None:
+        return _error("Debe enviar cert_file.", 400)
 
     try:
         saved_meta = save_client_certificates(item.id, cert_file, key_file)
@@ -504,7 +504,8 @@ def upload_client_certificates(client_id: int):
     item.cert_crt_path = saved_meta["cert_crt_path"]
     item.cert_key_path = saved_meta["cert_key_path"]
     item.cert_crt_filename = saved_meta["cert_crt_filename"]
-    item.cert_key_filename = saved_meta["cert_key_filename"]
+    if saved_meta["cert_key_filename"]:
+        item.cert_key_filename = saved_meta["cert_key_filename"]
     item.cert_uploaded_at = now_cordoba_naive()
     item.updated_at = now_cordoba_naive()
 
