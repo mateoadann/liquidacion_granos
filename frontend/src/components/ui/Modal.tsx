@@ -118,6 +118,7 @@ interface ConfirmModalProps {
   cancelLabel?: string;
   variant?: "danger" | "primary";
   isLoading?: boolean;
+  errorMessage?: string;
 }
 
 export function ConfirmModal({
@@ -130,6 +131,7 @@ export function ConfirmModal({
   cancelLabel = "Cancelar",
   variant = "primary",
   isLoading = false,
+  errorMessage,
 }: ConfirmModalProps) {
   return (
     <Modal
@@ -153,6 +155,11 @@ export function ConfirmModal({
       }
     >
       <p className="text-sm text-slate-600">{message}</p>
+      {errorMessage ? (
+        <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+          {errorMessage}
+        </p>
+      ) : null}
     </Modal>
   );
 }
