@@ -8,10 +8,12 @@ import {
 import {
   createClient,
   deleteClient,
+  deleteClientPermanently,
   downloadClientCoesExport,
   downloadClientJsonV7Export,
   getPlaywrightPipelineJob,
   listClients,
+  listClientsPaginated,
   runPlaywrightPipeline,
   testClientCertificates,
   updateClient,
@@ -24,6 +26,8 @@ import {
   type CreateClientInput,
   type DownloadClientCoesInput,
   type DownloadFileResult,
+  type ListClientsPaginatedParams,
+  type ListClientsPaginatedResponse,
   type PlaywrightPipelineJob,
   type RunPlaywrightPipelineInput,
   type UpdateClientInput,
@@ -32,6 +36,8 @@ import {
 
 export const clientsQueryKeys = {
   all: ["clients"] as const,
+  paginated: (params: ListClientsPaginatedParams) =>
+    ["clients", "paginated", params] as const,
   detail: (clientId: number) => ["clients", clientId] as const,
 };
 
@@ -39,6 +45,13 @@ export function useClientsQuery() {
   return useQuery({
     queryKey: clientsQueryKeys.all,
     queryFn: listClients,
+  });
+}
+
+export function useClientsPaginatedQuery(params: ListClientsPaginatedParams) {
+  return useQuery<ListClientsPaginatedResponse, Error>({
+    queryKey: clientsQueryKeys.paginated(params),
+    queryFn: () => listClientsPaginated(params),
   });
 }
 
@@ -85,6 +98,21 @@ export function useDeleteClientMutation(): UseMutationResult<void, Error, number
 
   return useMutation({
     mutationFn: deleteClient,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
+    },
+  });
+}
+
+export function usePermanentDeleteClientMutation(): UseMutationResult<
+  void,
+  Error,
+  number
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteClientPermanently,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
     },

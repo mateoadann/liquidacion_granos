@@ -15,6 +15,7 @@ export interface Client {
   certFileName: string | null;
   keyFileName: string | null;
   certUploadedAt: string | null;
+  coesCount: number;
 }
 
 export interface CreateClientInput {
@@ -279,6 +280,7 @@ function normalizeClient(raw: unknown): Client {
     certFileName,
     keyFileName,
     certUploadedAt: asNullableString(data.cert_uploaded_at),
+    coesCount: Number(data.coes_count ?? 0),
   };
 }
 
@@ -439,6 +441,49 @@ export async function listClients(): Promise<Client[]> {
   return payload.map(normalizeClient);
 }
 
+export interface ListClientsPaginatedParams {
+  page?: number;
+  per_page?: number;
+  search?: string;
+  active?: boolean;
+}
+
+export interface ListClientsPaginatedResponse {
+  clients: Client[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export async function listClientsPaginated(
+  params: ListClientsPaginatedParams = {},
+): Promise<ListClientsPaginatedResponse> {
+  const search = new URLSearchParams();
+  search.set("page", String(params.page ?? 1));
+  search.set("per_page", String(params.per_page ?? 20));
+  if (params.search) search.set("search", params.search);
+  if (params.active !== undefined) search.set("active", String(params.active));
+
+  const payload = await requestJson<{
+    clients: unknown[];
+    total: number;
+    page: number;
+    per_page: number;
+    pages: number;
+  }>(`/clients?${search.toString()}`, { method: "GET" });
+
+  return {
+    clients: Array.isArray(payload.clients)
+      ? payload.clients.map(normalizeClient)
+      : [],
+    total: payload.total ?? 0,
+    page: payload.page ?? 1,
+    per_page: payload.per_page ?? 20,
+    pages: payload.pages ?? 0,
+  };
+}
+
 export async function getClient(clientId: number): Promise<Client> {
   const payload = await requestJson<unknown>(`/clients/${clientId}`, { method: "GET" });
   return normalizeClient(payload);
@@ -471,6 +516,22 @@ export async function deleteClient(clientId: number): Promise<void> {
   await requestJson<unknown>(`/clients/${clientId}`, {
     method: "DELETE",
   });
+}
+
+export async function deleteClientPermanently(clientId: number): Promise<void> {
+  const response = await fetchWithAuth(`/clients/${clientId}/permanent`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    let message = "No se pudo eliminar el cliente.";
+    try {
+      const data = await response.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore — keep default message
+    }
+    throw new Error(message);
+  }
 }
 
 export async function uploadClientCertificates(
