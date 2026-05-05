@@ -8,10 +8,13 @@ import {
 import {
   createClient,
   deleteClient,
+  deleteClientPermanently,
   downloadClientCoesExport,
   downloadClientJsonV7Export,
   getPlaywrightPipelineJob,
   listClients,
+  listClientsPaginated,
+  removeClientCertificates,
   runPlaywrightPipeline,
   testClientCertificates,
   updateClient,
@@ -24,6 +27,8 @@ import {
   type CreateClientInput,
   type DownloadClientCoesInput,
   type DownloadFileResult,
+  type ListClientsPaginatedParams,
+  type ListClientsPaginatedResponse,
   type PlaywrightPipelineJob,
   type RunPlaywrightPipelineInput,
   type UpdateClientInput,
@@ -32,6 +37,8 @@ import {
 
 export const clientsQueryKeys = {
   all: ["clients"] as const,
+  paginated: (params: ListClientsPaginatedParams) =>
+    ["clients", "paginated", params] as const,
   detail: (clientId: number) => ["clients", clientId] as const,
 };
 
@@ -39,6 +46,13 @@ export function useClientsQuery() {
   return useQuery({
     queryKey: clientsQueryKeys.all,
     queryFn: listClients,
+  });
+}
+
+export function useClientsPaginatedQuery(params: ListClientsPaginatedParams) {
+  return useQuery<ListClientsPaginatedResponse, Error>({
+    queryKey: clientsQueryKeys.paginated(params),
+    queryFn: () => listClientsPaginated(params),
   });
 }
 
@@ -91,6 +105,21 @@ export function useDeleteClientMutation(): UseMutationResult<void, Error, number
   });
 }
 
+export function usePermanentDeleteClientMutation(): UseMutationResult<
+  void,
+  Error,
+  number
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteClientPermanently,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
+    },
+  });
+}
+
 export function useUploadCertificatesMutation(): UseMutationResult<
   ClientCertificateMeta,
   Error,
@@ -104,6 +133,24 @@ export function useUploadCertificatesMutation(): UseMutationResult<
       void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
       void queryClient.invalidateQueries({
         queryKey: clientsQueryKeys.detail(variables.clientId),
+      });
+    },
+  });
+}
+
+export function useRemoveCertificatesMutation(): UseMutationResult<
+  void,
+  Error,
+  number
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: removeClientCertificates,
+    onSuccess: (_, clientId) => {
+      void queryClient.invalidateQueries({ queryKey: clientsQueryKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: clientsQueryKeys.detail(clientId),
       });
     },
   });

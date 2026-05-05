@@ -7,6 +7,7 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 from openpyxl import Workbook
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
@@ -45,7 +46,11 @@ def _has_clave_fiscal(item: Taxpayer) -> bool:
         return False
 
 
-def _serialize_client(item: Taxpayer) -> dict:
+def _serialize_client(item: Taxpayer, coes_count: int | None = None) -> dict:
+    if coes_count is None:
+        coes_count = LpgDocument.query.filter(
+            LpgDocument.taxpayer_id == item.id
+        ).count()
     return {
         "id": item.id,
         "empresa": item.empresa,
@@ -60,6 +65,7 @@ def _serialize_client(item: Taxpayer) -> dict:
         "cert_uploaded_at": item.cert_uploaded_at.isoformat()
         if item.cert_uploaded_at
         else None,
+        "coes_count": coes_count,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
@@ -180,13 +186,68 @@ def list_clients():
     except ValueError as exc:
         return _error(str(exc), 400)
 
+    search = (request.args.get("search") or "").strip()
+    page_arg = request.args.get("page")
+    per_page_arg = request.args.get("per_page")
+    paginated = page_arg is not None or per_page_arg is not None
+
     query = Taxpayer.query.order_by(Taxpayer.id.asc())
     if active is True:
         query = query.filter(Taxpayer.activo.is_(True))
     elif active is False:
         query = query.filter(Taxpayer.activo.is_(False))
 
-    return jsonify([_serialize_client(item) for item in query.all()])
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            or_(Taxpayer.empresa.ilike(like), Taxpayer.cuit.ilike(like))
+        )
+
+    def _coes_counts_for(items: list[Taxpayer]) -> dict[int, int]:
+        if not items:
+            return {}
+        ids = [it.id for it in items]
+        rows = (
+            db.session.query(
+                LpgDocument.taxpayer_id, db.func.count(LpgDocument.id)
+            )
+            .filter(LpgDocument.taxpayer_id.in_(ids))
+            .group_by(LpgDocument.taxpayer_id)
+            .all()
+        )
+        return {tid: count for tid, count in rows}
+
+    if not paginated:
+        items = query.all()
+        counts = _coes_counts_for(items)
+        return jsonify(
+            [_serialize_client(it, coes_count=counts.get(it.id, 0)) for it in items]
+        )
+
+    try:
+        page = max(int(page_arg) if page_arg is not None else 1, 1)
+        per_page = int(per_page_arg) if per_page_arg is not None else 20
+    except ValueError:
+        return _error("Parametros 'page' y 'per_page' deben ser numericos.", 400)
+    per_page = max(1, min(per_page, 100))
+
+    total = query.count()
+    pages = (total + per_page - 1) // per_page
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+    counts = _coes_counts_for(items)
+
+    return jsonify(
+        {
+            "clients": [
+                _serialize_client(it, coes_count=counts.get(it.id, 0))
+                for it in items
+            ],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": pages,
+        }
+    )
 
 
 @clients_bp.post("/clients")
@@ -323,6 +384,35 @@ def delete_client(client_id: int):
     return jsonify(_serialize_client(item))
 
 
+@clients_bp.delete("/clients/<int:client_id>/permanent")
+@require_auth
+def delete_client_permanently(client_id: int):
+    item = Taxpayer.query.get_or_404(client_id)
+
+    coes_count = LpgDocument.query.filter(
+        LpgDocument.taxpayer_id == client_id
+    ).count()
+    if coes_count > 0:
+        return _error(
+            "No se puede eliminar el cliente porque tiene COEs asociados.",
+            409,
+        )
+
+    try:
+        delete_client_certificates(client_id)
+    except OSError:
+        current_app.logger.exception(
+            "DELETE_CLIENT_CERTS_FS_ERROR | client_id=%s", client_id
+        )
+        return _error(
+            "No se pudieron eliminar los certificados del filesystem.", 500
+        )
+
+    db.session.delete(item)
+    db.session.commit()
+    return ("", 204)
+
+
 @clients_bp.post("/clients/<int:client_id>/generate-csr")
 @require_auth
 def generate_client_csr(client_id: int):
@@ -401,8 +491,8 @@ def upload_client_certificates(client_id: int):
     cert_file = request.files.get("cert_file")
     key_file = request.files.get("key_file")
 
-    if cert_file is None or key_file is None:
-        return _error("Debe enviar cert_file y key_file.", 400)
+    if cert_file is None:
+        return _error("Debe enviar cert_file.", 400)
 
     try:
         saved_meta = save_client_certificates(item.id, cert_file, key_file)
@@ -414,7 +504,8 @@ def upload_client_certificates(client_id: int):
     item.cert_crt_path = saved_meta["cert_crt_path"]
     item.cert_key_path = saved_meta["cert_key_path"]
     item.cert_crt_filename = saved_meta["cert_crt_filename"]
-    item.cert_key_filename = saved_meta["cert_key_filename"]
+    if saved_meta["cert_key_filename"]:
+        item.cert_key_filename = saved_meta["cert_key_filename"]
     item.cert_uploaded_at = now_cordoba_naive()
     item.updated_at = now_cordoba_naive()
 

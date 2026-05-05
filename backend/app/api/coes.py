@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, send_file
 
@@ -21,6 +22,15 @@ from ..services import (
 logger = logging.getLogger(__name__)
 
 coes_bp = Blueprint("coes", __name__)
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
@@ -71,8 +81,8 @@ def list_coes():
     taxpayer_id = request.args.get("taxpayer_id", type=int)
     estado = request.args.get("estado", type=str)
     estado_ciclo = request.args.get("estado_ciclo", type=str)
-    fecha_desde = request.args.get("fecha_desde", type=str)
-    fecha_hasta = request.args.get("fecha_hasta", type=str)
+    fecha_desde = _parse_iso_date(request.args.get("fecha_desde", type=str))
+    fecha_hasta = _parse_iso_date(request.args.get("fecha_hasta", type=str))
     search = request.args.get("search", type=str)
 
     query = db.session.query(LpgDocument)

@@ -1,9 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
-import { Card, Button, Alert, Spinner, Modal } from "../components/ui";
+import { Card, Button, Alert, Spinner, Modal, ConfirmModal } from "../components/ui";
 import { useClientQuery } from "../hooks/useClient";
-import { useUploadCertificatesMutation, useTestCertificatesMutation } from "../useClients";
+import {
+  useUploadCertificatesMutation,
+  useTestCertificatesMutation,
+  useRemoveCertificatesMutation,
+} from "../useClients";
 import { formatDateTime } from "../dateUtils";
 import { generateClientCsr, type CertTestResult } from "../clients";
 
@@ -43,11 +47,17 @@ export function ClientCertificatesPage() {
     );
   }
 
+  const hasExistingKey = Boolean(client.keyFileName);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!certFile || !keyFile) {
-      setLocalError("Debe seleccionar ambos archivos: cert_file y key_file.");
+    if (!certFile) {
+      setLocalError("Debe seleccionar el archivo .crt.");
+      return;
+    }
+    if (!hasExistingKey && !keyFile) {
+      setLocalError("Debe seleccionar ambos archivos: .crt y .key.");
       return;
     }
 
@@ -58,7 +68,7 @@ export function ClientCertificatesPage() {
       const response = await uploadMutation.mutateAsync({
         clientId,
         certFile,
-        keyFile,
+        keyFile: hasExistingKey ? null : keyFile,
       });
       setSuccessMessage(response.message ?? "Certificados cargados correctamente");
       setCertFile(null);
@@ -115,7 +125,15 @@ export function ClientCertificatesPage() {
 
       {!client.certificadosCargados && (
         <div className="mt-6">
-          <GenerateCsrSection clientId={clientId} onGenerated={() => clientQuery.refetch()} />
+          {hasExistingKey ? (
+            <ResetCertificatesSection
+              clientId={clientId}
+              keyFileName={client.keyFileName}
+              onReset={() => clientQuery.refetch()}
+            />
+          ) : (
+            <GenerateCsrSection clientId={clientId} onGenerated={() => clientQuery.refetch()} />
+          )}
         </div>
       )}
 
@@ -128,6 +146,13 @@ export function ClientCertificatesPage() {
         size="md"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {hasExistingKey ? (
+            <Alert variant="info">
+              Ya hay una clave privada cargada en el servidor (<span className="font-mono">{client.keyFileName}</span>).
+              Solo necesitas subir el archivo <strong>.crt</strong> obtenido desde ARCA.
+            </Alert>
+          ) : null}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Certificado (.crt / .pem)
@@ -140,17 +165,19 @@ export function ClientCertificatesPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Key (.key)
-            </label>
-            <input
-              type="file"
-              accept=".key"
-              onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
-            />
-          </div>
+          {hasExistingKey ? null : (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Key (.key)
+              </label>
+              <input
+                type="file"
+                accept=".key"
+                onChange={(e) => setKeyFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+              />
+            </div>
+          )}
 
           {error ? <Alert variant="error">{error}</Alert> : null}
 
@@ -230,6 +257,62 @@ function GenerateCsrSection({ clientId, onGenerated }: { clientId: number; onGen
           </Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+function ResetCertificatesSection({
+  clientId,
+  keyFileName,
+  onReset,
+}: {
+  clientId: number;
+  keyFileName: string | null;
+  onReset: () => void;
+}) {
+  const removeMutation = useRemoveCertificatesMutation();
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
+  async function handleConfirm() {
+    try {
+      await removeMutation.mutateAsync(clientId);
+      setIsConfirmOpen(false);
+      onReset();
+    } catch {
+      // El error queda visible vía errorMessage del modal
+    }
+  }
+
+  function handleClose() {
+    if (removeMutation.isPending) return;
+    setIsConfirmOpen(false);
+    removeMutation.reset();
+  }
+
+  return (
+    <Card>
+      <h3 className="text-lg font-medium text-slate-900 mb-2">Clave privada generada</h3>
+      <p className="text-sm text-slate-500 mb-4">
+        Ya hay una clave privada (<span className="font-mono">{keyFileName ?? "private.key"}</span>) generada en el servidor.
+        Subí el <strong>.crt</strong> que descargaste de ARCA con el botón <strong>Subir certificados</strong> de arriba.
+        Si necesitás empezar de cero, eliminá la clave actual.
+      </p>
+      <div className="flex justify-end pt-2 border-t border-slate-200">
+        <Button variant="danger" onClick={() => setIsConfirmOpen(true)}>
+          Resetear y regenerar
+        </Button>
+      </div>
+
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        onClose={handleClose}
+        onConfirm={handleConfirm}
+        title="Resetear clave privada"
+        message="Se eliminará la clave privada actual del servidor. Vas a tener que generar una nueva clave + CSR y volver a hacer todo el proceso en ARCA."
+        confirmLabel="Resetear"
+        variant="danger"
+        isLoading={removeMutation.isPending}
+      />
     </Card>
   );
 }

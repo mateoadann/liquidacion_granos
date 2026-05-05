@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 interface DropdownProps {
   trigger: ReactNode;
@@ -6,46 +7,110 @@ interface DropdownProps {
   align?: "left" | "right";
 }
 
+const MENU_WIDTH = 192; // matches w-48
+const VIEWPORT_MARGIN = 8;
+
 export function Dropdown({ trigger, children, align = "right" }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function updatePosition() {
+    const triggerEl = triggerRef.current;
+    const menuEl = menuRef.current;
+    if (!triggerEl) return;
+
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const menuHeight = menuEl?.offsetHeight ?? 0;
+
+    let left =
+      align === "right"
+        ? triggerRect.right - MENU_WIDTH
+        : triggerRect.left;
+
+    left = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(left, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN),
+    );
+
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const openUp = menuHeight > 0 && spaceBelow < menuHeight + VIEWPORT_MARGIN;
+    const top = openUp
+      ? triggerRect.top - menuHeight - 4
+      : triggerRect.bottom + 4;
+
+    setPosition({ top, left });
+  }
+
+  useLayoutEffect(() => {
+    if (isOpen) updatePosition();
+  }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+      const target = event.target as Node;
+      if (
+        triggerRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
+      ) {
+        return;
       }
+      setIsOpen(false);
+    }
+
+    function handleViewportChange() {
+      setIsOpen(false);
     }
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    window.addEventListener("scroll", handleViewportChange, true);
+    window.addEventListener("resize", handleViewportChange);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, [isOpen]);
 
   return (
-    <div ref={dropdownRef} className="relative inline-block">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          setIsOpen(!isOpen);
+          setIsOpen((v) => !v);
         }}
         className="p-1 rounded hover:bg-slate-100 transition-colors"
       >
         {trigger}
       </button>
 
-      {isOpen ? (
-        <div
-          className={`
-            absolute z-50 mt-1 w-48 py-1
-            bg-white rounded-lg border border-slate-200 shadow-lg
-            ${align === "right" ? "right-0" : "left-0"}
-          `}
-        >
-          {children}
-        </div>
-      ) : null}
-    </div>
+      {isOpen && position
+        ? createPortal(
+            <div
+              ref={menuRef}
+              style={{
+                position: "fixed",
+                top: position.top,
+                left: position.left,
+                width: MENU_WIDTH,
+              }}
+              className="z-50 py-1 bg-white rounded-lg border border-slate-200 shadow-lg"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

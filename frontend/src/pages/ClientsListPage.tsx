@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
 import {
@@ -13,16 +13,20 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  Pagination,
   Dropdown,
   DropdownItem,
   DropdownDivider,
   ConfirmModal,
 } from "../components/ui";
 import {
-  useClientsQuery,
+  useClientsPaginatedQuery,
   useDeleteClientMutation,
+  usePermanentDeleteClientMutation,
 } from "../useClients";
 import type { Client } from "../clients";
+
+type DeleteAction = "deactivate" | "permanent";
 
 function ClientStatusBadge({ activo }: { activo: boolean }) {
   return (
@@ -42,31 +46,63 @@ function MoreIcon() {
 
 export function ClientsListPage() {
   const navigate = useNavigate();
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    client: Client;
+    action: DeleteAction;
+  } | null>(null);
 
-  const clientsQuery = useClientsQuery();
-  const deleteMutation = useDeleteClientMutation();
+  const clientsQuery = useClientsPaginatedQuery({
+    page,
+    per_page: 20,
+    search: search || undefined,
+  });
+  const deactivateMutation = useDeleteClientMutation();
+  const permanentDeleteMutation = usePermanentDeleteClientMutation();
 
-  const clients = clientsQuery.data ?? [];
+  const clients = clientsQuery.data?.clients ?? [];
+  const total = clientsQuery.data?.total ?? 0;
 
-  const filteredClients = useMemo(() => {
-    const trimmed = search.trim().toLowerCase();
-    if (!trimmed) return clients;
-    return clients.filter((client) => {
-      const empresa = client.empresa.toLowerCase();
-      const cuit = client.cuit.toLowerCase();
-      return empresa.includes(trimmed) || cuit.includes(trimmed);
-    });
-  }, [clients, search]);
+  const isDeleting =
+    deactivateMutation.isPending || permanentDeleteMutation.isPending;
+  const deleteError =
+    pendingDelete?.action === "permanent"
+      ? permanentDeleteMutation.error?.message
+      : deactivateMutation.error?.message;
 
-  async function handleDelete() {
-    if (!clientToDelete) return;
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    setPage(1);
+  }
+
+  function handleRequestDelete(client: Client) {
+    const action: DeleteAction =
+      client.coesCount === 0 ? "permanent" : "deactivate";
+    deactivateMutation.reset();
+    permanentDeleteMutation.reset();
+    setPendingDelete({ client, action });
+  }
+
+  function handleClosePendingDelete() {
+    if (isDeleting) return;
+    setPendingDelete(null);
+    deactivateMutation.reset();
+    permanentDeleteMutation.reset();
+  }
+
+  async function handleConfirmDelete() {
+    if (!pendingDelete) return;
+    const { client, action } = pendingDelete;
     try {
-      await deleteMutation.mutateAsync(clientToDelete.id);
-      setClientToDelete(null);
+      if (action === "permanent") {
+        await permanentDeleteMutation.mutateAsync(client.id);
+      } else {
+        await deactivateMutation.mutateAsync(client.id);
+      }
+      setPendingDelete(null);
     } catch {
-      // Error manejado por mutation
+      // Mantener el modal abierto: error visible para el usuario
     }
   }
 
@@ -74,7 +110,7 @@ export function ClientsListPage() {
     <div>
       <PageHeader
         title="Clientes"
-        subtitle={`${clients.filter((c) => c.activo).length} activos de ${clients.length} totales`}
+        subtitle={total > 0 ? `${total} ${total === 1 ? "cliente" : "clientes"}` : undefined}
         actions={
           <Button onClick={() => navigate("/clientes/nuevo")}>
             Nuevo Cliente
@@ -86,7 +122,7 @@ export function ClientsListPage() {
         <div className="p-4 border-b border-slate-200">
           <SearchInput
             value={search}
-            onChange={setSearch}
+            onChange={handleSearchChange}
             placeholder="Buscar por empresa o CUIT..."
             className="max-w-sm"
           />
@@ -100,11 +136,12 @@ export function ClientsListPage() {
           <div className="p-4">
             <Alert variant="error">Error al cargar clientes</Alert>
           </div>
-        ) : filteredClients.length === 0 ? (
+        ) : clients.length === 0 ? (
           <div className="p-8 text-center text-slate-500">
             {search ? "No se encontraron clientes" : "No hay clientes registrados"}
           </div>
         ) : (
+          <>
           <Table>
             <TableHeader>
               <TableRow>
@@ -116,7 +153,7 @@ export function ClientsListPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredClients.map((client) => (
+              {clients.map((client) => (
                 <TableRow
                   key={client.id}
                   onClick={() => navigate(`/clientes/${client.id}`)}
@@ -152,31 +189,62 @@ export function ClientsListPage() {
                         Certificados
                       </DropdownItem>
                       <DropdownDivider />
-                      <DropdownItem
-                        variant="danger"
-                        onClick={() => setClientToDelete(client)}
-                        disabled={!client.activo}
-                      >
-                        Desactivar
-                      </DropdownItem>
+                      {client.coesCount === 0 ? (
+                        <DropdownItem
+                          variant="danger"
+                          onClick={() => handleRequestDelete(client)}
+                        >
+                          Eliminar
+                        </DropdownItem>
+                      ) : (
+                        <DropdownItem
+                          variant="danger"
+                          onClick={() => handleRequestDelete(client)}
+                          disabled={!client.activo}
+                        >
+                          Desactivar
+                        </DropdownItem>
+                      )}
                     </Dropdown>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+
+          {clientsQuery.data ? (
+            <Pagination
+              page={clientsQuery.data.page}
+              pages={clientsQuery.data.pages}
+              total={clientsQuery.data.total}
+              perPage={clientsQuery.data.per_page}
+              onPageChange={setPage}
+            />
+          ) : null}
+          </>
         )}
       </Card>
 
       <ConfirmModal
-        isOpen={clientToDelete !== null}
-        onClose={() => setClientToDelete(null)}
-        onConfirm={handleDelete}
-        title="Desactivar cliente"
-        message={`¿Estás seguro de desactivar a ${clientToDelete?.empresa}?`}
-        confirmLabel="Desactivar"
+        isOpen={pendingDelete !== null}
+        onClose={handleClosePendingDelete}
+        onConfirm={handleConfirmDelete}
+        title={
+          pendingDelete?.action === "permanent"
+            ? "Eliminar cliente"
+            : "Desactivar cliente"
+        }
+        message={
+          pendingDelete?.action === "permanent"
+            ? `¿Eliminar permanentemente a ${pendingDelete.client.empresa}? Esta acción no se puede deshacer y borrará también sus certificados.`
+            : `¿Desactivar a ${pendingDelete?.client.empresa}? El cliente quedará inactivo pero se conservará su historial de COEs.`
+        }
+        confirmLabel={
+          pendingDelete?.action === "permanent" ? "Eliminar" : "Desactivar"
+        }
         variant="danger"
-        isLoading={deleteMutation.isPending}
+        isLoading={isDeleting}
+        errorMessage={deleteError}
       />
     </div>
   );
