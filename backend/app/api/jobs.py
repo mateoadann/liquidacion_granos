@@ -9,7 +9,7 @@ from ..time_utils import now_cordoba_naive
 
 jobs_bp = Blueprint("jobs", __name__)
 
-ALLOWED_JOB_STATUS = {"pending", "running", "completed", "failed"}
+ALLOWED_JOB_STATUS = {"pending", "running", "completed", "failed", "partial"}
 
 
 def _extract_coe_count(result: dict | None) -> int:
@@ -119,7 +119,7 @@ def update_job(job_id: int):
         item.status = status
         if status == "running" and not item.started_at:
             item.started_at = now_cordoba_naive()
-        if status in {"completed", "failed"}:
+        if status in {"completed", "failed", "partial"}:
             item.finished_at = now_cordoba_naive()
 
     if "result" in payload:

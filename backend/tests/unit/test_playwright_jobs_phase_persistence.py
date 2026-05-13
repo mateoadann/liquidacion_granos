@@ -526,3 +526,197 @@ def test_run_playwright_pipeline_job_clears_stale_failure_fields_on_running(
     assert stale_seen["failure_phase"] is None
     assert stale_seen["failure_message_user"] is None
     assert stale_seen["failure_message_technical"] is None
+
+
+# ---------------------------------------------------------------------------
+# Final job status — completed / failed / partial transitions
+# ---------------------------------------------------------------------------
+
+def _run_pipeline_with_results(
+    *,
+    app,
+    monkeypatch,
+    job_id: int,
+    taxpayer_ids: list[int],
+    taxpayers_ok: int,
+    taxpayers_error: int,
+    results: list[Any],
+) -> None:
+    from app.services import lpg_playwright_pipeline as pipeline_module
+    from app.workers import playwright_jobs as worker_module
+
+    class FakePipeline:
+        def run(
+            self,
+            *,
+            on_taxpayer_start=None,
+            on_taxpayer_finish=None,
+            on_phase=None,
+            **_kwargs: Any,
+        ):
+            for r in results:
+                tp = Taxpayer.query.get(r.taxpayer_id)
+                if on_taxpayer_start is not None and tp is not None:
+                    on_taxpayer_start(tp)
+                if on_taxpayer_finish is not None:
+                    on_taxpayer_finish(r)
+            return pipeline_module.PipelineRunResult(
+                started_at="2026-05-13T00:00:00",
+                finished_at="2026-05-13T00:00:05",
+                fecha_desde="01/01/2026",
+                fecha_hasta="26/02/2026",
+                taxpayers_total=len(results),
+                taxpayers_ok=taxpayers_ok,
+                taxpayers_error=taxpayers_error,
+                results=results,
+            )
+
+    monkeypatch.setattr(worker_module, "LpgPlaywrightPipelineService", FakePipeline)
+    monkeypatch.setattr(worker_module, "create_app", lambda *args, **kwargs: app)
+
+    worker_module.run_playwright_pipeline_job(
+        extraction_job_id=job_id,
+        fecha_desde="01/01/2026",
+        fecha_hasta="26/02/2026",
+        taxpayer_ids=taxpayer_ids,
+        timeout_ms=30000,
+        type_delay_ms=80,
+    )
+
+
+def _ok_result(taxpayer: Taxpayer) -> Any:
+    from app.services import lpg_playwright_pipeline as pipeline_module
+
+    return pipeline_module.TaxpayerPipelineResult(
+        taxpayer_id=taxpayer.id,
+        empresa=taxpayer.empresa,
+        cuit=taxpayer.cuit,
+        cuit_representado=taxpayer.cuit_representado,
+        ok=True,
+        total_coes_detectados=2,
+        total_coes_nuevos=2,
+        total_procesados_ok=2,
+        total_procesados_error=0,
+    )
+
+
+def _error_result(taxpayer: Taxpayer) -> Any:
+    from app.services import lpg_playwright_pipeline as pipeline_module
+
+    return pipeline_module.TaxpayerPipelineResult(
+        taxpayer_id=taxpayer.id,
+        empresa=taxpayer.empresa,
+        cuit=taxpayer.cuit,
+        cuit_representado=taxpayer.cuit_representado,
+        ok=False,
+        error="Timeout 30000ms exceeded",
+        failure_phase=ExtractionPhase.SEARCH_SERVICE,
+        failure_error_type="timeout",
+        failure_dropdown_clicked=True,
+    )
+
+
+def test_run_playwright_pipeline_job_all_ok_sets_status_completed(
+    app, monkeypatch
+) -> None:
+    t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
+    t2 = _create_taxpayer(cuit="20222222222", empresa="Empresa Dos")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id, t2.id],
+        taxpayers_ok=2,
+        taxpayers_error=0,
+        results=[_ok_result(t1), _ok_result(t2)],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "completed"
+    assert refreshed.error_message is None
+    assert refreshed.failure_phase is None
+    assert refreshed.failure_message_user is None
+    assert refreshed.failure_message_technical is None
+
+
+def test_run_playwright_pipeline_job_all_error_sets_status_failed(
+    app, monkeypatch
+) -> None:
+    t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
+    t2 = _create_taxpayer(cuit="20222222222", empresa="Empresa Dos")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id, t2.id],
+        taxpayers_ok=0,
+        taxpayers_error=2,
+        results=[_error_result(t1), _error_result(t2)],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "failed"
+    assert refreshed.error_message is not None
+    assert "No se pudo procesar ningún cliente" in refreshed.error_message
+    assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
+    assert refreshed.failure_message_user is not None
+    assert refreshed.failure_message_technical is not None
+
+
+def test_run_playwright_pipeline_job_mixed_results_sets_status_partial(
+    app, monkeypatch
+) -> None:
+    t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
+    t2 = _create_taxpayer(cuit="20222222222", empresa="Empresa Dos")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id, t2.id],
+        taxpayers_ok=1,
+        taxpayers_error=1,
+        results=[_ok_result(t1), _error_result(t2)],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "partial"
+    assert refreshed.error_message is not None
+    assert "Algunos clientes no pudieron procesarse" in refreshed.error_message
+    assert "Revisá el detalle por cliente" in refreshed.error_message
+    # Partial inherits last_taxpayer_failure info so the user has at least one
+    # hint of what went wrong.
+    assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
+    assert refreshed.failure_message_user is not None
+    assert refreshed.failure_message_technical is not None
+    assert refreshed.finished_at is not None
+
+
+def test_run_playwright_pipeline_job_zero_taxpayers_stays_completed(
+    app, monkeypatch
+) -> None:
+    t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id],
+        taxpayers_ok=0,
+        taxpayers_error=0,
+        results=[],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "completed"
+    assert refreshed.error_message is None

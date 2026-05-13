@@ -118,6 +118,38 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
             </section>
           ) : null}
 
+          {job.status === "partial" ? (
+            <section>
+              <h3 className="text-sm font-semibold text-slate-700 mb-2">Resultado parcial</h3>
+              <Alert variant="warning">
+                <p className="font-medium mb-1">
+                  Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.
+                </p>
+                {job.failure_message_user ? (
+                  <p className="mt-2 text-sm">{job.failure_message_user}</p>
+                ) : null}
+                {job.failure_phase ? (
+                  <div className="mt-2">
+                    <span className="text-xs text-slate-500 mr-2">Fase:</span>
+                    <code className="text-xs bg-white px-1.5 py-0.5 rounded border border-amber-200">
+                      {job.failure_phase}
+                    </code>
+                  </div>
+                ) : null}
+              </Alert>
+              {job.failure_message_technical ? (
+                <details className="mt-3 rounded-md border border-slate-200 px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium text-slate-600 hover:text-slate-900">
+                    Detalle técnico
+                  </summary>
+                  <pre className="mt-2 text-xs text-slate-600 whitespace-pre-wrap break-all">
+                    {job.failure_message_technical}
+                  </pre>
+                </details>
+              ) : null}
+            </section>
+          ) : null}
+
           {job.status === "pending" ? (
             <section>
               <Alert variant="warning">

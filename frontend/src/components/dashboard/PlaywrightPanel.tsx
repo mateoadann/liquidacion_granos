@@ -26,6 +26,7 @@ function JobStatusBadge({ status }: { status: string }) {
     running: "info",
     completed: "success",
     failed: "error",
+    partial: "warning",
   };
   return <Badge variant={variants[status] ?? "default"}>{status}</Badge>;
 }
@@ -204,8 +205,14 @@ export function PlaywrightPanel() {
               </div>
             ) : null}
 
-            {jobQuery.data.status === "completed" && jobQuery.data.result ? (
+            {(jobQuery.data.status === "completed" || jobQuery.data.status === "partial") &&
+            jobQuery.data.result ? (
               <div className="text-sm text-slate-600 space-y-1">
+                {jobQuery.data.status === "partial" ? (
+                  <p className="text-amber-700 font-medium">
+                    Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.
+                  </p>
+                ) : null}
                 <p>Clientes procesados: {jobQuery.data.result.taxpayersTotal}</p>
                 <p className="text-green-600">Exitosos: {jobQuery.data.result.taxpayersOk}</p>
                 {jobQuery.data.result.taxpayersError > 0 ? (
