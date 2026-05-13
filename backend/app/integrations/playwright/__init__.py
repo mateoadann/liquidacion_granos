@@ -4,6 +4,7 @@ from .lpg_consulta_client import (
     LpgConsultaRequest,
     LpgConsultaResult,
     LpgCredentials,
+    PhaseCallback,
     PlaywrightFlowError,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "LpgCredentials",
     "LpgConsultaRequest",
     "LpgConsultaResult",
+    "PhaseCallback",
     "PlaywrightFlowError",
 ]

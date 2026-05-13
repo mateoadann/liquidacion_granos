@@ -18,7 +18,10 @@ from playwright.sync_api import (
     sync_playwright,
 )
 
+from ...services.extraction_phases import PHASE_MESSAGES_ES, ExtractionPhase
 from ...time_utils import now_cordoba_naive
+
+PhaseCallback = Callable[[ExtractionPhase, str], None]
 
 
 def _normalize_text(value: str | None) -> str:
@@ -59,6 +62,8 @@ class LpgConsultaRequest:
     humanize_delays: bool = True
     retry_max_attempts: int = 2
     retry_base_delay_ms: int = 1000
+    # Phase feedback (optional — used to stream extraction phase changes up to the worker)
+    on_phase: PhaseCallback | None = None
 
 
 @dataclass(slots=True)
@@ -90,6 +95,17 @@ class LpgConsultaResult:
 class PlaywrightFlowError(RuntimeError):
     """Error funcional del flujo Playwright en ARCA/AFIP."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        phase: ExtractionPhase | None = None,
+        dropdown_clicked: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.phase = phase
+        self.dropdown_clicked = dropdown_clicked
+
 
 @dataclass(slots=True)
 class ErrorClassification:
@@ -105,6 +121,18 @@ logger = logging.getLogger(__name__)
 class ArcaLpgPlaywrightClient:
     LANDING_URL = "https://www.afip.gob.ar/landing/default.asp"
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
+
+    def __init__(self) -> None:
+        self._search_dropdown_clicked: bool = False
+        self._on_phase: PhaseCallback | None = None
+
+    def _emit_phase(self, phase: ExtractionPhase) -> None:
+        if self._on_phase is None:
+            return
+        try:
+            self._on_phase(phase, PHASE_MESSAGES_ES[phase])
+        except Exception:
+            logger.exception("PLAYWRIGHT_ON_PHASE_CALLBACK_ERROR | phase=%s", phase.value)
 
     # Configuración anti-detección
     BROWSER_ARGS = [
@@ -244,6 +272,8 @@ class ArcaLpgPlaywrightClient:
 
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
         started = now_cordoba_naive()
+        self._on_phase = request.on_phase
+        self._search_dropdown_clicked = False
         logger.info(
             "PLAYWRIGHT_RUN_START | empresa=%s desde=%s hasta=%s timeout_ms=%s type_delay_ms=%s",
             request.empresa,
@@ -278,6 +308,7 @@ class ArcaLpgPlaywrightClient:
     def _run_with_playwright(
         self, playwright: Playwright, request: LpgConsultaRequest
     ) -> tuple[list[str], int, list[str]]:
+        self._emit_phase(ExtractionPhase.LAUNCHING_BROWSER)
         logger.info(
             "PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s slow_mo_ms=%s",
             request.empresa, request.headless, request.slow_mo_ms,
@@ -307,7 +338,9 @@ class ArcaLpgPlaywrightClient:
                 request.type_delay_ms,
                 request.empresa,
             )
+            self._emit_phase(ExtractionPhase.SELECT_EMPRESA)
             self._select_empresa(service_page, request.empresa, request.timeout_ms)
+            self._emit_phase(ExtractionPhase.OPEN_CONSULTA_RECIBIDAS)
             self._open_consulta_recibidas(
                 service_page, request.timeout_ms, request.empresa, request.humanize_delays
             )
@@ -329,6 +362,7 @@ class ArcaLpgPlaywrightClient:
                 empresa=request.empresa,
                 page=service_page,
             )
+            self._emit_phase(ExtractionPhase.LISTING_COES)
             headers, total_rows, coes = self._with_retry(
                 operation=lambda: self._read_results_coes(
                     service_page, request.timeout_ms, request.empresa
@@ -349,6 +383,7 @@ class ArcaLpgPlaywrightClient:
         max_retries = max(request.login_max_retries, 1)
         last_error: str | None = None
 
+        self._emit_phase(ExtractionPhase.LOGIN_START)
         for attempt in range(1, max_retries + 1):
             logger.info(
                 "PLAYWRIGHT_LOGIN_ATTEMPT | empresa=%s attempt=%s/%s",
@@ -364,6 +399,7 @@ class ArcaLpgPlaywrightClient:
                     "PLAYWRIGHT_LOGIN_CONFIRMED | empresa=%s attempt=%s",
                     request.empresa, attempt,
                 )
+                self._emit_phase(ExtractionPhase.LOGIN_CONFIRMED)
                 return login_page
 
             last_error = message
@@ -372,7 +408,10 @@ class ArcaLpgPlaywrightClient:
                     "PLAYWRIGHT_LOGIN_FAILED | empresa=%s error=%s attempt=%s",
                     request.empresa, message, attempt,
                 )
-                raise PlaywrightFlowError(message or "No se pudo confirmar el login.")
+                raise PlaywrightFlowError(
+                    message or "No se pudo confirmar el login.",
+                    phase=ExtractionPhase.LOGIN_START,
+                )
 
             logger.warning(
                 "PLAYWRIGHT_LOGIN_TRANSIENT_ERROR | empresa=%s error=%s attempt=%s/%s",
@@ -382,7 +421,10 @@ class ArcaLpgPlaywrightClient:
                 retry_delay = request.post_action_delay_ms if request.post_action_delay_ms > 0 else 2000
                 login_page.wait_for_timeout(retry_delay)
 
-        raise PlaywrightFlowError(last_error or "No se pudo confirmar el login tras reintentos.")
+        raise PlaywrightFlowError(
+            last_error or "No se pudo confirmar el login tras reintentos.",
+            phase=ExtractionPhase.LOGIN_START,
+        )
 
     def _do_login_attempt(self, landing_page: Page, request: LpgConsultaRequest) -> Page:
         logger.info("PLAYWRIGHT_NAVIGATE_LANDING | empresa=%s", request.empresa)
@@ -474,6 +516,7 @@ class ArcaLpgPlaywrightClient:
         type_delay_ms: int,
         empresa: str,
     ) -> Page:
+        self._emit_phase(ExtractionPhase.SEARCH_SERVICE)
         logger.info("PLAYWRIGHT_SEARCH_SERVICE_START | empresa=%s", empresa)
         search = login_page.get_by_role("combobox", name=re.compile(r"Buscador", re.IGNORECASE))
         search.click()
@@ -501,6 +544,7 @@ class ArcaLpgPlaywrightClient:
             empresa,
             link_text,
         )
+        self._emit_phase(ExtractionPhase.OPEN_SERVICE)
         service_page = self._open_service_popup(login_page, service_link, timeout_ms, empresa)
 
         try:
@@ -520,7 +564,8 @@ class ArcaLpgPlaywrightClient:
         if exact_link.count() == 0:
             raise PlaywrightFlowError(
                 "Se abrió una ventana inválida del servicio y no se encontró el link exacto "
-                "'Liquidación primaria de granos' para reintentar."
+                "'Liquidación primaria de granos' para reintentar.",
+                phase=ExtractionPhase.OPEN_SERVICE,
             )
 
         exact_text = _normalize_text(exact_link.inner_text())
@@ -555,6 +600,7 @@ class ArcaLpgPlaywrightClient:
                     if locator.count() > 0 and locator.first.is_visible():
                         label = _normalize_text(locator.first.inner_text())
                         locator.first.click()
+                        self._search_dropdown_clicked = True
                         logger.info(
                             "PLAYWRIGHT_SEARCH_DROPDOWN_CLICKED | empresa=%s suggestion=%s",
                             empresa,
@@ -618,7 +664,9 @@ class ArcaLpgPlaywrightClient:
         logger.warning("PLAYWRIGHT_SERVICE_NOT_FOUND | visible_services=%s", available[:10])
         raise PlaywrightFlowError(
             "No se encontró el servicio 'Liquidación Primaria de Granos' en el buscador de AFIP."
-            + details
+            + details,
+            phase=ExtractionPhase.SEARCH_SERVICE,
+            dropdown_clicked=self._search_dropdown_clicked,
         )
 
     def _open_service_popup(
@@ -635,7 +683,8 @@ class ArcaLpgPlaywrightClient:
         except PlaywrightTimeoutError as exc:
             logger.warning("PLAYWRIGHT_OPEN_SERVICE_POPUP_TIMEOUT | empresa=%s", empresa)
             raise PlaywrightFlowError(
-                "El servicio LPG apareció en la búsqueda, pero no abrió una nueva ventana dentro del tiempo esperado."
+                "El servicio LPG apareció en la búsqueda, pero no abrió una nueva ventana dentro del tiempo esperado.",
+                phase=ExtractionPhase.OPEN_SERVICE,
             ) from exc
         logger.info("PLAYWRIGHT_OPEN_SERVICE_POPUP_OK | empresa=%s", empresa)
         service_page.wait_for_load_state("networkidle")
@@ -673,7 +722,8 @@ class ArcaLpgPlaywrightClient:
         raise PlaywrightFlowError(
             "Se abrió una ventana distinta al selector de empresa de LPG. "
             f"URL: {context['url']} | Título: {context['title']} | "
-            f"Botones visibles: {context['visible_buttons'][:10]}"
+            f"Botones visibles: {context['visible_buttons'][:10]}",
+            phase=ExtractionPhase.OPEN_SERVICE,
         )
 
     def _detect_visible_service_links(self, login_page: Page) -> list[str]:
@@ -692,7 +742,10 @@ class ArcaLpgPlaywrightClient:
         logger.info("PLAYWRIGHT_SELECT_EMPRESA_START | empresa=%s", empresa_input)
         expected = _normalize_key(empresa_input)
         if not expected:
-            raise PlaywrightFlowError("El campo empresa es obligatorio.")
+            raise PlaywrightFlowError(
+                "El campo empresa es obligatorio.",
+                phase=ExtractionPhase.SELECT_EMPRESA,
+            )
 
         empresa_form = service_page.locator(self.EMPRESA_FORM_SELECTOR)
         empresa_form.wait_for(timeout=timeout_ms)
@@ -725,7 +778,8 @@ class ArcaLpgPlaywrightClient:
             raise PlaywrightFlowError(
                 "No se encontraron opciones de empresa para seleccionar. "
                 f"URL: {context['url']} | Título: {context['title']} | "
-                f"Botones visibles: {visible_buttons[:10]}"
+                f"Botones visibles: {visible_buttons[:10]}",
+                phase=ExtractionPhase.SELECT_EMPRESA,
             )
 
         first_partial: Locator | None = None
@@ -752,7 +806,8 @@ class ArcaLpgPlaywrightClient:
             return
 
         raise PlaywrightFlowError(
-            f"No se encontró la empresa '{empresa_input}'. Opciones detectadas: {available[:10]}"
+            f"No se encontró la empresa '{empresa_input}'. Opciones detectadas: {available[:10]}",
+            phase=ExtractionPhase.SELECT_EMPRESA,
         )
 
     def _resolve_empresa_candidates(self, service_page: Page) -> Locator:
