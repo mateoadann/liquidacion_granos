@@ -6,12 +6,14 @@ export function JobStatusBadge({ status }: { status: string }) {
     running: "info",
     completed: "success",
     failed: "error",
+    partial: "warning",
   };
   const labels: Record<string, string> = {
     pending: "Pendiente",
     running: "Ejecutando",
     completed: "Completado",
     failed: "Fallido",
+    partial: "Parcial",
   };
   return <Badge variant={variants[status] ?? "default"}>{labels[status] ?? status}</Badge>;
 }

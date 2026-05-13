@@ -304,15 +304,25 @@ def run_playwright_pipeline_job(
             job_failure_user: str | None = None
             job_failure_tech: str | None = None
             job_failure_phase: str | None = None
-            if result.taxpayers_total > 0 and result.taxpayers_ok == 0 and result.taxpayers_error > 0:
-                status = "failed"
-                error_message = (
-                    "No se pudo procesar ningún cliente. "
-                    "Revisá logs del worker para detalle técnico."
-                )
-                job_failure_user = last_taxpayer_failure["user_es"]
-                job_failure_tech = last_taxpayer_failure["tech"]
-                job_failure_phase = last_taxpayer_failure["phase"]
+            if result.taxpayers_total > 0:
+                if result.taxpayers_ok == 0 and result.taxpayers_error > 0:
+                    status = "failed"
+                    error_message = (
+                        "No se pudo procesar ningún cliente. "
+                        "Revisá logs del worker para detalle técnico."
+                    )
+                    job_failure_user = last_taxpayer_failure["user_es"]
+                    job_failure_tech = last_taxpayer_failure["tech"]
+                    job_failure_phase = last_taxpayer_failure["phase"]
+                elif result.taxpayers_ok > 0 and result.taxpayers_error > 0:
+                    status = "partial"
+                    error_message = (
+                        "Algunos clientes no pudieron procesarse. "
+                        "Revisá el detalle por cliente."
+                    )
+                    job_failure_user = last_taxpayer_failure["user_es"]
+                    job_failure_tech = last_taxpayer_failure["tech"]
+                    job_failure_phase = last_taxpayer_failure["phase"]
 
             _update_job(
                 extraction_job_id,

@@ -135,7 +135,7 @@ export interface PlaywrightJobProgress {
   clients: PlaywrightClientProgress[];
 }
 
-export type PlaywrightJobStatus = "pending" | "running" | "completed" | "failed";
+export type PlaywrightJobStatus = "pending" | "running" | "completed" | "failed" | "partial";
 
 export interface PlaywrightPipelineJob {
   id: number;
@@ -425,7 +425,10 @@ function normalizePlaywrightPipelineJob(raw: unknown): PlaywrightPipelineJob {
   const data = isRecord(raw) ? raw : {};
   const rawStatus = asString(data.status, "pending");
   const status: PlaywrightJobStatus =
-    rawStatus === "running" || rawStatus === "completed" || rawStatus === "failed"
+    rawStatus === "running" ||
+    rawStatus === "completed" ||
+    rawStatus === "failed" ||
+    rawStatus === "partial"
       ? rawStatus
       : "pending";
 
