@@ -40,6 +40,21 @@ def _normalize_key(value: str | None) -> str:
     return " ".join(text.casefold().split())
 
 
+def _normalize_company_key(value: str | None) -> str:
+    base = _normalize_key(value)
+    if not base:
+        return ""
+    tokens = base.split()
+    suffix_letters: list[str] = []
+    main_tokens = list(tokens)
+    while main_tokens and len(main_tokens[-1]) == 1:
+        suffix_letters.insert(0, main_tokens.pop())
+    if len(suffix_letters) >= 2:
+        collapsed = "".join(suffix_letters)
+        return " ".join(main_tokens + [collapsed])
+    return base
+
+
 @dataclass(slots=True)
 class LpgCredentials:
     cuit: str
@@ -740,7 +755,7 @@ class ArcaLpgPlaywrightClient:
 
     def _select_empresa(self, service_page: Page, empresa_input: str, timeout_ms: int) -> None:
         logger.info("PLAYWRIGHT_SELECT_EMPRESA_START | empresa=%s", empresa_input)
-        expected = _normalize_key(empresa_input)
+        expected = _normalize_company_key(empresa_input)
         if not expected:
             raise PlaywrightFlowError(
                 "El campo empresa es obligatorio.",
@@ -792,7 +807,7 @@ class ArcaLpgPlaywrightClient:
             if not label:
                 continue
             available.append(label)
-            label_key = _normalize_key(label)
+            label_key = _normalize_company_key(label)
             if label_key == expected:
                 button.click()
                 logger.info("PLAYWRIGHT_SELECT_EMPRESA_OK | selected=%s mode=exact", label)
