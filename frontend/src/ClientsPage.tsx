@@ -355,30 +355,34 @@ export default function ClientsPage() {
           <h2 className="text-base font-semibold text-slate-900">Última corrida Playwright</h2>
           <p className="mt-1 text-sm text-slate-600">
             Rango: {runResult.fechaDesde} → {runResult.fechaHasta} · Clientes:{" "}
-            {runResult.taxpayersTotal} · OK: {runResult.taxpayersOk} · Error:{" "}
-            {runResult.taxpayersError}
+            {runResult.taxpayersTotal} · OK: {runResult.taxpayersOk} · Parciales:{" "}
+            {runResult.taxpayersPartial} · Error: {runResult.taxpayersError}
           </p>
           <div className="mt-3 space-y-2">
-            {runResult.results.map((item) => (
-              <div
-                key={item.taxpayerId}
-                className={`rounded-md border px-3 py-2 text-sm ${
-                  item.ok
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    : "border-red-200 bg-red-50 text-red-800"
-                }`}
-              >
-                <p className="font-medium">
-                  {item.empresa} (id {item.taxpayerId})
-                </p>
-                <p>
-                  COEs detectados: {item.totalCoesDetectados} · nuevos: {item.totalCoesNuevos} ·
-                  omitidos: {item.totalOmitidosExistentes} · procesados OK:{" "}
-                  {item.totalProcesadosOk} · error: {item.totalProcesadosError}
-                </p>
-                {item.error ? <p>Error: {item.error}</p> : null}
-              </div>
-            ))}
+            {runResult.results.map((item) => {
+              const itemClass =
+                item.outcome === "done"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : item.outcome === "partial"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-red-200 bg-red-50 text-red-800";
+              return (
+                <div
+                  key={item.taxpayerId}
+                  className={`rounded-md border px-3 py-2 text-sm ${itemClass}`}
+                >
+                  <p className="font-medium">
+                    {item.empresa} (id {item.taxpayerId})
+                  </p>
+                  <p>
+                    COEs detectados: {item.totalCoesDetectados} · nuevos: {item.totalCoesNuevos} ·
+                    omitidos: {item.totalOmitidosExistentes} · procesados OK:{" "}
+                    {item.totalProcesadosOk} · error: {item.totalProcesadosError}
+                  </p>
+                  {item.error ? <p>Error: {item.error}</p> : null}
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -416,11 +420,18 @@ export default function ClientsPage() {
                   const statusClass =
                     clientProgress.status === "done"
                       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : clientProgress.status === "error"
-                        ? "border-red-200 bg-red-50 text-red-800"
-                        : clientProgress.status === "running"
-                          ? "border-blue-200 bg-blue-50 text-blue-800"
-                          : "border-slate-200 bg-slate-50 text-slate-700";
+                      : clientProgress.status === "partial"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : clientProgress.status === "error"
+                          ? "border-red-200 bg-red-50 text-red-800"
+                          : clientProgress.status === "running"
+                            ? "border-blue-200 bg-blue-50 text-blue-800"
+                            : "border-slate-200 bg-slate-50 text-slate-700";
+
+                  const isFinished =
+                    clientProgress.status === "done" ||
+                    clientProgress.status === "partial" ||
+                    clientProgress.status === "error";
 
                   return (
                     <div
@@ -431,7 +442,7 @@ export default function ClientsPage() {
                         {clientProgress.empresa} (id {clientProgress.taxpayerId}) ·{" "}
                         {clientProgress.status}
                       </p>
-                      {clientProgress.status === "done" || clientProgress.status === "error" ? (
+                      {isFinished ? (
                         <p>
                           COEs detectados: {clientProgress.totalCoesDetectados} · nuevos:{" "}
                           {clientProgress.totalCoesNuevos} · procesados OK: {clientProgress.totalProcesadosOk} ·
