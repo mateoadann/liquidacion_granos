@@ -991,6 +991,8 @@ class ArcaLpgPlaywrightClient:
                 coe_index = idx
                 break
 
+        self._log_results_table_diagnostics(service_page, table, empresa)
+
         rows_locator = table.locator("tr:has(td)")
         total_rows = rows_locator.count()
 
@@ -1015,6 +1017,85 @@ class ArcaLpgPlaywrightClient:
         )
 
         return headers, total_rows, coes
+
+    def _log_results_table_diagnostics(
+        self,
+        service_page: Page,
+        table: Locator,
+        empresa: str,
+    ) -> None:
+        try:
+            tr_total = table.locator("tr").count()
+            tr_with_td = table.locator("tr:has(td)").count()
+
+            service_page.wait_for_timeout(2000)
+            tr_total_after_wait = table.locator("tr").count()
+            tr_with_td_after_wait = table.locator("tr:has(td)").count()
+
+            pagination_selectors = [
+                ".pagination",
+                "[class*='paginat']",
+                "[id*='paginat']",
+                "input[name*='pagina' i]",
+                "select[name*='pagina' i]",
+                "a:has-text('Siguiente')",
+                "a:has-text('Próximo')",
+                "a:has-text('>>')",
+                "button:has-text('Siguiente')",
+            ]
+            pagination_hits: list[str] = []
+            for selector in pagination_selectors:
+                try:
+                    count = service_page.locator(selector).count()
+                except Exception:
+                    continue
+                if count > 0:
+                    pagination_hits.append(f"{selector}={count}")
+
+            scroll_info = "unknown"
+            try:
+                scroll_info = service_page.evaluate(
+                    """(tableEl) => {
+                        if (!tableEl) return 'no_table';
+                        const wrap = tableEl.closest('[style*="overflow"], div');
+                        return JSON.stringify({
+                            tableRows: tableEl.rows ? tableEl.rows.length : null,
+                            scrollHeight: tableEl.scrollHeight,
+                            clientHeight: tableEl.clientHeight,
+                            wrapperScrollHeight: wrap ? wrap.scrollHeight : null,
+                            wrapperClientHeight: wrap ? wrap.clientHeight : null,
+                        });
+                    }""",
+                    table.element_handle(),
+                )
+            except Exception as exc:
+                scroll_info = f"eval_failed:{exc.__class__.__name__}"
+
+            footer_text = ""
+            try:
+                footer_locator = table.locator("tfoot, tr:last-child")
+                if footer_locator.count() > 0:
+                    footer_text = _normalize_text(footer_locator.first.inner_text())[:200]
+            except Exception:
+                pass
+
+            logger.info(
+                "PLAYWRIGHT_RESULTS_TABLE_DIAG | empresa=%s tr_total=%s tr_with_td=%s "
+                "tr_total_after_2s=%s tr_with_td_after_2s=%s pagination_hits=%s "
+                "scroll=%s footer=%s",
+                empresa,
+                tr_total,
+                tr_with_td,
+                tr_total_after_wait,
+                tr_with_td_after_wait,
+                pagination_hits,
+                scroll_info,
+                footer_text,
+            )
+        except Exception:
+            logger.exception(
+                "PLAYWRIGHT_RESULTS_TABLE_DIAG_ERROR | empresa=%s", empresa
+            )
 
     def _mask_cuit(self, cuit: str) -> str:
         value = (cuit or "").strip()
