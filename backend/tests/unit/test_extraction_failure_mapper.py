@@ -80,11 +80,22 @@ def test_login_phase_transient_returns_transient_login(
 
 @pytest.mark.parametrize(
     "error_type",
-    ["timeout", "arca_unavailable"],
-    ids=["timeout", "arca_unavailable"],
+    ["timeout", "arca_unavailable", "unknown"],
+    ids=["timeout", "arca_unavailable", "unknown"],
 )
 def test_search_service_dropdown_clicked_returns_arca_slow(error_type: str) -> None:
     user_es, tech_en = map_failure(ExtractionPhase.SEARCH_SERVICE, error_type, True)
+    assert user_es == _ARCA_SLOW_AFTER_DROPDOWN_USER_ES
+    assert tech_en == "ARCA_SLOW_AFTER_DROPDOWN"
+
+
+def test_search_service_unknown_dropdown_clicked_treated_as_arca_slow() -> None:
+    # Real-world regression: when dropdown_clicked=True we already know ARCA
+    # responded and we selected the suggestion. A post-click "unknown" failure
+    # must NOT degrade to UNKNOWN_ERROR — it must surface ARCA latency.
+    user_es, tech_en = map_failure(
+        ExtractionPhase.SEARCH_SERVICE, "unknown", True
+    )
     assert user_es == _ARCA_SLOW_AFTER_DROPDOWN_USER_ES
     assert tech_en == "ARCA_SLOW_AFTER_DROPDOWN"
 
@@ -108,6 +119,15 @@ def test_search_service_network_no_dropdown_falls_through_to_network() -> None:
     assert tech_en == "NETWORK_ERROR"
 
 
+def test_search_service_network_dropdown_clicked_falls_through_to_network() -> None:
+    # error_type=network is NOT in _SEARCH_SERVICE_AFTER_DROPDOWN_ERRORS even
+    # with dropdown_clicked=True, so it must fall through to the generic
+    # network rule (no degradation to ARCA_SLOW_AFTER_DROPDOWN).
+    user_es, tech_en = map_failure(ExtractionPhase.SEARCH_SERVICE, "network", True)
+    assert user_es == _NETWORK_ERROR_USER_ES
+    assert tech_en == "NETWORK_ERROR"
+
+
 # ---------------------------------------------------------------------------
 # OPEN_SERVICE phase
 # ---------------------------------------------------------------------------
@@ -123,6 +143,39 @@ def test_open_service_arca_slow_errors_returns_open_service_timeout(
     user_es, tech_en = map_failure(ExtractionPhase.OPEN_SERVICE, error_type, False)
     assert user_es == _OPEN_SERVICE_TIMEOUT_USER_ES
     assert tech_en == "OPEN_SERVICE_TIMEOUT"
+
+
+@pytest.mark.parametrize(
+    "dropdown_clicked", [True, False], ids=["dropdown=T", "dropdown=F"]
+)
+def test_open_service_unknown_falls_back_to_unknown_error(
+    dropdown_clicked: bool,
+) -> None:
+    # The dropdown_clicked branch is exclusive to SEARCH_SERVICE; OPEN_SERVICE
+    # must NOT treat "unknown" as ARCA latency regardless of the flag.
+    user_es, tech_en = map_failure(
+        ExtractionPhase.OPEN_SERVICE, "unknown", dropdown_clicked
+    )
+    assert user_es == _UNKNOWN_ERROR_USER_ES
+    assert tech_en == "UNKNOWN_ERROR"
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [ExtractionPhase.LOGIN_START, ExtractionPhase.LOGIN_CONFIRMED],
+    ids=["LOGIN_START", "LOGIN_CONFIRMED"],
+)
+@pytest.mark.parametrize(
+    "dropdown_clicked", [True, False], ids=["dropdown=T", "dropdown=F"]
+)
+def test_login_phase_unknown_falls_back_to_unknown_error(
+    phase: ExtractionPhase, dropdown_clicked: bool
+) -> None:
+    # LOGIN phases must NOT degrade "unknown" to ARCA latency even when the
+    # dropdown_clicked flag is set — that branch belongs to SEARCH_SERVICE only.
+    user_es, tech_en = map_failure(phase, "unknown", dropdown_clicked)
+    assert user_es == _UNKNOWN_ERROR_USER_ES
+    assert tech_en == "UNKNOWN_ERROR"
 
 
 # ---------------------------------------------------------------------------
