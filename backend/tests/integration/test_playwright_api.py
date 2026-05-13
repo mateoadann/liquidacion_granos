@@ -81,6 +81,17 @@ def test_run_playwright_enqueues_job(client, monkeypatch, auth_headers):
     assert body["job"]["payload"]["taxpayer_ids"] == [taxpayer_one.id, taxpayer_two.id]
     assert body["job"]["payload"]["rq_job_id"] == "rq-job-123"
     assert body["job"]["payload"]["queue_name"] == "playwright"
+    # New extraction-progress-feedback fields MUST be present (null on a
+    # fresh pending job, but the keys themselves must exist).
+    for key in (
+        "current_phase",
+        "current_message",
+        "failure_phase",
+        "failure_message_user",
+        "failure_message_technical",
+    ):
+        assert key in body["job"], f"missing key {key} in serialized job"
+        assert body["job"][key] is None
 
     assert captured["func"] is dummy_job
     assert captured["kwargs"] == {

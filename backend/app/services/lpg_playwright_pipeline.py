@@ -14,6 +14,7 @@ from ..integrations.playwright import (
     ArcaLpgPlaywrightClient,
     LpgConsultaRequest,
     LpgCredentials,
+    PhaseCallback,
     PlaywrightFlowError,
 )
 from ..models import LpgDocument, Taxpayer
@@ -23,6 +24,7 @@ from .certificate_validator import (
 )
 from .crypto_service import decrypt_secret, is_placeholder_secret
 from .datos_limpios_builder import DatosLimpiosBuilder
+from .extraction_phases import PHASE_MESSAGES_ES, ExtractionPhase
 from ..time_utils import now_cordoba_naive
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,10 @@ class TaxpayerPipelineResult:
     coes_nuevos: list[str] = field(default_factory=list)
     coes_error: list[dict[str, str]] = field(default_factory=list)
     consulta: dict[str, Any] | None = None
+    # Failure metadata for the failure mapper (only populated on error)
+    failure_phase: ExtractionPhase | None = None
+    failure_error_type: str | None = None
+    failure_dropdown_clicked: bool = False
 
 
 @dataclass(slots=True)
@@ -89,6 +95,7 @@ class LpgPlaywrightPipelineService:
         retry_base_delay_ms: int = 1000,
         on_taxpayer_start: Callable[[Taxpayer], None] | None = None,
         on_taxpayer_finish: Callable[[TaxpayerPipelineResult], None] | None = None,
+        on_phase: Callable[[Taxpayer, ExtractionPhase, str], None] | None = None,
     ) -> PipelineRunResult:
         started = now_cordoba_naive()
         logger.info(
@@ -112,6 +119,20 @@ class LpgPlaywrightPipelineService:
         for taxpayer in taxpayers:
             if on_taxpayer_start:
                 on_taxpayer_start(taxpayer)
+            taxpayer_phase_cb: PhaseCallback | None
+            if on_phase is None:
+                taxpayer_phase_cb = None
+            else:
+                outer_on_phase = on_phase
+                tp_ref = taxpayer
+
+                def taxpayer_phase_cb(
+                    phase: ExtractionPhase,
+                    message: str,
+                    _tp: Taxpayer = tp_ref,
+                    _cb: Callable[[Taxpayer, ExtractionPhase, str], None] = outer_on_phase,
+                ) -> None:
+                    _cb(_tp, phase, message)
             result = self._process_taxpayer(
                 taxpayer=taxpayer,
                 fecha_desde=fecha_desde,
@@ -125,6 +146,7 @@ class LpgPlaywrightPipelineService:
                 humanize_delays=humanize_delays,
                 retry_max_attempts=retry_max_attempts,
                 retry_base_delay_ms=retry_base_delay_ms,
+                on_phase=taxpayer_phase_cb,
             )
             results.append(result)
             if on_taxpayer_finish:
@@ -171,6 +193,7 @@ class LpgPlaywrightPipelineService:
         humanize_delays: bool,
         retry_max_attempts: int,
         retry_base_delay_ms: int,
+        on_phase: PhaseCallback | None = None,
     ) -> TaxpayerPipelineResult:
         logger.info(
             "Taxpayer start | id=%s empresa=%s cuit=%s cuit_representado=%s",
@@ -210,13 +233,14 @@ class LpgPlaywrightPipelineService:
             )
             return base
 
+        client = ArcaLpgPlaywrightClient()
         try:
             logger.info(
                 "CLIENT_PLAYWRIGHT_START | taxpayer_id=%s empresa=%s",
                 taxpayer.id,
                 taxpayer.empresa,
             )
-            consulta = ArcaLpgPlaywrightClient().run(
+            consulta = client.run(
                 LpgConsultaRequest(
                     credentials=LpgCredentials(cuit=taxpayer.cuit, clave_fiscal=clave),
                     empresa=taxpayer.empresa,
@@ -231,6 +255,7 @@ class LpgPlaywrightPipelineService:
                     humanize_delays=humanize_delays,
                     retry_max_attempts=retry_max_attempts,
                     retry_base_delay_ms=retry_base_delay_ms,
+                    on_phase=on_phase,
                 )
             )
             logger.info(
@@ -242,15 +267,23 @@ class LpgPlaywrightPipelineService:
             )
         except PlaywrightFlowError as exc:
             base.error = f"Playwright: {exc}"
+            base.failure_phase = exc.phase
+            base.failure_dropdown_clicked = exc.dropdown_clicked
+            base.failure_error_type = client._classify_error(exc).error_type
             logger.error(
-                "Taxpayer playwright error | id=%s empresa=%s error=%s",
+                "Taxpayer playwright error | id=%s empresa=%s error=%s phase=%s error_type=%s",
                 taxpayer.id,
                 taxpayer.empresa,
                 base.error,
+                exc.phase.value if exc.phase else None,
+                base.failure_error_type,
             )
             return base
         except Exception as exc:
             base.error = f"Playwright inesperado: {exc}"
+            base.failure_phase = None
+            base.failure_dropdown_clicked = client._search_dropdown_clicked
+            base.failure_error_type = client._classify_error(exc).error_type
             logger.exception(
                 "Taxpayer playwright unexpected error | id=%s empresa=%s",
                 taxpayer.id,
@@ -269,6 +302,18 @@ class LpgPlaywrightPipelineService:
             taxpayer.empresa,
             len(consulta.coes),
         )
+        last_emitted_phase: ExtractionPhase | None = None
+
+        def emit_ws_phase(phase: ExtractionPhase) -> None:
+            nonlocal last_emitted_phase
+            if on_phase is None or phase == last_emitted_phase:
+                return
+            try:
+                on_phase(phase, PHASE_MESSAGES_ES[phase])
+            except Exception:
+                logger.exception("PIPELINE_ON_PHASE_CALLBACK_ERROR | phase=%s", phase.value)
+            last_emitted_phase = phase
+
         for coe in consulta.coes:
             if self._coe_exists(taxpayer.id, coe):
                 base.total_omitidos_existentes += 1
@@ -289,6 +334,7 @@ class LpgPlaywrightPipelineService:
                 coe,
             )
             try:
+                emit_ws_phase(ExtractionPhase.DOWNLOADING_COE)
                 ws_result = ws_client.call_liquidacion_x_coe(int(coe), pdf="N")
                 tipo_doc = "LPG"
                 if self._is_ajuste_error(ws_result):
@@ -298,6 +344,7 @@ class LpgPlaywrightPipelineService:
                     )
                     ws_result = ws_client.call_ajuste_x_coe(int(coe), pdf="N")
                     tipo_doc = "AJUSTE"
+                emit_ws_phase(ExtractionPhase.SAVING_TO_WS)
                 self._save_lpg_document(taxpayer.id, coe, ws_result, tipo_documento=tipo_doc)
                 base.total_procesados_ok += 1
                 logger.info(
@@ -321,6 +368,13 @@ class LpgPlaywrightPipelineService:
         base.ok = base.total_procesados_error == 0
         if not base.ok and not base.error:
             base.error = "Se detectaron errores en liquidacionXCoeConsultar."
+            base.failure_phase = ExtractionPhase.SAVING_TO_WS if last_emitted_phase == ExtractionPhase.SAVING_TO_WS else ExtractionPhase.DOWNLOADING_COE
+            base.failure_error_type = "unknown"
+        if base.ok and on_phase is not None:
+            try:
+                on_phase(ExtractionPhase.FINISHED, PHASE_MESSAGES_ES[ExtractionPhase.FINISHED])
+            except Exception:
+                logger.exception("PIPELINE_ON_PHASE_CALLBACK_ERROR | phase=FINISHED")
         logger.info(
             "Taxpayer finished | id=%s empresa=%s ok=%s detectados=%s nuevos=%s omitidos=%s ok_ws=%s error_ws=%s",
             taxpayer.id,
