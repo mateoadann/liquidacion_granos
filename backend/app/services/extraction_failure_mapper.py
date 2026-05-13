@@ -11,6 +11,10 @@ _WS_PHASES = {ExtractionPhase.DOWNLOADING_COE, ExtractionPhase.SAVING_TO_WS}
 
 _TRANSIENT_ERRORS = {"timeout", "network", "arca_unavailable"}
 _ARCA_SLOW_ERRORS = {"timeout", "arca_unavailable"}
+# If the dropdown click in SEARCH_SERVICE succeeded, any post-click failure
+# points to ARCA latency, not missing service adhesion — so "unknown" also
+# maps to ARCA_SLOW_AFTER_DROPDOWN here (but only here).
+_SEARCH_SERVICE_AFTER_DROPDOWN_ERRORS = {"timeout", "arca_unavailable", "unknown"}
 _SERVICE_NOT_ADHERED_ERRORS = {"timeout", "arca_unavailable", "unknown"}
 
 _AUTH_FAILED_USER_ES = (
@@ -58,7 +62,7 @@ def map_failure(
             return (_TRANSIENT_LOGIN_USER_ES, "TRANSIENT_LOGIN")
 
     if phase == ExtractionPhase.SEARCH_SERVICE:
-        if dropdown_clicked and error_type in _ARCA_SLOW_ERRORS:
+        if dropdown_clicked and error_type in _SEARCH_SERVICE_AFTER_DROPDOWN_ERRORS:
             return (
                 _ARCA_SLOW_AFTER_DROPDOWN_USER_ES,
                 "ARCA_SLOW_AFTER_DROPDOWN",
