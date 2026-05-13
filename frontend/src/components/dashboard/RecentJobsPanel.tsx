@@ -1,26 +1,16 @@
-import { Card, CardHeader, Badge, Spinner } from "../ui";
+import { useState } from "react";
+import { Card, CardHeader, Spinner } from "../ui";
 import { useJobsQuery } from "../../hooks/useJobs";
 import { formatDateTime } from "../../dateUtils";
-
-function JobStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
-    pending: "warning",
-    running: "info",
-    completed: "success",
-    failed: "error",
-  };
-  const labels: Record<string, string> = {
-    pending: "Pendiente",
-    running: "Ejecutando",
-    completed: "Completado",
-    failed: "Fallido",
-  };
-  return <Badge variant={variants[status] ?? "default"}>{labels[status] ?? status}</Badge>;
-}
+import { JobDetailDrawer } from "./JobDetailDrawer";
+import { JobStatusBadge } from "./JobStatusBadge";
 
 export function RecentJobsPanel() {
   const jobsQuery = useJobsQuery({ limit: 10 });
   const jobs = jobsQuery.data?.jobs ?? [];
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+
+  const selectedJob = selectedJobId !== null ? jobs.find((j) => j.id === selectedJobId) ?? null : null;
 
   return (
     <Card padding="lg">
@@ -61,7 +51,11 @@ export function RecentJobsPanel() {
                     : null;
 
                 return (
-                  <tr key={job.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <tr
+                    key={job.id}
+                    onClick={() => setSelectedJobId(job.id)}
+                    className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
+                  >
                     <td className="py-2 px-2 text-slate-900">#{job.id}</td>
                     <td className="py-2 px-2 text-slate-600">
                       {formatDateTime(job.created_at)}
@@ -82,6 +76,8 @@ export function RecentJobsPanel() {
           </table>
         </div>
       )}
+
+      <JobDetailDrawer job={selectedJob} onClose={() => setSelectedJobId(null)} />
     </Card>
   );
 }
