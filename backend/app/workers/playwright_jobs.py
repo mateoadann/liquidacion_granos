@@ -95,7 +95,7 @@ def _update_progress_state(
             client["failure_phase"] = None
             client["failure_message_user"] = None
             client["failure_message_technical"] = None
-        elif status in {"done", "error"}:
+        elif status in {"done", "partial", "error"}:
             client["status"] = status
             client["finished_at"] = now_iso
             progress["running_client_id"] = None
@@ -107,7 +107,8 @@ def _update_progress_state(
     completed = sum(
         1
         for client in clients
-        if isinstance(client, dict) and client.get("status") in {"done", "error"}
+        if isinstance(client, dict)
+        and client.get("status") in {"done", "partial", "error"}
     )
     progress["completed_clients"] = completed
     payload["progress"] = progress
@@ -236,7 +237,7 @@ def run_playwright_pipeline_job(
                 extraction_job_id,
                 payload,
                 taxpayer_id=result.taxpayer_id,
-                status="done" if result.ok else "error",
+                status=result.outcome,
                 error=result.error,
                 metrics={
                     "total_coes_detectados": result.total_coes_detectados,
@@ -245,7 +246,7 @@ def run_playwright_pipeline_job(
                     "total_procesados_error": result.total_procesados_error,
                 },
             )
-            if not result.ok:
+            if result.outcome != "done":
                 user_es, tech_combined = _persist_taxpayer_failure(
                     extraction_job_id,
                     payload,
@@ -305,7 +306,11 @@ def run_playwright_pipeline_job(
             job_failure_tech: str | None = None
             job_failure_phase: str | None = None
             if result.taxpayers_total > 0:
-                if result.taxpayers_ok == 0 and result.taxpayers_error > 0:
+                if (
+                    result.taxpayers_ok == 0
+                    and result.taxpayers_partial == 0
+                    and result.taxpayers_error > 0
+                ):
                     status = "failed"
                     error_message = (
                         "No se pudo procesar ningún cliente. "
@@ -314,7 +319,9 @@ def run_playwright_pipeline_job(
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]
                     job_failure_phase = last_taxpayer_failure["phase"]
-                elif result.taxpayers_ok > 0 and result.taxpayers_error > 0:
+                elif result.taxpayers_partial > 0 or (
+                    result.taxpayers_ok > 0 and result.taxpayers_error > 0
+                ):
                     status = "partial"
                     error_message = (
                         "Algunos clientes no pudieron procesarse. "
@@ -335,11 +342,12 @@ def run_playwright_pipeline_job(
                 failure_message_technical=job_failure_tech,
             )
             logger.info(
-                "JOB_FINISHED | job_id=%s status=%s taxpayers_total=%s taxpayers_ok=%s taxpayers_error=%s",
+                "JOB_FINISHED | job_id=%s status=%s taxpayers_total=%s taxpayers_ok=%s taxpayers_partial=%s taxpayers_error=%s",
                 extraction_job_id,
                 status,
                 result.taxpayers_total,
                 result.taxpayers_ok,
+                result.taxpayers_partial,
                 result.taxpayers_error,
             )
         except Exception as exc:

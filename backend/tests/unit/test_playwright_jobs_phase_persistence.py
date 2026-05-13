@@ -310,7 +310,7 @@ def test_run_playwright_pipeline_job_emits_on_phase_and_persists(
                 empresa=tp.empresa,
                 cuit=tp.cuit,
                 cuit_representado=tp.cuit_representado,
-                ok=True,
+                outcome="done",
                 total_coes_detectados=5,
                 total_coes_nuevos=5,
                 total_procesados_ok=5,
@@ -325,6 +325,7 @@ def test_run_playwright_pipeline_job_emits_on_phase_and_persists(
                 fecha_hasta="26/02/2026",
                 taxpayers_total=1,
                 taxpayers_ok=1,
+                taxpayers_partial=0,
                 taxpayers_error=0,
                 results=[result],
             )
@@ -365,7 +366,7 @@ def test_run_playwright_pipeline_job_emits_on_phase_and_persists(
 def test_run_playwright_pipeline_job_failure_calls_mapper_and_truncates(
     app, monkeypatch
 ) -> None:
-    """When pipeline produces an ok=False result with SEARCH_SERVICE +
+    """When pipeline produces an outcome="error" result with SEARCH_SERVICE +
     dropdown_clicked + timeout, the worker must invoke the failure mapper and
     persist the truncated technical message + per-client failure fields.
     """
@@ -405,7 +406,7 @@ def test_run_playwright_pipeline_job_failure_calls_mapper_and_truncates(
                 empresa=tp.empresa,
                 cuit=tp.cuit,
                 cuit_representado=tp.cuit_representado,
-                ok=False,
+                outcome="error",
                 error=huge_error,
                 failure_phase=ExtractionPhase.SEARCH_SERVICE,
                 failure_error_type="timeout",
@@ -419,6 +420,7 @@ def test_run_playwright_pipeline_job_failure_calls_mapper_and_truncates(
                 fecha_hasta="26/02/2026",
                 taxpayers_total=1,
                 taxpayers_ok=0,
+                taxpayers_partial=0,
                 taxpayers_error=1,
                 results=[result],
             )
@@ -502,6 +504,7 @@ def test_run_playwright_pipeline_job_clears_stale_failure_fields_on_running(
                 fecha_hasta="26/02/2026",
                 taxpayers_total=0,
                 taxpayers_ok=0,
+                taxpayers_partial=0,
                 taxpayers_error=0,
                 results=[],
             )
@@ -541,6 +544,7 @@ def _run_pipeline_with_results(
     taxpayers_ok: int,
     taxpayers_error: int,
     results: list[Any],
+    taxpayers_partial: int = 0,
 ) -> None:
     from app.services import lpg_playwright_pipeline as pipeline_module
     from app.workers import playwright_jobs as worker_module
@@ -567,6 +571,7 @@ def _run_pipeline_with_results(
                 fecha_hasta="26/02/2026",
                 taxpayers_total=len(results),
                 taxpayers_ok=taxpayers_ok,
+                taxpayers_partial=taxpayers_partial,
                 taxpayers_error=taxpayers_error,
                 results=results,
             )
@@ -592,7 +597,7 @@ def _ok_result(taxpayer: Taxpayer) -> Any:
         empresa=taxpayer.empresa,
         cuit=taxpayer.cuit,
         cuit_representado=taxpayer.cuit_representado,
-        ok=True,
+        outcome="done",
         total_coes_detectados=2,
         total_coes_nuevos=2,
         total_procesados_ok=2,
@@ -608,11 +613,32 @@ def _error_result(taxpayer: Taxpayer) -> Any:
         empresa=taxpayer.empresa,
         cuit=taxpayer.cuit,
         cuit_representado=taxpayer.cuit_representado,
-        ok=False,
+        outcome="error",
         error="Timeout 30000ms exceeded",
         failure_phase=ExtractionPhase.SEARCH_SERVICE,
         failure_error_type="timeout",
         failure_dropdown_clicked=True,
+    )
+
+
+def _partial_result(taxpayer: Taxpayer) -> Any:
+    """Cliente con 7 COEs OK y 1 COE con error a nivel WS (caso del job #14)."""
+    from app.services import lpg_playwright_pipeline as pipeline_module
+
+    return pipeline_module.TaxpayerPipelineResult(
+        taxpayer_id=taxpayer.id,
+        empresa=taxpayer.empresa,
+        cuit=taxpayer.cuit,
+        cuit_representado=taxpayer.cuit_representado,
+        outcome="partial",
+        error="Se detectaron errores en liquidacionXCoeConsultar.",
+        total_coes_detectados=8,
+        total_coes_nuevos=8,
+        total_procesados_ok=7,
+        total_procesados_error=1,
+        failure_phase=ExtractionPhase.SAVING_TO_WS,
+        failure_error_type="unknown",
+        failure_dropdown_clicked=False,
     )
 
 
@@ -720,3 +746,69 @@ def test_run_playwright_pipeline_job_zero_taxpayers_stays_completed(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "completed"
     assert refreshed.error_message is None
+
+
+def test_run_playwright_pipeline_job_partial_coe_level_sets_partial_status(
+    app, monkeypatch
+) -> None:
+    """Caso real job #14: un único cliente con 7 COEs OK + 1 COE con error
+    a nivel WS. El cliente queda outcome='partial' y el job en status='partial'.
+    """
+    t1 = _create_taxpayer(cuit="20111111111", empresa="El Socorro SRL")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id],
+        taxpayers_ok=0,
+        taxpayers_partial=1,
+        taxpayers_error=0,
+        results=[_partial_result(t1)],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "partial"
+    assert refreshed.error_message is not None
+    assert "Algunos clientes no pudieron procesarse" in refreshed.error_message
+    # El partial poblá last_taxpayer_failure con la phase del COE que falló.
+    assert refreshed.failure_phase == ExtractionPhase.SAVING_TO_WS.value
+    assert refreshed.failure_message_user is not None
+    assert refreshed.failure_message_technical is not None
+    # Per-client mirror: status="partial" con métricas reales.
+    progress = (refreshed.payload or {}).get("progress") or {}
+    clients = progress.get("clients") or []
+    assert len(clients) == 1
+    assert clients[0]["status"] == "partial"
+    assert clients[0]["metrics"]["total_procesados_ok"] == 7
+    assert clients[0]["metrics"]["total_procesados_error"] == 1
+
+
+def test_run_playwright_pipeline_job_one_done_one_partial_sets_partial(
+    app, monkeypatch
+) -> None:
+    """Dos clientes: uno done, otro partial. El job queda en 'partial'."""
+    t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
+    t2 = _create_taxpayer(cuit="20222222222", empresa="Empresa Dos")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id, t2.id],
+        taxpayers_ok=1,
+        taxpayers_partial=1,
+        taxpayers_error=0,
+        results=[_ok_result(t1), _partial_result(t2)],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "partial"
+    assert refreshed.error_message is not None
+    assert "Algunos clientes no pudieron procesarse" in refreshed.error_message
+    assert refreshed.failure_phase == ExtractionPhase.SAVING_TO_WS.value
+    assert refreshed.failure_message_user is not None
