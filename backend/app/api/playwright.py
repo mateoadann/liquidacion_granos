@@ -15,7 +15,7 @@ playwright_bp = Blueprint("playwright", __name__)
 logger = logging.getLogger(__name__)
 
 PLAYWRIGHT_OPERATION = "playwright_lpg_run"
-ALLOWED_JOB_STATUS = {"pending", "running", "completed", "failed"}
+ALLOWED_JOB_STATUS = {"pending", "running", "completed", "failed", "partial"}
 
 
 def _error(message: str, status_code: int = 400):

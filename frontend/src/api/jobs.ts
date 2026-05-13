@@ -4,7 +4,7 @@ export interface Job {
   id: number;
   taxpayer_id: number | null;
   operation: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "partial";
   payload: Record<string, unknown>;
   result: Record<string, unknown> | null;
   error_message: string | null;

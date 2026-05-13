@@ -65,7 +65,26 @@ class TestStatsEndpoint:
         assert data["jobs_total"] == 3
         assert data["jobs_completed"] == 2
         assert data["jobs_failed"] == 1
+        assert data["jobs_partial"] == 0
         assert data["coes_total"] == 3
+
+    def test_stats_counts_partial_jobs_separately(self, client, auth_headers):
+        t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa 1", activo=True)
+
+        _create_job(taxpayer_id=t1.id, status="completed")
+        _create_job(taxpayer_id=t1.id, status="partial")
+        _create_job(taxpayer_id=t1.id, status="partial")
+        _create_job(taxpayer_id=t1.id, status="failed")
+
+        response = client.get("/api/stats", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.get_json()
+        # Partial is a separate bucket: it does NOT inflate completed or failed.
+        assert data["jobs_total"] == 4
+        assert data["jobs_completed"] == 1
+        assert data["jobs_failed"] == 1
+        assert data["jobs_partial"] == 2
 
     def test_stats_empty_db(self, client, auth_headers):
         response = client.get("/api/stats", headers=auth_headers)
@@ -75,4 +94,5 @@ class TestStatsEndpoint:
         assert data["clients_active"] == 0
         assert data["clients_total"] == 0
         assert data["jobs_total"] == 0
+        assert data["jobs_partial"] == 0
         assert data["coes_total"] == 0

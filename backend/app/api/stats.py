@@ -36,6 +36,10 @@ def get_stats():
         ExtractionJob.status == "failed"
     ).scalar() or 0
 
+    jobs_partial = db.session.query(func.count(ExtractionJob.id)).filter(
+        ExtractionJob.status == "partial"
+    ).scalar() or 0
+
     jobs_pending = db.session.query(func.count(ExtractionJob.id)).filter(
         ExtractionJob.status == "pending"
     ).scalar() or 0
@@ -72,6 +76,7 @@ def get_stats():
         "jobs_total": jobs_total,
         "jobs_completed": jobs_completed,
         "jobs_failed": jobs_failed,
+        "jobs_partial": jobs_partial,
         "jobs_pending": jobs_pending,
         "jobs_running": jobs_running,
         "coes_total": coes_total,

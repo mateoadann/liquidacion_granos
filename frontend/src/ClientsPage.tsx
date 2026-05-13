@@ -298,6 +298,20 @@ export default function ClientsPage() {
       return;
     }
 
+    if (job.status === "partial") {
+      if (job.result) {
+        setRunResult(job.result);
+      }
+      setMessage({
+        type: "error",
+        text: job.result
+          ? `Playwright finalizó parcialmente (${job.result.taxpayersOk}/${job.result.taxpayersTotal} clientes OK). Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.`
+          : `El job ${job.id} finalizó parcialmente. Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.`,
+      });
+      setLastNotifiedJobId(job.id);
+      return;
+    }
+
     if (job.status === "failed") {
       if (job.result) {
         setRunResult(job.result);
