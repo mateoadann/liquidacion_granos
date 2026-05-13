@@ -85,9 +85,12 @@ export interface RunPlaywrightPipelineInput {
   typeDelayMs?: number;
 }
 
+export type PlaywrightTaxpayerOutcome = "done" | "partial" | "error";
+
 export interface PlaywrightTaxpayerRunResult {
   taxpayerId: number;
   empresa: string;
+  outcome: PlaywrightTaxpayerOutcome;
   ok: boolean;
   error: string | null;
   totalCoesDetectados: number;
@@ -104,11 +107,17 @@ export interface PlaywrightPipelineRunResult {
   fechaHasta: string;
   taxpayersTotal: number;
   taxpayersOk: number;
+  taxpayersPartial: number;
   taxpayersError: number;
   results: PlaywrightTaxpayerRunResult[];
 }
 
-export type PlaywrightClientProgressStatus = "pending" | "running" | "done" | "error";
+export type PlaywrightClientProgressStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "partial"
+  | "error";
 
 export interface PlaywrightClientProgress {
   taxpayerId: number;
@@ -352,9 +361,17 @@ function normalizeCertificatesMeta(raw: unknown): ClientCertificateMeta {
 
 function normalizePlaywrightTaxpayerRunResult(raw: unknown): PlaywrightTaxpayerRunResult {
   const data = isRecord(raw) ? raw : {};
+  const rawOutcome = asString(data.outcome, "");
+  const outcome: PlaywrightTaxpayerOutcome =
+    rawOutcome === "done" || rawOutcome === "partial" || rawOutcome === "error"
+      ? rawOutcome
+      : asBoolean(data.ok)
+        ? "done"
+        : "error";
   return {
     taxpayerId: asNumber(data.taxpayer_id),
     empresa: asString(data.empresa),
+    outcome,
     ok: asBoolean(data.ok),
     error: asNullableString(data.error),
     totalCoesDetectados: asNumber(data.total_coes_detectados),
@@ -375,6 +392,7 @@ function normalizePlaywrightPipelineRun(raw: unknown): PlaywrightPipelineRunResu
     fechaHasta: asString(data.fecha_hasta),
     taxpayersTotal: asNumber(data.taxpayers_total),
     taxpayersOk: asNumber(data.taxpayers_ok),
+    taxpayersPartial: asNumber(data.taxpayers_partial),
     taxpayersError: asNumber(data.taxpayers_error),
     results: rawResults.map(normalizePlaywrightTaxpayerRunResult),
   };
@@ -385,7 +403,10 @@ function normalizePlaywrightClientProgress(raw: unknown): PlaywrightClientProgre
   const metrics = isRecord(data.metrics) ? data.metrics : {};
   const rawStatus = asString(data.status, "pending");
   const status: PlaywrightClientProgressStatus =
-    rawStatus === "running" || rawStatus === "done" || rawStatus === "error"
+    rawStatus === "running" ||
+    rawStatus === "done" ||
+    rawStatus === "partial" ||
+    rawStatus === "error"
       ? rawStatus
       : "pending";
 

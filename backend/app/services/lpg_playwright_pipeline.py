@@ -36,7 +36,7 @@ class TaxpayerPipelineResult:
     empresa: str
     cuit: str
     cuit_representado: str
-    ok: bool
+    outcome: str = "done"  # "done" | "partial" | "error"
     error: str | None = None
     total_rows: int = 0
     total_coes_detectados: int = 0
@@ -47,10 +47,18 @@ class TaxpayerPipelineResult:
     coes_nuevos: list[str] = field(default_factory=list)
     coes_error: list[dict[str, str]] = field(default_factory=list)
     consulta: dict[str, Any] | None = None
-    # Failure metadata for the failure mapper (only populated on error)
+    # Failure metadata for the failure mapper (populated on outcome != "done")
     failure_phase: ExtractionPhase | None = None
     failure_error_type: str | None = None
     failure_dropdown_clicked: bool = False
+
+
+def _taxpayer_result_to_dict(item: TaxpayerPipelineResult) -> dict[str, Any]:
+    data = asdict(item)
+    # Backward-compat: frontend (PlaywrightTaxpayerRunResult) still consumes "ok"
+    # as a boolean for legacy result rendering. Derive it from outcome.
+    data["ok"] = item.outcome == "done"
+    return data
 
 
 @dataclass(slots=True)
@@ -61,6 +69,7 @@ class PipelineRunResult:
     fecha_hasta: str
     taxpayers_total: int
     taxpayers_ok: int
+    taxpayers_partial: int
     taxpayers_error: int
     results: list[TaxpayerPipelineResult]
 
@@ -72,8 +81,9 @@ class PipelineRunResult:
             "fecha_hasta": self.fecha_hasta,
             "taxpayers_total": self.taxpayers_total,
             "taxpayers_ok": self.taxpayers_ok,
+            "taxpayers_partial": self.taxpayers_partial,
             "taxpayers_error": self.taxpayers_error,
-            "results": [asdict(item) for item in self.results],
+            "results": [_taxpayer_result_to_dict(item) for item in self.results],
         }
 
 
@@ -152,10 +162,10 @@ class LpgPlaywrightPipelineService:
             if on_taxpayer_finish:
                 on_taxpayer_finish(result)
             logger.info(
-                "Playwright pipeline taxpayer result | id=%s empresa=%s ok=%s detectados=%s nuevos=%s omitidos=%s ok_ws=%s error_ws=%s error=%s",
+                "Playwright pipeline taxpayer result | id=%s empresa=%s outcome=%s detectados=%s nuevos=%s omitidos=%s ok_ws=%s error_ws=%s error=%s",
                 result.taxpayer_id,
                 result.empresa,
-                result.ok,
+                result.outcome,
                 result.total_coes_detectados,
                 result.total_coes_nuevos,
                 result.total_omitidos_existentes,
@@ -165,8 +175,9 @@ class LpgPlaywrightPipelineService:
             )
 
         finished = now_cordoba_naive()
-        taxpayers_ok = sum(1 for item in results if item.ok)
-        taxpayers_error = len(results) - taxpayers_ok
+        taxpayers_ok = sum(1 for item in results if item.outcome == "done")
+        taxpayers_partial = sum(1 for item in results if item.outcome == "partial")
+        taxpayers_error = sum(1 for item in results if item.outcome == "error")
         return PipelineRunResult(
             started_at=started.isoformat(),
             finished_at=finished.isoformat(),
@@ -174,6 +185,7 @@ class LpgPlaywrightPipelineService:
             fecha_hasta=fecha_hasta,
             taxpayers_total=len(results),
             taxpayers_ok=taxpayers_ok,
+            taxpayers_partial=taxpayers_partial,
             taxpayers_error=taxpayers_error,
             results=results,
         )
@@ -207,7 +219,7 @@ class LpgPlaywrightPipelineService:
             empresa=taxpayer.empresa,
             cuit=taxpayer.cuit,
             cuit_representado=taxpayer.cuit_representado,
-            ok=False,
+            outcome="error",
         )
 
         try:
@@ -365,21 +377,26 @@ class LpgPlaywrightPipelineService:
                     coe,
                 )
 
-        base.ok = base.total_procesados_error == 0
-        if not base.ok and not base.error:
+        if base.total_procesados_error == 0:
+            base.outcome = "done"
+        elif base.total_procesados_ok > 0:
+            base.outcome = "partial"
+        else:
+            base.outcome = "error"
+        if base.outcome != "done" and not base.error:
             base.error = "Se detectaron errores en liquidacionXCoeConsultar."
             base.failure_phase = ExtractionPhase.SAVING_TO_WS if last_emitted_phase == ExtractionPhase.SAVING_TO_WS else ExtractionPhase.DOWNLOADING_COE
             base.failure_error_type = "unknown"
-        if base.ok and on_phase is not None:
+        if base.outcome == "done" and on_phase is not None:
             try:
                 on_phase(ExtractionPhase.FINISHED, PHASE_MESSAGES_ES[ExtractionPhase.FINISHED])
             except Exception:
                 logger.exception("PIPELINE_ON_PHASE_CALLBACK_ERROR | phase=FINISHED")
         logger.info(
-            "Taxpayer finished | id=%s empresa=%s ok=%s detectados=%s nuevos=%s omitidos=%s ok_ws=%s error_ws=%s",
+            "Taxpayer finished | id=%s empresa=%s outcome=%s detectados=%s nuevos=%s omitidos=%s ok_ws=%s error_ws=%s",
             taxpayer.id,
             taxpayer.empresa,
-            base.ok,
+            base.outcome,
             base.total_coes_detectados,
             base.total_coes_nuevos,
             base.total_omitidos_existentes,
