@@ -12,6 +12,11 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  current_phase: string | null;
+  current_message: string | null;
+  failure_phase: string | null;
+  failure_message_user: string | null;
+  failure_message_technical: string | null;
 }
 
 export interface JobsListResponse {
