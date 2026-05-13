@@ -121,6 +121,11 @@ export interface PlaywrightClientProgress {
   totalCoesNuevos: number;
   totalProcesadosOk: number;
   totalProcesadosError: number;
+  currentPhase: string | null;
+  currentMessage: string | null;
+  failurePhase: string | null;
+  failureMessageUser: string | null;
+  failureMessageTechnical: string | null;
 }
 
 export interface PlaywrightJobProgress {
@@ -144,6 +149,11 @@ export interface PlaywrightPipelineJob {
   startedAt: string | null;
   finishedAt: string | null;
   updatedAt: string | null;
+  currentPhase: string | null;
+  currentMessage: string | null;
+  failurePhase: string | null;
+  failureMessageUser: string | null;
+  failureMessageTechnical: string | null;
 }
 
 export interface DownloadClientCoesInput {
@@ -390,6 +400,11 @@ function normalizePlaywrightClientProgress(raw: unknown): PlaywrightClientProgre
     totalCoesNuevos: asNumber(metrics.total_coes_nuevos),
     totalProcesadosOk: asNumber(metrics.total_procesados_ok),
     totalProcesadosError: asNumber(metrics.total_procesados_error),
+    currentPhase: asNullableString(data.current_phase),
+    currentMessage: asNullableString(data.current_message),
+    failurePhase: asNullableString(data.failure_phase),
+    failureMessageUser: asNullableString(data.failure_message_user),
+    failureMessageTechnical: asNullableString(data.failure_message_technical),
   };
 }
 
@@ -429,6 +444,11 @@ function normalizePlaywrightPipelineJob(raw: unknown): PlaywrightPipelineJob {
     startedAt: asNullableString(data.started_at),
     finishedAt: asNullableString(data.finished_at),
     updatedAt: asNullableString(data.updated_at),
+    currentPhase: asNullableString(data.current_phase),
+    currentMessage: asNullableString(data.current_message),
+    failurePhase: asNullableString(data.failure_phase),
+    failureMessageUser: asNullableString(data.failure_message_user),
+    failureMessageTechnical: asNullableString(data.failure_message_technical),
   };
 }
 
