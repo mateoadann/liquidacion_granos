@@ -198,6 +198,9 @@ export function PlaywrightPanel() {
                     }}
                   />
                 </div>
+                <p className="text-sm text-slate-600">
+                  {jobQuery.data.currentMessage ?? "Extracción en curso..."}
+                </p>
               </div>
             ) : null}
 
@@ -213,7 +216,9 @@ export function PlaywrightPanel() {
 
             {jobQuery.data.status === "failed" ? (
               <Alert variant="error">
-                {jobQuery.data.errorMessage ?? "Error desconocido"}
+                {jobQuery.data.failureMessageUser ??
+                  jobQuery.data.errorMessage ??
+                  "Error desconocido"}
               </Alert>
             ) : null}
           </div>
