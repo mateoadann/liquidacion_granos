@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from flask import Blueprint, jsonify, request
 
+from ..extensions import db
 from ..middleware import require_api_key, require_admin_token
+from ..models import LpgDocument, Taxpayer
 from ..services.coe_estado_service import (
     reportar_cargado,
     consultar_estado,
@@ -10,6 +14,10 @@ from ..services.coe_estado_service import (
     forzar_sincronizado,
     TransicionInvalidaError,
     HashMismatchError,
+)
+from ..services.lpg_document_utils import (
+    fecha_liquidacion_as_date,
+    fecha_liquidacion_expr,
 )
 from ..time_utils import now_cordoba_naive
 
@@ -171,3 +179,86 @@ def post_coe_forzar_sincronizado(coe):
         }), 404
     except Exception as e:
         return jsonify({"error": "interno", "mensaje": str(e)}), 500
+
+
+# -----------------------------------------------------------------------
+# GET /v2/liquidaciones — universo bulk read-only (PR3 plan v2)
+# -----------------------------------------------------------------------
+
+
+def _parse_iso_date(value: str, field: str) -> datetime:
+    """Parse YYYY-MM-DD or raise ValueError with the field name."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(field) from exc
+
+
+@integration_bp.get("/v2/liquidaciones")
+@require_api_key
+def get_v2_liquidaciones():
+    """Universo bulk de liquidaciones v7.1 para rpa-holistor.
+
+    Read-only: no modifica estado de ningún COE. La transición a 'cargado'
+    sigue siendo responsabilidad de POST /v1/coes/cargado.
+
+    Query params:
+        desde_fecha_emision (opcional, ISO YYYY-MM-DD): filtro inferior
+            por datos_limpios.fechaLiquidacion.
+        hasta_fecha_emision (opcional, ISO YYYY-MM-DD): filtro superior
+            por datos_limpios.fechaLiquidacion.
+        cuit_empresa (opcional, repetible): filtra por
+            Taxpayer.cuit_representado IN (cuits).
+
+    Siempre se filtra server-side por Taxpayer.activo == True y
+    Taxpayer.scheduler_activo == True. NO se filtra por CoeEstado.estado:
+    el SPEC §18 indica que devolvemos el universo completo y rpa-holistor
+    reconcilia contra su propio ledger.
+    """
+    desde_raw = request.args.get("desde_fecha_emision")
+    hasta_raw = request.args.get("hasta_fecha_emision")
+    cuits = request.args.getlist("cuit_empresa")
+
+    desde_date = None
+    hasta_date = None
+    try:
+        if desde_raw:
+            desde_date = _parse_iso_date(desde_raw, "desde_fecha_emision").date()
+        if hasta_raw:
+            hasta_date = _parse_iso_date(hasta_raw, "hasta_fecha_emision").date()
+    except ValueError as exc:
+        campo = str(exc)
+        return jsonify({
+            "error": "validacion_fallida",
+            "mensaje": "Fecha mal formada. Formato esperado: YYYY-MM-DD.",
+            "detalle": {"campo": campo, "valor": request.args.get(campo)},
+        }), 422
+
+    query = (
+        db.session.query(LpgDocument)
+        .join(Taxpayer, LpgDocument.taxpayer_id == Taxpayer.id)
+        .filter(Taxpayer.activo.is_(True))
+        .filter(Taxpayer.scheduler_activo.is_(True))
+    )
+
+    if cuits:
+        query = query.filter(Taxpayer.cuit_representado.in_(cuits))
+
+    if desde_date is not None or hasta_date is not None:
+        fecha_col = fecha_liquidacion_as_date(fecha_liquidacion_expr())
+        if desde_date is not None:
+            query = query.filter(fecha_col >= desde_date)
+        if hasta_date is not None:
+            query = query.filter(fecha_col <= hasta_date)
+
+    docs = query.all()
+
+    from ..services.json_v7_exporter import build_json_v7_bulk
+
+    filtros = {
+        "desde_fecha_emision": desde_raw,
+        "hasta_fecha_emision": hasta_raw,
+        "cuit_empresa": cuits or None,
+    }
+    body = build_json_v7_bulk(docs, filtros)
+    return jsonify(body), 200
