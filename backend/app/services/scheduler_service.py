@@ -74,6 +74,7 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
     actual. En este PR solo encolamos el job; el worker hook viene después.
     """
     from ..workers.playwright_jobs import run_playwright_pipeline_job
+    from ..workers.scheduler_defaults import scheduler_enqueue_kwargs
 
     job = ExtractionJob(
         taxpayer_id=taxpayer.id,
@@ -87,8 +88,7 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
     queue.enqueue(
         run_playwright_pipeline_job,
         extraction_job_id=job.id,
-        fecha_desde=None,
-        fecha_hasta=None,
+        **scheduler_enqueue_kwargs(taxpayer.id),
     )
     logger.info(
         "SCHEDULER_DISPARO | taxpayer_id=%s job_id=%s operation=%s",

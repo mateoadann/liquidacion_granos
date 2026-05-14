@@ -153,12 +153,13 @@ def run_scheduler_now(taxpayer_id: int):
         raise
 
     try:
+        from ..workers.scheduler_defaults import scheduler_enqueue_kwargs
+
         queue = get_queue()
         queue.enqueue(
             run_playwright_pipeline_job,
             extraction_job_id=job.id,
-            fecha_desde=None,
-            fecha_hasta=None,
+            **scheduler_enqueue_kwargs(t.id),
         )
     except Exception as exc:
         job.status = "failed"
