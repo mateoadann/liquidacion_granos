@@ -326,7 +326,11 @@ class LpgPlaywrightPipelineService:
                 logger.exception("PIPELINE_ON_PHASE_CALLBACK_ERROR | phase=%s", phase.value)
             last_emitted_phase = phase
 
-        for coe in consulta.coes:
+        for entry in consulta.coes:
+            coe = entry.get("coe", "") if isinstance(entry, dict) else str(entry)
+            tipo_operacion = entry.get("tipo_operacion", "") if isinstance(entry, dict) else ""
+            is_ajuste_html = "ajuste" in tipo_operacion.casefold()
+
             if self._coe_exists(taxpayer.id, coe):
                 base.total_omitidos_existentes += 1
                 logger.info(
@@ -340,22 +344,31 @@ class LpgPlaywrightPipelineService:
             base.total_coes_nuevos += 1
             base.coes_nuevos.append(coe)
             logger.info(
-                "COE_PROCESS_START | taxpayer_id=%s empresa=%s coe=%s",
+                "COE_PROCESS_START | taxpayer_id=%s empresa=%s coe=%s tipo_op=%s",
                 taxpayer.id,
                 taxpayer.empresa,
                 coe,
+                tipo_operacion,
             )
+            tipo_doc = "LPG"
             try:
                 emit_ws_phase(ExtractionPhase.DOWNLOADING_COE)
-                ws_result = ws_client.call_liquidacion_x_coe(int(coe), pdf="N")
-                tipo_doc = "LPG"
-                if self._is_ajuste_error(ws_result):
+                if is_ajuste_html:
                     logger.info(
-                        "COE_IS_AJUSTE | taxpayer_id=%s coe=%s retrying with ajusteXCoeConsultar",
-                        taxpayer.id, coe,
+                        "COE_DETECTED_AS_AJUSTE_FROM_HTML | taxpayer_id=%s coe=%s tipo_op=%s",
+                        taxpayer.id, coe, tipo_operacion,
                     )
                     ws_result = ws_client.call_ajuste_x_coe(int(coe), pdf="N")
                     tipo_doc = "AJUSTE"
+                else:
+                    ws_result = ws_client.call_liquidacion_x_coe(int(coe), pdf="N")
+                    if self._is_ajuste_error(ws_result):
+                        logger.info(
+                            "COE_IS_AJUSTE | taxpayer_id=%s coe=%s retrying with ajusteXCoeConsultar (error 1861)",
+                            taxpayer.id, coe,
+                        )
+                        ws_result = ws_client.call_ajuste_x_coe(int(coe), pdf="N")
+                        tipo_doc = "AJUSTE"
                 emit_ws_phase(ExtractionPhase.SAVING_TO_WS)
                 self._save_lpg_document(taxpayer.id, coe, ws_result, tipo_documento=tipo_doc)
                 base.total_procesados_ok += 1
@@ -367,6 +380,31 @@ class LpgPlaywrightPipelineService:
                     tipo_doc,
                 )
             except Exception as exc:
+                # Defensa en profundidad: si el parser SOAP rompe porque la respuesta
+                # tiene elementos de ajuste cuando esperábamos liquidación, reintentar
+                # con ajusteXCoeConsultar. Solo si NO veníamos ya del path de ajuste.
+                if not is_ajuste_html and tipo_doc != "AJUSTE" and self._is_ajuste_parser_error(exc):
+                    try:
+                        logger.info(
+                            "COE_IS_AJUSTE | taxpayer_id=%s coe=%s retrying with ajusteXCoeConsultar (parser exception)",
+                            taxpayer.id, coe,
+                        )
+                        ws_result = ws_client.call_ajuste_x_coe(int(coe), pdf="N")
+                        emit_ws_phase(ExtractionPhase.SAVING_TO_WS)
+                        self._save_lpg_document(
+                            taxpayer.id, coe, ws_result, tipo_documento="AJUSTE"
+                        )
+                        base.total_procesados_ok += 1
+                        logger.info(
+                            "COE_PROCESS_WS_OK | taxpayer_id=%s empresa=%s coe=%s tipo=AJUSTE (parser-fallback)",
+                            taxpayer.id,
+                            taxpayer.empresa,
+                            coe,
+                        )
+                        continue
+                    except Exception as exc_retry:
+                        exc = exc_retry
+
                 db.session.rollback()
                 base.total_procesados_error += 1
                 base.coes_error.append({"coe": coe, "error": str(exc)})
@@ -455,6 +493,16 @@ class LpgPlaywrightPipelineService:
         if isinstance(error_list, dict):
             error_list = [error_list]
         return any(str(e.get("codigo")) == "1861" for e in error_list if isinstance(e, dict))
+
+    def _is_ajuste_parser_error(self, exc: BaseException) -> bool:
+        """Detecta si la excepción del parser SOAP delata un payload de ajuste.
+
+        Cuando ARCA devuelve un ajuste sin error 1861 explícito, el cliente SOAP
+        encuentra elementos como `ajusteCredito`/`ajusteDebito` que no encajan
+        en el schema de liquidación.
+        """
+        message = str(exc).casefold()
+        return "ajustecredito" in message or "ajustedebito" in message
 
     def _save_lpg_document(
         self, taxpayer_id: int, coe: str, ws_result: dict[str, Any],

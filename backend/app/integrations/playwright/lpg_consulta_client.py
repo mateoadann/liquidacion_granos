@@ -91,9 +91,11 @@ class LpgConsultaResult:
     total_rows: int
     total_coes: int
     headers: list[str]
-    coes: list[str]
+    coes: list[dict[str, str]]
 
     def to_dict(self) -> dict:
+        # Backward compat: legacy consumers expect "coes" as list[str].
+        # New "coes_detalle" carries the full per-row metadata (tipo de operación).
         return {
             "started_at": self.started_at,
             "finished_at": self.finished_at,
@@ -103,7 +105,8 @@ class LpgConsultaResult:
             "total_rows": self.total_rows,
             "total_coes": self.total_coes,
             "headers": self.headers,
-            "coes": self.coes,
+            "coes": [entry.get("coe", "") for entry in self.coes],
+            "coes_detalle": list(self.coes),
         }
 
 
@@ -322,7 +325,7 @@ class ArcaLpgPlaywrightClient:
 
     def _run_with_playwright(
         self, playwright: Playwright, request: LpgConsultaRequest
-    ) -> tuple[list[str], int, list[str]]:
+    ) -> tuple[list[str], int, list[dict[str, str]]]:
         self._emit_phase(ExtractionPhase.LAUNCHING_BROWSER)
         logger.info(
             "PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s slow_mo_ms=%s",
@@ -979,17 +982,19 @@ class ArcaLpgPlaywrightClient:
         service_page: Page,
         timeout_ms: int,
         empresa: str,
-    ) -> tuple[list[str], int, list[str]]:
+    ) -> tuple[list[str], int, list[dict[str, str]]]:
         table = service_page.locator("#tabla4").first
         table.wait_for(timeout=timeout_ms)
 
         headers = [_normalize_text(value) for value in table.locator("th").all_inner_texts()]
         header_keys = [_normalize_key(header) for header in headers]
         coe_index = -1
+        tipo_operacion_index = -1
         for idx, key in enumerate(header_keys):
-            if key == "coe":
+            if coe_index == -1 and key == "coe":
                 coe_index = idx
-                break
+            if tipo_operacion_index == -1 and "tipo operacion" in key:
+                tipo_operacion_index = idx
 
         self._log_results_table_diagnostics(service_page, table, empresa)
 
@@ -997,7 +1002,7 @@ class ArcaLpgPlaywrightClient:
         total_rows = rows_locator.count()
 
         seen: set[str] = set()
-        coes: list[str] = []
+        coes: list[dict[str, str]] = []
         for idx in range(total_rows):
             row = rows_locator.nth(idx)
             cells = [_normalize_text(value) for value in row.locator("td").all_inner_texts()]
@@ -1007,7 +1012,10 @@ class ArcaLpgPlaywrightClient:
             if not coe_value or coe_value in seen:
                 continue
             seen.add(coe_value)
-            coes.append(coe_value)
+            tipo_operacion = ""
+            if 0 <= tipo_operacion_index < len(cells):
+                tipo_operacion = cells[tipo_operacion_index]
+            coes.append({"coe": coe_value, "tipo_operacion": tipo_operacion})
 
         logger.info(
             "PLAYWRIGHT_COES_EXTRACTED | empresa=%s total_rows=%s total_coes=%s",
