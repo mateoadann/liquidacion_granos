@@ -16,6 +16,12 @@ export interface Client {
   keyFileName: string | null;
   certUploadedAt: string | null;
   coesCount: number;
+  schedulerActivo: boolean;
+  schedulerDiasSemana: string[];
+  schedulerHoraLocal: string | null;
+  schedulerUltimoOk: string | null;
+  schedulerUltimoError: string | null;
+  schedulerUltimoErrorEn: string | null;
 }
 
 export interface CreateClientInput {
@@ -286,6 +292,12 @@ function normalizeClient(raw: unknown): Client {
     asBoolean(credentials.certificados_cargados) ||
     Boolean(certFileName && keyFileName);
 
+  const rawDiasSemana = Array.isArray(data.scheduler_dias_semana)
+    ? data.scheduler_dias_semana.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : [];
+
   return {
     id: Number(data.id ?? 0),
     empresa: asString(data.empresa || data.razon_social || ""),
@@ -300,6 +312,12 @@ function normalizeClient(raw: unknown): Client {
     keyFileName,
     certUploadedAt: asNullableString(data.cert_uploaded_at),
     coesCount: Number(data.coes_count ?? 0),
+    schedulerActivo: asBoolean(data.scheduler_activo, false),
+    schedulerDiasSemana: rawDiasSemana,
+    schedulerHoraLocal: asNullableString(data.scheduler_hora_local),
+    schedulerUltimoOk: asNullableString(data.scheduler_ultimo_ok),
+    schedulerUltimoError: asNullableString(data.scheduler_ultimo_error),
+    schedulerUltimoErrorEn: asNullableString(data.scheduler_ultimo_error_en),
   };
 }
 

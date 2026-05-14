@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "./components/layout/Layout";
 import { ProtectedRoute } from "./components/layout";
-import { LoginPage, HomePage } from "./pages";
+import { LoginPage, HomePage, SchedulerPage } from "./pages";
 import { ClientsListPage } from "./pages/ClientsListPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientEditPage } from "./pages/ClientEditPage";
@@ -40,6 +40,7 @@ export default function App() {
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/configuracion" element={<Layout><ConfigPage /></Layout>} />
             <Route path="/configuracion/usuarios" element={<Layout><UsersListPage /></Layout>} />
+            <Route path="/scheduler" element={<Layout><SchedulerPage /></Layout>} />
           </Route>
 
           {/* Fallback */}
