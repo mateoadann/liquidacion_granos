@@ -178,9 +178,26 @@ def test_disparar_extraccion_encola_en_rq(app, _patch_queue):
         fake_queue = _patch_queue.return_value
         fake_queue.enqueue.assert_called_once()
         call_kwargs = fake_queue.enqueue.call_args.kwargs
+        # extraction_job_id es agregado por el llamador
         assert call_kwargs["extraction_job_id"] == job.id
-        assert call_kwargs["fecha_desde"] is None
-        assert call_kwargs["fecha_hasta"] is None
+        # scheduler_enqueue_kwargs() inyecta todos los kwargs requeridos por
+        # run_playwright_pipeline_job, con taxpayer_ids = [tp.id]
+        assert call_kwargs["taxpayer_ids"] == [tp.id]
+        # Las fechas ahora son strings DD/MM/YYYY (defaults, ventana 90 dias)
+        assert isinstance(call_kwargs["fecha_desde"], str)
+        assert isinstance(call_kwargs["fecha_hasta"], str)
+        # Y los otros kwargs requeridos
+        for key in (
+            "timeout_ms",
+            "type_delay_ms",
+            "slow_mo_ms",
+            "post_action_delay_ms",
+            "login_max_retries",
+            "humanize_delays",
+            "retry_max_attempts",
+            "retry_base_delay_ms",
+        ):
+            assert key in call_kwargs, f"falta kwarg {key} para el worker"
 
 
 def test_tick_dispara_uno_por_taxpayer_matcheante(app, _patch_queue):
