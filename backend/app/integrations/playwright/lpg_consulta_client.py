@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import random
 import re
 import time
@@ -355,6 +356,7 @@ class ArcaLpgPlaywrightClient:
                 request.timeout_ms,
                 request.type_delay_ms,
                 request.empresa,
+                request.humanize_delays,
             )
             self._emit_phase(ExtractionPhase.SELECT_EMPRESA)
             self._select_empresa(service_page, request.empresa, request.timeout_ms)
@@ -533,6 +535,7 @@ class ArcaLpgPlaywrightClient:
         timeout_ms: int,
         type_delay_ms: int,
         empresa: str,
+        humanize_delays: bool = True,
     ) -> Page:
         self._emit_phase(ExtractionPhase.SEARCH_SERVICE)
         logger.info("PLAYWRIGHT_SEARCH_SERVICE_START | empresa=%s", empresa)
@@ -543,6 +546,12 @@ class ArcaLpgPlaywrightClient:
         logger.info(
             "PLAYWRIGHT_SEARCH_SERVICE_TYPED | empresa=%s query=Liquidación primaria de granos",
             empresa,
+        )
+
+        # AFIP debouncea el input antes de disparar el AJAX del autocomplete.
+        # Sin pausa, Playwright pregunta por sugerencias antes de que existan.
+        self._post_action_pause(
+            login_page, 800, "search_typed", empresa, humanize_delays
         )
 
         # El buscador de AFIP muestra un dropdown de sugerencias al tipear.
@@ -680,6 +689,7 @@ class ArcaLpgPlaywrightClient:
         available = self._detect_visible_service_links(login_page)
         details = f" Servicios visibles: {available[:10]}" if available else ""
         logger.warning("PLAYWRIGHT_SERVICE_NOT_FOUND | visible_services=%s", available[:10])
+        self._log_search_service_diagnostics(login_page, available)
         raise PlaywrightFlowError(
             "No se encontró el servicio 'Liquidación Primaria de Granos' en el buscador de AFIP."
             + details,
@@ -755,6 +765,91 @@ class ArcaLpgPlaywrightClient:
             if "liquidacion" in key or "granos" in key:
                 available.append(label)
         return available
+
+    def _log_search_service_diagnostics(
+        self, login_page: Page, visible_services: list[str]
+    ) -> None:
+        """Captura estado del DOM + screenshot cuando falla SEARCH_SERVICE.
+
+        Sin screenshot, los fallos quedan como timing transitorio inexplicable.
+        El path es configurable via PLAYWRIGHT_DEBUG_PATH (default /tmp/playwright_debug),
+        que en containers siempre es escribible.
+        """
+        search_value = ""
+        try:
+            search = login_page.get_by_role(
+                "combobox", name=re.compile(r"Buscador", re.IGNORECASE)
+            )
+            if search.count() > 0:
+                search_value = search.first.input_value()[:200]
+        except Exception:
+            search_value = "error_reading_input"
+
+        dropdown_options: list[str] = []
+        try:
+            option_locators = [
+                login_page.locator("li"),
+                login_page.locator("[role='option']"),
+                login_page.locator("[role='listbox'] *"),
+            ]
+            seen: set[str] = set()
+            for locator in option_locators:
+                count = min(locator.count(), 20)
+                for idx in range(count):
+                    try:
+                        item = locator.nth(idx)
+                        if not item.is_visible():
+                            continue
+                        label = _normalize_text(item.inner_text())[:120]
+                        if label and label not in seen:
+                            seen.add(label)
+                            dropdown_options.append(label)
+                            if len(dropdown_options) >= 10:
+                                break
+                    except Exception:
+                        continue
+                if len(dropdown_options) >= 10:
+                    break
+        except Exception:
+            pass
+
+        current_url = ""
+        try:
+            current_url = login_page.url
+        except Exception:
+            pass
+
+        body_excerpt = ""
+        try:
+            body_text = login_page.locator("body").inner_text(timeout=2000)
+            body_excerpt = _normalize_text(body_text)[:500]
+        except Exception:
+            body_excerpt = "error_reading_body"
+
+        screenshot_path = ""
+        try:
+            debug_dir = os.getenv("PLAYWRIGHT_DEBUG_PATH", "/tmp/playwright_debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = now_cordoba_naive().strftime("%Y%m%d_%H%M%S")
+            screenshot_path = os.path.join(
+                debug_dir, f"search_service_fail_{timestamp}.png"
+            )
+            login_page.screenshot(path=screenshot_path, full_page=True)
+        except Exception as exc:
+            screenshot_path = f"screenshot_failed:{exc.__class__.__name__}"
+
+        logger.warning(
+            "PLAYWRIGHT_SEARCH_SERVICE_DIAG | dropdown_clicked=%s search_value=%s "
+            "dropdown_options=%s visible_services=%s url=%s body_excerpt=%s "
+            "screenshot=%s",
+            self._search_dropdown_clicked,
+            search_value,
+            dropdown_options,
+            visible_services[:10],
+            current_url,
+            body_excerpt,
+            screenshot_path,
+        )
 
     def _select_empresa(self, service_page: Page, empresa_input: str, timeout_ms: int) -> None:
         logger.info("PLAYWRIGHT_SELECT_EMPRESA_START | empresa=%s", empresa_input)
