@@ -9,6 +9,7 @@ from .integration import integration_bp
 from .jobs import jobs_bp
 from .operations import operations_bp
 from .playwright import playwright_bp
+from .scheduler import scheduler_bp
 from .stats import stats_bp
 from .taxpayers import taxpayers_bp
 from .padron import padron_bp
@@ -31,3 +32,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(padron_bp, url_prefix="/api")
     app.register_blueprint(users_bp, url_prefix="/api")
     app.register_blueprint(integration_bp, url_prefix="/api")
+    app.register_blueprint(scheduler_bp, url_prefix="/api")
