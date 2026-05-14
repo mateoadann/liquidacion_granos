@@ -3,12 +3,15 @@
 **Proyecto:** liquidador-granos (repositorio externo)
 **Feature:** API REST para recibir reportes de carga de rpa-holistor + tracking
             de estado de cada COE + extensión del JSON emitido a v7.1.
-**Estado:** spec aprobado, pendiente implementación
+**Estado:** v1 implementado y estable (auditoría 2026-05-13: 19/19 OK). v2 spec'eado, pendiente implementación en liquidador-granos.
 **Depende de:** [docs/integracion_ledger_coes.md](integracion_ledger_coes.md) (diseño global)
 **Cross-ref:** [docs/spec_ledger_rpa_holistor.md](spec_ledger_rpa_holistor.md) (contraparte)
 
 > Este SPEC vive en el repo `rpa-holistor` pero describe trabajo para
 > `liquidador-granos`. Copiar al otro repo al arrancar la implementación.
+>
+> **Parte I (§1–§15): v1** — endpoint de reporting `POST /v1/coes/cargado` y consultas `GET /v1/coes/*`. Implementado, estable.
+> **Parte II (§16–§25): v2** — flujo Importar/Cargar/Ejecutar + scheduler automatizado. Pendiente implementación. Invierte el sentido del tráfico: rpa-holistor importa COEs por HTTP — reemplaza el "Exportar JSON" actual de liquidador-granos. El archivo JSON intermedio desaparece.
 
 ---
 
@@ -452,10 +455,343 @@ mismo test con el mismo fixture.
 | Transiciones concurrentes sobre el mismo COE | Lock optimista con `UPDATE ... WHERE estado = <esperado>` + retry |
 | Crece mucho la tabla | Particionado por año o archivado después de N meses — fuera de v1 |
 
-## 15. Fuera de v1
+## 15. Fuera de v1 y v2
 
-- Dashboard web con gráficos.
-- Webhooks hacia rpa-holistor (server → RPA) para invalidar un COE ya cargado.
+- Dashboard web con gráficos (UI del scheduler v2 queda fuera del scope de este SPEC; vive en liquidador-granos).
 - Auth multi-usuario con roles.
 - Export masivo del estado en CSV/Parquet.
 - Métricas Prometheus.
+- API key con scope por empresa (deuda; v2 asume una sola instalación de rpa-holistor).
+- F15 "anular asiento en Holistor" automático. Hoy se resuelve con flag manual `requiere_revision_manual` en el ledger de rpa-holistor.
+- **(Postergado a v3)** Feed incremental con cursor + tabla de eventos. Solo justifica la complejidad si el GET bulk de v2 se vuelve pesado.
+- **(Postergado a v3)** Detector de anulación de COEs en Arca + estado `anulado_arca` server-side. Tolerancia de N scrapes consecutivos sin verlo. Mientras tanto la anulación se maneja manualmente.
+- **(Postergado a v3)** `GET /v2/coes/{coe}` extendido con historial de transiciones. v1 cubre el caso básico de consulta puntual.
+
+---
+
+# Parte II — Extensión v2 (Importar/Cargar/Ejecutar + scheduler automatizado)
+
+> v2 reemplaza el flujo "Exportar JSON" actual por un modelo **pull HTTP desde rpa-holistor**. El archivo JSON intermedio desaparece. La UI "Exportar" de liquidador-granos se quita (la herramienta de trabajo diario pasa a ser rpa-holistor).
+>
+> v1 (`/v1/*`) sigue vigente sin cambios — el reporting de carga del RPA al server es el mismo.
+
+## 16. Objetivo de v2 y flujo end-to-end
+
+### Modelo viejo ("Exportar JSON")
+
+1. Operador entra a liquidador-granos UI.
+2. Click "Exportar" → elige empresa + período.
+3. Liquidador-granos genera archivo JSON v7.1 en disco.
+4. Operador lleva el archivo a rpa-holistor.
+5. Rpa-holistor parsea, arranca fases.
+
+### Modelo nuevo ("Importar / Cargar / Ejecutar")
+
+**Lado liquidador-granos:**
+- Scheduler automatizado scrape-ea Arca por empresa según cadencia configurable (sin intervención).
+- Quedan persistidos los COEs en `coes_estado` con `estado='descargado'`.
+- La UI "Exportar" **se retira**.
+
+**Lado rpa-holistor:**
+1. **Importar** (botón sin parámetros, también dispara automáticamente al arrancar la app):
+   - `GET /v2/liquidaciones?desde_fecha_emision=...` al server.
+   - El cliente decide la ventana — típicamente `MAX(fecha_emision) FROM coes_cargados - 7d` como buffer, o `hoy - 90d` si el ledger está vacío.
+   - Por cada liquidación en la respuesta:
+     - Si **no existe** en ledger local → INSERT `estado='pendiente'`.
+     - Si existe como `pendiente` → UPSERT (refresca payload).
+     - Si existe como `ok`/`error`/`skipped` → ignora silenciosamente.
+   - Toast: "X nuevos · Y actualizados · Z ignorados".
+2. **Cargar** (botón con selector):
+   - Modal: selector de período (mes + año) + selector múltiple de empresas.
+   - Al confirmar, rpa-holistor filtra su ledger local por `estado='pendiente' AND cuit_empresa IN (...) AND fecha_emision BETWEEN ...`.
+3. **Ejecutar**:
+   - Las fases F2→F14 corren sobre la lista filtrada.
+   - Cada COE termina como `ok` o `error` en el ledger.
+   - F14 OK dispara `POST /v1/coes/cargado` (sin cambios).
+
+### Por qué este modelo y no el feed con cursor
+
+- **Paridad funcional con el "Exportar" actual** — para el operador es el mismo modelo mental (pedir un batch, decidir qué cargar), solo del otro lado del cable.
+- **Idempotencia trivial**: el cliente UPSERT-ea por `coe`. Pedir lo mismo dos veces es no-op.
+- **Mucho menos código server-side**: no hay `coes_eventos`, no hay cursor, no hay paginación con cursor, no hay detector de anulación.
+- Para 450 liq/mes y ventanas de 6 meses (~2.700 COEs ≈ 5-15 MB), el GET bulk es perfectamente viable.
+- Si en el futuro el volumen crece o necesitamos detectar cambios finos, v3 agrega cursor/eventos encima sin romper v2.
+
+## 17. Cambios al modelo de datos
+
+### Tabla nueva `empresas_scheduler` — config por empresa
+
+```sql
+CREATE TABLE empresas_scheduler (
+    cuit_empresa        TEXT PRIMARY KEY,
+    razon_social        TEXT,
+    activo              INTEGER NOT NULL DEFAULT 0,   -- 0 = pausado, 1 = corre
+    dias_semana         TEXT NOT NULL DEFAULT 'lun,mar,mie,jue,vie',
+    hora_local          TEXT NOT NULL DEFAULT '06:00',
+    ultimo_scrape_ok    TEXT,
+    ultimo_scrape_error TEXT,
+    actualizado_en      TEXT NOT NULL
+);
+```
+
+El operador configura cada empresa desde la UI de liquidador-granos. Si `activo=0`, el scheduler la ignora.
+
+### Tabla `coes_estado` — sin cambios
+
+v2 NO agrega columnas. `hash_payload_arca`, `anulado_en`, `razon_anulacion`, `ultimo_scrape_en` quedan para v3 si hace falta.
+
+### Estados server — sin cambios
+
+Sigue siendo `pendiente | descargado | cargado | error`. No se agrega `anulado_arca` en v2.
+
+## 18. Endpoints `/v2/*`
+
+Todos requieren `X-API-Key` (mismo mecanismo que v1, sin cambios).
+
+### `GET /v2/liquidaciones` — bulk del universo de COEs
+
+Query params:
+
+| Param | Tipo | Default | Notas |
+|---|---|---|---|
+| `desde_fecha_emision` | ISO date | (none) | Filtra `coes_estado.fecha_emision >= valor`. Sin parámetro → trae todo lo que el server tenga scrapeado. |
+| `hasta_fecha_emision` | ISO date | (none) | Inclusivo. Útil para backfills acotados. |
+| `cuit_empresa` | string repetible | (none) | Filtro opcional. Sin parámetro → todas las empresas activas en el scheduler. |
+
+Response 200: **mismo cuerpo que el JSON v7.1 actual** del "Exportar". Esto es deliberado: rpa-holistor reusa `parser/json_parser.py` sin modificar.
+
+```jsonc
+{
+  "schema_version": "v7.1",
+  "meta": {
+    "generado_en": "2026-05-14T10:30:00-03:00",
+    "generador": "liquidador-granos@1.3.0",
+    "batch_id": "b_20260514_103000",
+    "fuente": "api_v2_liquidaciones",
+    "filtros_aplicados": {
+      "desde_fecha_emision": "2026-01-01",
+      "hasta_fecha_emision": null,
+      "cuit_empresa": null
+    },
+    "total_liquidaciones": 87
+  },
+  "liquidaciones": [
+    {
+      "coe": "12345678901234",
+      "id_liquidacion": "liq_abc123",
+      "estado_origen": "descargado",
+      "cuit_empresa": "30711165378",
+      "mes": 2,
+      "anio": 2026,
+      "cuit_comprador": "30708729929",
+      "cuit_proveedor": "20102139063",
+      "comprobante": { /* v7.1 */ },
+      "grano": { /* v7.1 */ },
+      "retenciones": [ /* v7.1 */ ],
+      "deducciones": [ /* v7.1 */ ]
+    }
+  ]
+}
+```
+
+Semántica:
+- **No hay filtro server-side por estado**. v2 devuelve todo lo que matchea el filtro temporal/empresa, independientemente de si está `descargado`/`cargado`/`error`. **Rpa-holistor decide** qué hacer con cada COE comparando contra su ledger local (política de idempotencia §16).
+- **Side-effect server-side**: ningún COE `pendiente` o `descargado` cambia de estado por servirlo en este GET. La transición `descargado → cargado` sigue siendo responsabilidad de `POST /v1/coes/cargado` (sin cambios).
+- **Volumen esperado**: ~450 liq/mes × ventana 6 meses ≈ 2.700 COEs ≈ 5-15 MB JSON. Tolerable. Si pasa de 50 MB, agregar paginación simple `?limit=N&offset=M` o evolucionar a cursor (v3).
+
+Códigos de error:
+
+| HTTP | error | Cuándo |
+|---|---|---|
+| 401 | `api_key_invalida` | Header faltante o inválido. |
+| 422 | `validacion_fallida` | Params mal formados (fecha inválida, etc.). |
+| 503 | `scheduler_inactivo` | Informativo: el scheduler no corrió hace > 24h. El body incluye `ultimo_scrape_global`. La respuesta igual contiene `liquidaciones` (con datos potencialmente viejos). El cliente decide si igual procesa. |
+
+### `GET /v2/empresas` — universo + config scheduler
+
+```jsonc
+// 200
+{
+  "total": 414,
+  "ultimo_scrape_global": "2026-05-14T06:30:00-03:00",
+  "empresas": [
+    {
+      "cuit_empresa": "30711165378",
+      "razon_social": "Manassero Hnos SRL",
+      "scheduler": {
+        "activo": true,
+        "dias_semana": ["lun", "mar", "mie", "jue", "vie"],
+        "hora_local": "06:00",
+        "ultimo_scrape_ok": "2026-05-14T06:15:32-03:00",
+        "ultimo_scrape_error": null
+      }
+    }
+  ]
+}
+```
+
+Rpa-holistor lo usa para:
+- Poblar el selector múltiple de empresas en el modal "Cargar".
+- Mostrar warning si una empresa tiene `ultimo_scrape_error != null` o `ultimo_scrape_ok` desactualizado.
+- Saber qué empresas existen sin tener que enumerarlas desde el ledger local.
+
+## 19. Scheduler — config y operación
+
+### Modelo
+
+- Un thread/proceso del lado liquidador-granos itera `empresas_scheduler WHERE activo=1` y dispara el scrape LPG.
+- Cadencia por empresa: días de la semana + hora local (TZ del server, asumido `America/Argentina/Cordoba`).
+- Cada scrape de Arca actualiza `coes_estado` con los COEs nuevos detectados (`estado='descargado'` directamente; en v2 no hay distinción entre "scrapeado pero no servido" y "scrapeado y servido").
+- Si el scrape falla (timeout Arca, error de auth WS LPG, etc.): registrar en `ultimo_scrape_error` con timestamp + mensaje. El próximo tick reintenta. Sin retry inmediato (Arca es rate-limit-sensible).
+- Volumen esperado: ~450 liquidaciones/mes sumando todas las empresas — el scheduler no necesita ser performante, prioridad es robustez ante fallos transitorios de Arca.
+
+### UI del scheduler (fuera del scope de este SPEC pero relevante)
+
+Liquidador-granos expone en su UI un panel donde el operador:
+- Lista empresas + estado del scheduler (verde/rojo).
+- Toggle `activo` por empresa.
+- Edita `dias_semana` + `hora_local`.
+- Ve `ultimo_scrape_ok` y `ultimo_scrape_error`.
+- Botón "Scrapear ahora" para forzar un tick manual sin esperar al cron.
+
+La UI vieja "Exportar JSON" se retira en la misma iteración que entra el scheduler.
+
+## 20. Flujo cliente — lado rpa-holistor
+
+Esta sección spec'ea el comportamiento del cliente para que el spec sea autocontenido. La implementación concreta vive en el repo `rpa-holistor`.
+
+### Importar (sin parámetros)
+
+Triggers:
+- Botón "Importar" en la UI principal.
+- Automático en thread aparte al arrancar `main.pyw` (no bloquea la UI).
+
+Algoritmo:
+1. Calcular `desde_fecha_emision`:
+   - Si `coes_cargados` está vacío → `hoy - 90 días`.
+   - Si tiene entradas → `MAX(fecha_emision) FROM coes_cargados - 7 días` (buffer por si Arca registra COEs retroactivos).
+2. `GET /v2/liquidaciones?desde_fecha_emision=...` → respuesta JSON v7.1.
+3. Por cada liquidación en `response.liquidaciones`:
+   - Lookup en `coes_cargados` por `coe`.
+   - **No existe** → INSERT `estado='pendiente'`, `creado_en=now()`.
+   - **Existe `pendiente`** → UPSERT `payload_json` (refresca por si Arca actualizó algo), bumpear `actualizado_en`.
+   - **Existe `ok`/`error`/`skipped`** → no-op silencioso. No tocar.
+4. Mostrar toast: `"Importados: X nuevos · Y actualizados · Z ignorados"`.
+5. Si el GET falla (timeout / 5xx / `api_key_invalida`) → log + toast de error. No retry automático (el operador re-aprieta el botón si quiere).
+
+### Cargar (con selector)
+
+Triggers:
+- Botón "Cargar" en la UI principal.
+
+Algoritmo:
+1. Modal con dos controles:
+   - Selector de período: mes (1-12) + año.
+   - Selector múltiple de empresas (checkboxes), poblado desde `GET /v2/empresas` cacheado al arrancar.
+2. Al confirmar, ejecutar query local:
+   ```sql
+   SELECT * FROM coes_cargados
+   WHERE estado = 'pendiente'
+     AND cuit_empresa IN (...)
+     AND fecha_emision BETWEEN ? AND ?
+   ORDER BY fecha_emision, cuit_empresa, coe
+   ```
+3. Mostrar resumen previo al "Ejecutar": "Se cargarán N COEs (X de empresa A, Y de empresa B, ...)".
+
+### Ejecutar
+
+- Pasa la lista a `accumulated_data["liquidaciones"]`.
+- Las fases F2→F14 corren igual que hoy (sin cambios).
+- F14 OK → POST `/v1/coes/cargado` (sin cambios respecto a v1).
+
+## 21. Lo que NO se implementa en v2 (queda para v3)
+
+Decisiones de scope explícitas, postergadas para no inflar v2:
+
+| Feature | Por qué se posterga |
+|---|---|
+| Tabla `coes_eventos` con cursor opaco | Para 450 liq/mes el bulk GET con filtro temporal alcanza. Cursor justifica complejidad solo si el GET se vuelve pesado o necesitamos detección fina de cambios. |
+| Estado `anulado_arca` server-side + detector de anulación | Anulación en Arca de un COE ya cargado es caso raro y manejable manualmente. El detector con tolerancia de 2 scrapes es código no trivial. |
+| `GET /v2/coes/{coe}` extendido con historial de transiciones | `GET /v1/coes/{coe}` cubre la consulta puntual. Historial detallado vale la pena solo cuando haya un dashboard que lo aproveche. |
+| Webhooks server → cliente para invalidación inmediata | No hay caso de uso urgente. El operador hace "Importar" cuando quiere refrescar. |
+
+## 22. Criterios de aceptación v2
+
+### Server-side (liquidador-granos)
+
+- [ ] Tabla `empresas_scheduler` creada con migración idempotente. Backfill de empresas existentes con `activo=0`.
+- [ ] Scheduler corre como servicio. Lee `empresas_scheduler WHERE activo=1` y dispara scrape LPG según `dias_semana` + `hora_local`.
+- [ ] Scheduler exitoso → COEs nuevos quedan en `coes_estado` con `estado='descargado'`.
+- [ ] Scheduler con error → `ultimo_scrape_error` registrado, próximo tick reintenta sin retry inmediato.
+- [ ] `GET /v2/liquidaciones` sin filtros → devuelve **todas** las liquidaciones del server en formato v7.1.
+- [ ] `GET /v2/liquidaciones?desde_fecha_emision=YYYY-MM-DD` → filtra correctamente.
+- [ ] `GET /v2/liquidaciones?cuit_empresa=X` (repetible) → filtra correctamente.
+- [ ] `GET /v2/liquidaciones` NO modifica el estado de ningún COE.
+- [ ] `GET /v2/empresas` lista todas las empresas con su config scheduler.
+- [ ] UI "Exportar JSON" retirada de liquidador-granos.
+- [ ] Endpoints `/v1/*` siguen funcionando sin cambios (regresión).
+
+### Cliente-side (rpa-holistor)
+
+- [ ] Botón "Importar" dispara GET y UPSERT según política §20.
+- [ ] Importar automático al arrancar `main.pyw`, en thread, no bloquea UI.
+- [ ] COE existente como `ok`/`error`/`skipped` no se sobreescribe al reimportar.
+- [ ] Botón "Cargar" filtra el ledger local por período + empresas y muestra resumen previo.
+- [ ] Botón "Ejecutar" corre las fases sobre la lista filtrada sin cambios.
+
+## 23. Tests v2
+
+### Server (liquidador-granos)
+
+`tests/test_v2_liquidaciones.py`:
+- `test_get_liquidaciones_sin_filtros_devuelve_universo_completo`
+- `test_get_liquidaciones_filtra_por_desde_fecha_emision`
+- `test_get_liquidaciones_filtra_por_cuit_empresa_repetible`
+- `test_get_liquidaciones_no_modifica_estado_de_coes`
+- `test_get_liquidaciones_devuelve_schema_v7_1_valido`
+- `test_get_liquidaciones_sin_apikey_devuelve_401`
+
+`tests/test_v2_empresas.py`:
+- `test_get_empresas_lista_completa`
+- `test_get_empresas_incluye_scheduler_config`
+
+`tests/test_v2_scheduler.py`:
+- `test_scheduler_respeta_dias_semana`
+- `test_scheduler_respeta_hora_local`
+- `test_scheduler_ignora_empresas_inactivas`
+- `test_scheduler_registra_error_y_no_retira_inmediato`
+
+### Cliente (rpa-holistor) — referencia, vive en el otro repo
+
+- `test_importar_inserta_pendientes_nuevos`
+- `test_importar_refresca_pendientes_existentes`
+- `test_importar_ignora_ok_error_skipped`
+- `test_cargar_filtra_ledger_por_periodo_y_empresas`
+
+## 24. Plan de implementación v2 (orden sugerido)
+
+### Server (liquidador-granos) — ~9h
+
+1. **Migración DB** (1h) — crear `empresas_scheduler`, backfill empresas existentes con `activo=0`.
+2. **Scheduler engine** (3h) — APScheduler o cron-driven leyendo `empresas_scheduler`. Hook al ingesta LPG existente.
+3. **Endpoint `GET /v2/liquidaciones`** (2h) — reusar la lógica de armado de JSON v7.1 del "Exportar" actual, exponerla como HTTP.
+4. **Endpoint `GET /v2/empresas`** (1h).
+5. **Retirar UI "Exportar"** (0.5h).
+6. **Tests** (1.5h).
+
+### Cliente (rpa-holistor) — ~5h
+
+1. **Schema del ledger** (1h) — agregar `pendiente` al CHECK de `estado` + columna `payload_json TEXT` (para cachear lo que importamos).
+2. **Cliente `obtener_liquidaciones()` en [core/api_client.py](core/api_client.py)** (1h).
+3. **Lógica de "Importar"** (1.5h) — UPSERT con política idempotente, integrado con UI.
+4. **UI "Cargar" + "Ejecutar"** (1.5h) — modal con selectores, query al ledger local.
+
+Integración end-to-end (~2h aparte) cuando ambos lados estén.
+
+## 25. Cosas que NO cambian con v2
+
+- Algoritmo de `hash_payload` (§8). Mismo fixture compartido.
+- Endpoints `/v1/*`. Siguen vigentes — `POST /v1/coes/cargado` sigue siendo el cierre del ciclo cuando F14 OK.
+- Estructura del JSON v7.1 dentro de `liquidacion`. El sobre cambia (HTTP response en vez de archivo) pero el contenido es idéntico — `parser/json_parser.py` del lado RPA no requiere cambios.
+- Auth `X-API-Key`.
+- Estados server: siguen siendo `pendiente | descargado | cargado | error`.
