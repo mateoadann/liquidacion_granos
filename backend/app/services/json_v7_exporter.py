@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from ..time_utils import now_cordoba_naive
+
 logger = logging.getLogger(__name__)
 
 
@@ -247,6 +249,94 @@ def build_json_v7(documents: list, taxpayer: Any, mes: int, anio: int) -> dict:
             "generado_en": now.isoformat(timespec="seconds"),
             "generador": "liquidador-granos@1.0.0",
             "batch_id": batch_id,
+        },
+        "liquidaciones": liquidaciones,
+    }
+
+
+def build_json_v7_bulk(docs: list, filtros: dict) -> dict:
+    """Build a v7.1 JSON export from multiple taxpayers (read-only, no side-effects).
+
+    Used by GET /v2/liquidaciones (PR3). Differences with build_json_v7():
+
+    - NO side-effects: does NOT transition CoeEstado, does NOT compute/persist
+      hash, does NOT call marcar_descargado(). Pure read-only construction.
+    - NO filtering by estado='cargado': returns the full universe matching
+      the SQL-level filtros provided by the caller. rpa-holistor reconciles
+      against its own local ledger.
+    - Expects docs already filtered by the caller (SQL JOIN/WHERE on
+      taxpayer + temporal range). This function only assembles the JSON.
+    - Reads taxpayer from each doc via doc.taxpayer relationship. If a doc
+      has no taxpayer, it is skipped with a logger.warning (not fatal).
+    - mes/anio are derived from datos_limpios.fechaLiquidacion (ISO
+      YYYY-MM-DD). If missing or invalid, the doc is skipped with a warning.
+    - estado_origen / id_liquidacion come from CoeEstado.query.filter_by(coe).
+      If no CoeEstado row exists, default to estado_origen="pendiente" and
+      id_liquidacion=None (transform_single generates a uuid one).
+    - meta block is enriched with fuente="api_v2_liquidaciones",
+      filtros_aplicados=filtros, and total_liquidaciones.
+    - generador is "liquidacion-granos@2.0.0" to distinguish from v1.
+    """
+    from ..models.coe_estado import CoeEstado
+
+    generado_en = now_cordoba_naive().isoformat(timespec="seconds")
+
+    liquidaciones: list[dict] = []
+    for doc in docs:
+        taxpayer = getattr(doc, "taxpayer", None)
+        if taxpayer is None:
+            logger.warning(
+                "BULK_EXPORT_SKIP_NO_TAXPAYER | doc_id=%s coe=%s",
+                getattr(doc, "id", None),
+                getattr(doc, "coe", None),
+            )
+            continue
+
+        datos = getattr(doc, "datos_limpios", None) or {}
+        fecha_liq = datos.get("fechaLiquidacion")
+        try:
+            parsed = datetime.strptime(str(fecha_liq), "%Y-%m-%d")
+            mes = parsed.month
+            anio = parsed.year
+        except (TypeError, ValueError):
+            logger.warning(
+                "BULK_EXPORT_SKIP_INVALID_FECHA | doc_id=%s coe=%s fecha=%r",
+                getattr(doc, "id", None),
+                getattr(doc, "coe", None),
+                fecha_liq,
+            )
+            continue
+
+        coe = getattr(doc, "coe", None) or ""
+        coe_estado_entry = None
+        if coe:
+            coe_estado_entry = CoeEstado.query.filter_by(coe=coe).first()
+
+        estado_origen = (
+            coe_estado_entry.estado if coe_estado_entry else "pendiente"
+        )
+        id_liquidacion = (
+            coe_estado_entry.id_liquidacion if coe_estado_entry else None
+        )
+
+        liq = transform_single(
+            doc,
+            taxpayer,
+            mes,
+            anio,
+            id_liquidacion=id_liquidacion,
+            estado_origen=estado_origen,
+        )
+        liquidaciones.append(liq)
+
+    return {
+        "schema_version": "v7.1",
+        "meta": {
+            "generado_en": generado_en,
+            "generador": "liquidacion-granos@2.0.0",
+            "fuente": "api_v2_liquidaciones",
+            "filtros_aplicados": filtros,
+            "total_liquidaciones": len(liquidaciones),
         },
         "liquidaciones": liquidaciones,
     }
