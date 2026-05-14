@@ -262,3 +262,57 @@ def get_v2_liquidaciones():
     }
     body = build_json_v7_bulk(docs, filtros)
     return jsonify(body), 200
+
+
+@integration_bp.get("/v2/empresas")
+@require_api_key
+def get_v2_empresas():
+    """Universo de empresas activas + config scheduler.
+
+    Read-only. La usa rpa-holistor para:
+    - Poblar selector múltiple en modal Cargar.
+    - Detectar empresas con scheduler caído (ultimo_scrape_error != null).
+
+    A diferencia de GET /v2/liquidaciones, este endpoint SÍ incluye
+    taxpayers con scheduler_activo=False (rpa-holistor los muestra con
+    un flag visual, pero los lista para que el operador los vea).
+    """
+    taxpayers = (
+        Taxpayer.query
+        .filter(Taxpayer.activo.is_(True))
+        .filter(Taxpayer.cuit_representado != "")
+        .order_by(Taxpayer.empresa)
+        .all()
+    )
+
+    ultimo_global = db.session.query(
+        db.func.max(Taxpayer.scheduler_ultimo_ok)
+    ).scalar()
+
+    return jsonify({
+        "total": len(taxpayers),
+        "ultimo_scrape_global": (
+            ultimo_global.isoformat() if ultimo_global else None
+        ),
+        "empresas": [
+            {
+                "cuit_empresa": t.cuit_representado,
+                "razon_social": t.empresa,
+                "scheduler": {
+                    "activo": t.scheduler_activo,
+                    "dias_semana": [
+                        d.strip()
+                        for d in (t.scheduler_dias_semana or "").split(",")
+                        if d.strip()
+                    ],
+                    "hora_local": t.scheduler_hora_local,
+                    "ultimo_scrape_ok": (
+                        t.scheduler_ultimo_ok.isoformat()
+                        if t.scheduler_ultimo_ok else None
+                    ),
+                    "ultimo_scrape_error": t.scheduler_ultimo_error,
+                },
+            }
+            for t in taxpayers
+        ],
+    }), 200
