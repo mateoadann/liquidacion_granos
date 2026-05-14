@@ -4,9 +4,12 @@ import base64
 import datetime as dt
 import decimal
 import inspect
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ArcaIntegrationError(RuntimeError):
@@ -150,8 +153,25 @@ class ArcaWslpgClient:
         self._validate_arca_inputs()
         self._configure_arca_settings_module()
         self._client = self._build_client(ws_class)
+        self._relax_zeep_strict_mode(self._client)
         self._run_optional_login(self._client)
         return self._client
+
+    def _relax_zeep_strict_mode(self, ws_client: Any) -> None:
+        # ARCA returns ajusteUnificado responses with elements not present in the
+        # WSDL cached by arca_arg (e.g. `ajusteCredito` arriving before
+        # `codTipoOperacion`). With zeep's default strict=True the parser raises
+        # UnexpectedElementError and the COE is marked as failed even though the
+        # data is valid. Disabling strict lets zeep tolerate the drift while still
+        # returning the rest of the response correctly serialized.
+        zeep_client = getattr(ws_client, "client", None)
+        settings = getattr(zeep_client, "settings", None)
+        if settings is None:
+            return
+        try:
+            settings.strict = False
+        except Exception:
+            logger.exception("ARCA_ZEEP_STRICT_DISABLE_FAILED")
 
     def _validate_arca_inputs(self) -> None:
         missing: list[str] = []
