@@ -120,6 +120,67 @@ def test_patch_scheduler_dias_semana_invalidos_422(client, admin_headers):
     assert body["detalle"]["invalidos"] == ["xxx"]
 
 
+def test_patch_scheduler_actualiza_dias_extraccion(client, admin_headers):
+    t = _create_taxpayer(cuit="20111111120")
+
+    response = client.patch(
+        f"/api/taxpayers/{t.id}/scheduler",
+        json={"dias_extraccion": 30},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["dias_extraccion"] == 30
+
+    db.session.refresh(t)
+    assert t.scheduler_dias_extraccion == 30
+
+
+def test_patch_scheduler_dias_extraccion_menor_a_1_devuelve_422(client, admin_headers):
+    t = _create_taxpayer(cuit="20111111121")
+
+    response = client.patch(
+        f"/api/taxpayers/{t.id}/scheduler",
+        json={"dias_extraccion": 0},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "validacion_fallida"
+    assert body["detalle"]["recibido"] == 0
+
+
+def test_patch_scheduler_dias_extraccion_mayor_a_366_devuelve_422(client, admin_headers):
+    t = _create_taxpayer(cuit="20111111122")
+
+    response = client.patch(
+        f"/api/taxpayers/{t.id}/scheduler",
+        json={"dias_extraccion": 367},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "validacion_fallida"
+    assert body["detalle"]["recibido"] == 367
+
+
+def test_patch_scheduler_dias_extraccion_no_entero_devuelve_422(client, admin_headers):
+    t = _create_taxpayer(cuit="20111111123")
+
+    response = client.patch(
+        f"/api/taxpayers/{t.id}/scheduler",
+        json={"dias_extraccion": "abc"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "validacion_fallida"
+
+
 def test_patch_scheduler_taxpayer_inexistente_404(client, admin_headers):
     response = client.patch(
         "/api/taxpayers/99999/scheduler",

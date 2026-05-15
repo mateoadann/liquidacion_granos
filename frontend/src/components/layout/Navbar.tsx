@@ -56,14 +56,9 @@ export function Navbar() {
               Exportar
             </NavLink>
             {user?.rol === "admin" ? (
-              <>
-                <NavLink to="/scheduler" className={navLinkClass}>
-                  Scheduler
-                </NavLink>
-                <NavLink to="/configuracion" className={navLinkClass}>
-                  Configuracion
-                </NavLink>
-              </>
+              <NavLink to="/configuracion" className={navLinkClass}>
+                Configuracion
+              </NavLink>
             ) : null}
           </div>
 

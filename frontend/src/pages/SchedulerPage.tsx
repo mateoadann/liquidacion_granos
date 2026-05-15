@@ -44,7 +44,13 @@ const HORA_LOCAL_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 interface EditFormState {
   diasSemana: string[];
   horaLocal: string;
+  diasExtraccion: number;
+  diasExtraccionRaw: string;
 }
+
+const DIAS_EXTRACCION_PRESETS: number[] = [10, 30, 60];
+const DIAS_EXTRACCION_MIN = 1;
+const DIAS_EXTRACCION_MAX = 366;
 
 function toErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message;
@@ -67,6 +73,8 @@ export function SchedulerPage() {
   const [editForm, setEditForm] = useState<EditFormState>({
     diasSemana: [],
     horaLocal: "06:00",
+    diasExtraccion: 90,
+    diasExtraccionRaw: "90",
   });
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -94,9 +102,12 @@ export function SchedulerPage() {
 
   function openEdit(client: Client) {
     setEditError(null);
+    const dias = client.schedulerDiasExtraccion ?? 90;
     setEditForm({
       diasSemana: [...client.schedulerDiasSemana],
       horaLocal: client.schedulerHoraLocal ?? "06:00",
+      diasExtraccion: dias,
+      diasExtraccionRaw: String(dias),
     });
     setEditing(client);
   }
@@ -125,6 +136,16 @@ export function SchedulerPage() {
       setEditError("Seleccioná al menos un día.");
       return;
     }
+    if (
+      !Number.isInteger(editForm.diasExtraccion) ||
+      editForm.diasExtraccion < DIAS_EXTRACCION_MIN ||
+      editForm.diasExtraccion > DIAS_EXTRACCION_MAX
+    ) {
+      setEditError(
+        `Días a extraer debe estar entre ${DIAS_EXTRACCION_MIN} y ${DIAS_EXTRACCION_MAX}.`,
+      );
+      return;
+    }
     try {
       const orderedDias = DIAS_SEMANA.filter((d) =>
         editForm.diasSemana.includes(d.value),
@@ -134,6 +155,7 @@ export function SchedulerPage() {
         body: {
           dias_semana: orderedDias,
           hora_local: editForm.horaLocal,
+          dias_extraccion: editForm.diasExtraccion,
         },
       });
       showToast({
@@ -220,6 +242,11 @@ export function SchedulerPage() {
     });
   }
 
+  const diasExtraccionInvalido =
+    !Number.isInteger(editForm.diasExtraccion) ||
+    editForm.diasExtraccion < DIAS_EXTRACCION_MIN ||
+    editForm.diasExtraccion > DIAS_EXTRACCION_MAX;
+
   const isLoading = clientsQuery.isLoading;
   const clientsError = clientsQuery.error
     ? toErrorMessage(clientsQuery.error, "Error al cargar empresas.")
@@ -282,6 +309,11 @@ export function SchedulerPage() {
                 <TableCell header>Scheduler</TableCell>
                 <TableCell header>Días</TableCell>
                 <TableCell header>Hora</TableCell>
+                <TableCell header>
+                  <span title="Ventana temporal hacia atrás desde hoy para cada scrape">
+                    Días extracción
+                  </span>
+                </TableCell>
                 <TableCell header>Último OK</TableCell>
                 <TableCell header>Último error</TableCell>
                 <TableCell header className="text-right">
@@ -357,6 +389,14 @@ export function SchedulerPage() {
                       </span>
                     </TableCell>
                     <TableCell>
+                      <span
+                        className="text-sm tabular-nums text-slate-700"
+                        title="Ventana temporal hacia atrás desde hoy para cada scrape"
+                      >
+                        {client.schedulerDiasExtraccion} d
+                      </span>
+                    </TableCell>
+                    <TableCell>
                       <span className="text-xs text-slate-600">
                         {formatDateTime(client.schedulerUltimoOk)}
                       </span>
@@ -429,6 +469,7 @@ export function SchedulerPage() {
               variant="primary"
               onClick={handleSaveEdit}
               isLoading={updateMutation.isPending}
+              disabled={diasExtraccionInvalido}
             >
               Guardar
             </Button>
@@ -480,6 +521,67 @@ export function SchedulerPage() {
             <p className="text-xs text-slate-500 mt-1">
               Formato 24h. Hora de Argentina/Córdoba.
             </p>
+          </div>
+
+          <div>
+            <label
+              className="block text-sm font-medium text-slate-700 mb-1"
+              htmlFor="scheduler-dias-extraccion"
+            >
+              Días a extraer
+            </label>
+            <p className="text-xs text-slate-500 mb-2">
+              Ventana temporal hacia atrás desde hoy para cada scrape.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {DIAS_EXTRACCION_PRESETS.map((preset) => {
+                const active = editForm.diasExtraccion === preset;
+                return (
+                  <button
+                    type="button"
+                    key={preset}
+                    onClick={() =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        diasExtraccion: preset,
+                        diasExtraccionRaw: String(preset),
+                      }))
+                    }
+                    className={`px-3 py-1.5 rounded-md text-sm border transition-colors ${
+                      active
+                        ? "bg-green-600 text-white border-green-600"
+                        : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    {preset} días
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              id="scheduler-dias-extraccion"
+              type="number"
+              min={DIAS_EXTRACCION_MIN}
+              max={DIAS_EXTRACCION_MAX}
+              className="block w-40 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              value={editForm.diasExtraccionRaw}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const parsed = Number.parseInt(raw, 10);
+                setEditForm((prev) => ({
+                  ...prev,
+                  diasExtraccionRaw: raw,
+                  diasExtraccion: Number.isNaN(parsed) ? 0 : parsed,
+                }));
+              }}
+            />
+            {!Number.isInteger(editForm.diasExtraccion) ||
+            editForm.diasExtraccion < DIAS_EXTRACCION_MIN ||
+            editForm.diasExtraccion > DIAS_EXTRACCION_MAX ? (
+              <p className="text-xs text-red-600 mt-1">
+                Debe estar entre {DIAS_EXTRACCION_MIN} y {DIAS_EXTRACCION_MAX}.
+              </p>
+            ) : null}
           </div>
 
           {editError ? <Alert variant="error">{editError}</Alert> : null}

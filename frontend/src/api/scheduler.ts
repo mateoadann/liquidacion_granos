@@ -5,6 +5,7 @@ export interface SchedulerConfig {
   activo: boolean;
   dias_semana: string[];
   hora_local: string | null;
+  dias_extraccion: number;
   ultimo_scrape_ok: string | null;
   ultimo_scrape_error: string | null;
 }
@@ -27,6 +28,7 @@ export interface PatchSchedulerBody {
   activo?: boolean;
   dias_semana?: string[];
   hora_local?: string;
+  dias_extraccion?: number;
 }
 
 export interface RunNowResponse {

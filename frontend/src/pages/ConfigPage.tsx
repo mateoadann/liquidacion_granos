@@ -24,6 +24,18 @@ export function ConfigPage() {
             Administrar usuarios
           </Button>
         </Card>
+
+        <Card className="p-6">
+          <h3 className="text-lg font-medium text-slate-900 mb-2">
+            Scheduler de extracción
+          </h3>
+          <p className="text-sm text-slate-500 mb-4">
+            Programar scraping automático de COEs desde ARCA por empresa
+          </p>
+          <Button onClick={() => navigate("/configuracion/scheduler")}>
+            Administrar scheduler
+          </Button>
+        </Card>
       </div>
     </div>
   );

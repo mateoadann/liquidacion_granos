@@ -40,7 +40,7 @@ export default function App() {
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/configuracion" element={<Layout><ConfigPage /></Layout>} />
             <Route path="/configuracion/usuarios" element={<Layout><UsersListPage /></Layout>} />
-            <Route path="/scheduler" element={<Layout><SchedulerPage /></Layout>} />
+            <Route path="/configuracion/scheduler" element={<Layout><SchedulerPage /></Layout>} />
           </Route>
 
           {/* Fallback */}
