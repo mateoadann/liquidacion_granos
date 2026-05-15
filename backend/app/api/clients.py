@@ -51,6 +51,10 @@ def _serialize_client(item: Taxpayer, coes_count: int | None = None) -> dict:
         coes_count = LpgDocument.query.filter(
             LpgDocument.taxpayer_id == item.id
         ).count()
+    scheduler_dias_raw = item.scheduler_dias_semana or ""
+    scheduler_dias_semana = [
+        token.strip() for token in scheduler_dias_raw.split(",") if token.strip()
+    ]
     return {
         "id": item.id,
         "empresa": item.empresa,
@@ -66,6 +70,16 @@ def _serialize_client(item: Taxpayer, coes_count: int | None = None) -> dict:
         if item.cert_uploaded_at
         else None,
         "coes_count": coes_count,
+        "scheduler_activo": bool(item.scheduler_activo),
+        "scheduler_dias_semana": scheduler_dias_semana,
+        "scheduler_hora_local": item.scheduler_hora_local,
+        "scheduler_ultimo_ok": item.scheduler_ultimo_ok.isoformat()
+        if item.scheduler_ultimo_ok
+        else None,
+        "scheduler_ultimo_error": item.scheduler_ultimo_error,
+        "scheduler_ultimo_error_en": item.scheduler_ultimo_error_en.isoformat()
+        if item.scheduler_ultimo_error_en
+        else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
