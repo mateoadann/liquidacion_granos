@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import CertificateUpload from "./CertificateUpload";
-import CoeExportPanel from "./CoeExportPanel";
 import ClientForm, { type ClientFormMode, type ClientFormValues } from "./ClientForm";
 import ClientTable from "./ClientTable";
 import ConfigValidationPanel from "./ConfigValidationPanel";
@@ -9,7 +8,6 @@ import type { Client, ClientValidationResult, PlaywrightPipelineRunResult } from
 import {
   useClientsQuery,
   useCreateClientMutation,
-  useDownloadClientJsonV7Mutation,
   usePlaywrightJobQuery,
   useDeleteClientMutation,
   useRunPlaywrightPipelineMutation,
@@ -18,7 +16,7 @@ import {
   useValidateConfigMutation,
 } from "./useClients";
 
-type PageView = "list" | "form" | "certificates" | "validation" | "exports";
+type PageView = "list" | "form" | "certificates" | "validation";
 
 interface UiMessage {
   type: "success" | "error";
@@ -43,7 +41,6 @@ export default function ClientsPage() {
   const [certificateError, setCertificateError] = useState<string | null>(null);
   const [certificateSuccess, setCertificateSuccess] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [runModalOpen, setRunModalOpen] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<PlaywrightPipelineRunResult | null>(null);
@@ -56,7 +53,6 @@ export default function ClientsPage() {
   const deleteClientMutation = useDeleteClientMutation();
   const uploadCertificatesMutation = useUploadCertificatesMutation();
   const validateConfigMutation = useValidateConfigMutation();
-  const downloadClientJsonV7Mutation = useDownloadClientJsonV7Mutation();
   const runPlaywrightMutation = useRunPlaywrightPipelineMutation();
   const runJobQuery = usePlaywrightJobQuery(runJobId);
 
@@ -80,7 +76,6 @@ export default function ClientsPage() {
   const anyRowActionLoading =
     deleteClientMutation.isPending ||
     uploadCertificatesMutation.isPending ||
-    downloadClientJsonV7Mutation.isPending ||
     validateConfigMutation.isPending ||
     runPlaywrightMutation.isPending;
 
@@ -209,44 +204,6 @@ export default function ClientsPage() {
     setSelectedClient(client);
     setView("validation");
     void runValidation(client);
-  }
-
-  function openExportCoes(client: Client) {
-    setSelectedClient(client);
-    setExportError(null);
-    setView("exports");
-  }
-
-  async function handleDownloadJsonV7(
-    filters: { fechaDesde?: string; fechaHasta?: string; mes?: number; anio?: number }
-  ) {
-    if (!activeClient) return;
-    setExportError(null);
-    try {
-      const file = await downloadClientJsonV7Mutation.mutateAsync({
-        clientId: activeClient.id,
-        fechaDesde: filters.fechaDesde,
-        fechaHasta: filters.fechaHasta,
-        mes: filters.mes,
-        anio: filters.anio,
-      });
-
-      const url = URL.createObjectURL(file.blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = file.fileName;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-
-      setMessage({
-        type: "success",
-        text: `Archivo generado: ${file.fileName}`,
-      });
-    } catch (error) {
-      setExportError(getErrorMessage(error));
-    }
   }
 
   function openRunModal() {
@@ -480,7 +437,6 @@ export default function ClientsPage() {
           onEdit={openEditForm}
           onCertificates={openCertificates}
           onValidate={openValidation}
-          onExportCoes={openExportCoes}
           onDeactivate={(client) => void handleDeactivate(client)}
           actionDisabled={anyRowActionLoading}
         />
@@ -515,16 +471,6 @@ export default function ClientsPage() {
           isValidating={validateConfigMutation.isPending}
           errorMessage={validationError}
           onRevalidate={() => runValidation(activeClient)}
-          onBack={goToList}
-        />
-      ) : null}
-
-      {view === "exports" && activeClient ? (
-        <CoeExportPanel
-          client={activeClient}
-          isDownloadingJsonV7={downloadClientJsonV7Mutation.isPending}
-          errorMessage={exportError}
-          onDownloadJsonV7={handleDownloadJsonV7}
           onBack={goToList}
         />
       ) : null}

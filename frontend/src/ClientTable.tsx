@@ -11,7 +11,6 @@ interface ClientTableProps {
   onEdit: (client: Client) => void;
   onCertificates: (client: Client) => void;
   onValidate: (client: Client) => void;
-  onExportCoes: (client: Client) => void;
   onDeactivate: (client: Client) => void;
   actionDisabled: boolean;
 }
@@ -27,7 +26,6 @@ export default function ClientTable({
   onEdit,
   onCertificates,
   onValidate,
-  onExportCoes,
   onDeactivate,
   actionDisabled,
 }: ClientTableProps) {
@@ -130,14 +128,6 @@ export default function ClientTable({
                         className="text-blue-700 hover:underline disabled:opacity-50"
                       >
                         Validar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onExportCoes(client)}
-                        disabled={actionDisabled}
-                        className="text-blue-700 hover:underline disabled:opacity-50"
-                      >
-                        Exportar COEs
                       </button>
                       <button
                         type="button"

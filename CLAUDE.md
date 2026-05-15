@@ -62,7 +62,7 @@ bash scripts/pre-push-checks.sh  # Run manually
 - **State:** TanStack Query for server state, Zustand for client state
 - **API layer:** `clients.ts` (adapters + types), `api/client.ts` (HTTP config)
 - **Hooks:** `useClients.ts` (TanStack Query hooks for client CRUD)
-- **Pages:** `ClientsPage.tsx` (main), with `ClientTable.tsx`, `ClientForm.tsx`, `CertificateUpload.tsx`, `RunPlaywrightModal.tsx`, `CoeExportPanel.tsx`
+- **Pages:** `ClientsPage.tsx` (main), with `ClientTable.tsx`, `ClientForm.tsx`, `CertificateUpload.tsx`, `RunPlaywrightModal.tsx`
 
 ### Infrastructure
 - **Docker services:** postgres:16, redis:7, backend (Flask :5001), worker (RQ), frontend (Vite :5173)

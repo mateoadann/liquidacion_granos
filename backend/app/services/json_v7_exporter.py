@@ -196,6 +196,7 @@ def transform_single(
     return liquidacion
 
 
+# DEPRECATED: retirar en próxima iteración. Solo build_json_v7_bulk es el camino v2.
 def build_json_v7(documents: list, taxpayer: Any, mes: int, anio: int) -> dict:
     """Build the full v7.1 JSON export from a list of LpgDocuments.
 
