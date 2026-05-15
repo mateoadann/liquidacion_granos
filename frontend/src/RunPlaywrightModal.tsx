@@ -89,11 +89,10 @@ export default function RunPlaywrightModal({
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">
-              Ejecutar proceso Playwright LPG
+              Consultar liquidaciones en Arca
             </h3>
             <p className="mt-1 text-sm text-slate-600">
-              Seleccioná clientes y rango de fechas. El seguimiento detallado se ve en logs del
-              worker.
+              Seleccioná empresas y rango de fechas.
             </p>
           </div>
           <button
@@ -130,7 +129,7 @@ export default function RunPlaywrightModal({
         <div className="mt-4 rounded-md border border-slate-200">
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
             <p className="text-sm font-medium text-slate-700">
-              Clientes ({selectedIds.length}/{eligibleClients.length})
+              Empresas ({selectedIds.length}/{eligibleClients.length})
             </p>
             <div className="flex gap-2 text-xs">
               <button
@@ -152,7 +151,7 @@ export default function RunPlaywrightModal({
           <div className="max-h-64 overflow-y-auto px-3 py-2">
             {eligibleClients.length === 0 ? (
               <p className="text-sm text-slate-500">
-                No hay clientes activos con Playwright habilitado.
+                No hay empresas habilitadas para consultar.
               </p>
             ) : (
               <ul className="space-y-2">
@@ -197,7 +196,7 @@ export default function RunPlaywrightModal({
             disabled={!canSubmit}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {isSubmitting ? "Ejecutando..." : "Ejecutar"}
+            {isSubmitting ? "Consultando..." : "Consultar"}
           </button>
         </div>
       </div>

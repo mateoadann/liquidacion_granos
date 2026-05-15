@@ -52,9 +52,6 @@ export function Navbar() {
             <NavLink to="/coes" className={navLinkClass}>
               COEs
             </NavLink>
-            <NavLink to="/exportar" className={navLinkClass}>
-              Exportar
-            </NavLink>
             {user?.rol === "admin" ? (
               <NavLink to="/configuracion" className={navLinkClass}>
                 Configuracion

@@ -10,7 +10,6 @@ import {
   deleteClient,
   deleteClientPermanently,
   downloadClientCoesExport,
-  downloadClientJsonV7Export,
   getPlaywrightPipelineJob,
   listClients,
   listClientsPaginated,
@@ -225,15 +224,5 @@ export function useDownloadClientCoesMutation(): UseMutationResult<
 > {
   return useMutation({
     mutationFn: downloadClientCoesExport,
-  });
-}
-
-export function useDownloadClientJsonV7Mutation(): UseMutationResult<
-  DownloadFileResult,
-  Error,
-  DownloadClientCoesInput
-> {
-  return useMutation({
-    mutationFn: downloadClientJsonV7Export,
   });
 }

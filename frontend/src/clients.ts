@@ -16,6 +16,13 @@ export interface Client {
   keyFileName: string | null;
   certUploadedAt: string | null;
   coesCount: number;
+  schedulerActivo: boolean;
+  schedulerDiasSemana: string[];
+  schedulerHoraLocal: string | null;
+  schedulerDiasExtraccion: number;
+  schedulerUltimoOk: string | null;
+  schedulerUltimoError: string | null;
+  schedulerUltimoErrorEn: string | null;
 }
 
 export interface CreateClientInput {
@@ -286,6 +293,12 @@ function normalizeClient(raw: unknown): Client {
     asBoolean(credentials.certificados_cargados) ||
     Boolean(certFileName && keyFileName);
 
+  const rawDiasSemana = Array.isArray(data.scheduler_dias_semana)
+    ? data.scheduler_dias_semana.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : [];
+
   return {
     id: Number(data.id ?? 0),
     empresa: asString(data.empresa || data.razon_social || ""),
@@ -300,6 +313,13 @@ function normalizeClient(raw: unknown): Client {
     keyFileName,
     certUploadedAt: asNullableString(data.cert_uploaded_at),
     coesCount: Number(data.coes_count ?? 0),
+    schedulerActivo: asBoolean(data.scheduler_activo, false),
+    schedulerDiasSemana: rawDiasSemana,
+    schedulerHoraLocal: asNullableString(data.scheduler_hora_local),
+    schedulerDiasExtraccion: asNumber(data.scheduler_dias_extraccion, 90),
+    schedulerUltimoOk: asNullableString(data.scheduler_ultimo_ok),
+    schedulerUltimoError: asNullableString(data.scheduler_ultimo_error),
+    schedulerUltimoErrorEn: asNullableString(data.scheduler_ultimo_error_en),
   };
 }
 
@@ -697,34 +717,3 @@ export async function downloadClientCoesExport(
   return { blob, fileName };
 }
 
-export async function downloadClientJsonV7Export(
-  input: DownloadClientCoesInput
-): Promise<DownloadFileResult> {
-  const params = new URLSearchParams();
-  if (input.fechaDesde) params.set("fecha_desde", input.fechaDesde);
-  if (input.fechaHasta) params.set("fecha_hasta", input.fechaHasta);
-  if (input.mes != null) params.set("mes", String(input.mes));
-  if (input.anio != null) params.set("anio", String(input.anio));
-
-  const qs = params.toString();
-  const url = `/clients/${input.clientId}/export/json-v7${qs ? `?${qs}` : ""}`;
-
-  const res = await fetchWithAuth(url, { method: "GET" });
-
-  if (!res.ok) {
-    const payload = await readResponseBody(res);
-    throw new Error(parseApiError(payload, "No se pudo descargar el archivo JSON v7"));
-  }
-
-  const text = await res.text();
-  const data = JSON.parse(text) as Record<string, unknown>;
-  const liquidaciones = Array.isArray(data.liquidaciones) ? data.liquidaciones : [];
-  if (liquidaciones.length === 0) {
-    throw new Error("No se encontraron liquidaciones para el período seleccionado");
-  }
-
-  const blob = new Blob([text], { type: "application/json" });
-  const fallbackName = `liquidaciones_v7_${input.clientId}.json`;
-  const fileName = resolveDownloadFileName(res.headers.get("content-disposition"), fallbackName);
-  return { blob, fileName };
-}

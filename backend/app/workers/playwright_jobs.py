@@ -168,6 +168,62 @@ def _persist_taxpayer_failure(
     return user_es, tech_combined
 
 
+SCHEDULER_OPERATION_PREFIX = "scheduler_"
+SCHEDULER_ERROR_MAX_LEN = 1000
+
+
+def _actualizar_scheduler_status(
+    job: ExtractionJob,
+    *,
+    final_status: str,
+    error_text: str | None,
+) -> None:
+    """Si `job.operation` arranca con `scheduler_`, actualiza el Taxpayer
+    correspondiente con `scheduler_ultimo_ok` o `scheduler_ultimo_error`.
+
+    Reglas:
+    - Solo actúa si la operation es de scheduler — los endpoints manuales
+      (`playwright_lpg_run`) NO tocan estas columnas.
+    - `final_status` debe ser uno de: "completed", "partial", "failed".
+      "completed" o "partial" → éxito. "failed" → error.
+    - Si éxito: `scheduler_ultimo_ok=now`, limpia `scheduler_ultimo_error`
+      y `scheduler_ultimo_error_en` a `None`.
+    - Si error: `scheduler_ultimo_error=str(error)[:1000]`,
+      `scheduler_ultimo_error_en=now`. No limpia `scheduler_ultimo_ok`.
+    """
+    if not job or not job.operation:
+        return
+    if not job.operation.startswith(SCHEDULER_OPERATION_PREFIX):
+        return
+
+    taxpayer = Taxpayer.query.get(job.taxpayer_id)
+    if taxpayer is None:
+        logger.warning(
+            "SCHEDULER_HOOK_TAXPAYER_NOT_FOUND | job_id=%s taxpayer_id=%s",
+            job.id,
+            job.taxpayer_id,
+        )
+        return
+
+    ahora = now_cordoba_naive()
+    if final_status in {"completed", "partial"}:
+        taxpayer.scheduler_ultimo_ok = ahora
+        taxpayer.scheduler_ultimo_error = None
+        taxpayer.scheduler_ultimo_error_en = None
+    else:
+        text = (error_text or "").strip() or "Falla desconocida"
+        taxpayer.scheduler_ultimo_error = text[:SCHEDULER_ERROR_MAX_LEN]
+        taxpayer.scheduler_ultimo_error_en = ahora
+
+    db.session.commit()
+    logger.info(
+        "SCHEDULER_HOOK_ACTUALIZADO | taxpayer_id=%s job_id=%s status=%s",
+        taxpayer.id,
+        job.id,
+        final_status,
+    )
+
+
 def run_playwright_pipeline_job(
     *,
     extraction_job_id: int,
@@ -313,8 +369,8 @@ def run_playwright_pipeline_job(
                 ):
                     status = "failed"
                     error_message = (
-                        "No se pudo procesar ningún cliente. "
-                        "Revisá logs del worker para detalle técnico."
+                        "Hubo un problema al consultar las liquidaciones. "
+                        "Reintentará automáticamente."
                     )
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]
@@ -324,8 +380,8 @@ def run_playwright_pipeline_job(
                 ):
                     status = "partial"
                     error_message = (
-                        "Algunos clientes no pudieron procesarse. "
-                        "Revisá el detalle por cliente."
+                        "Algunas empresas no pudieron consultarse. "
+                        "Revisá el detalle por empresa."
                     )
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]
@@ -341,6 +397,22 @@ def run_playwright_pipeline_job(
                 failure_message_user=job_failure_user,
                 failure_message_technical=job_failure_tech,
             )
+            # Hook scheduler: actualiza Taxpayer.scheduler_ultimo_ok/error
+            # solo cuando la operation arranca con "scheduler_".
+            try:
+                refreshed = ExtractionJob.query.get(extraction_job_id)
+                _actualizar_scheduler_status(
+                    refreshed,
+                    final_status=status,
+                    error_text=error_message,
+                )
+            except Exception:
+                db.session.rollback()
+                logger.exception(
+                    "SCHEDULER_HOOK_FAILED | job_id=%s status=%s",
+                    extraction_job_id,
+                    status,
+                )
             logger.info(
                 "JOB_FINISHED | job_id=%s status=%s taxpayers_total=%s taxpayers_ok=%s taxpayers_partial=%s taxpayers_error=%s",
                 extraction_job_id,
@@ -363,4 +435,18 @@ def run_playwright_pipeline_job(
                 failure_message_user=user_es,
                 failure_message_technical=tech_combined,
             )
+            # Hook scheduler: registrar la falla en el Taxpayer si corresponde.
+            try:
+                refreshed = ExtractionJob.query.get(extraction_job_id)
+                _actualizar_scheduler_status(
+                    refreshed,
+                    final_status="failed",
+                    error_text=str(exc),
+                )
+            except Exception:
+                db.session.rollback()
+                logger.exception(
+                    "SCHEDULER_HOOK_FAILED | job_id=%s status=failed",
+                    extraction_job_id,
+                )
             logger.exception("JOB_FAILED | job_id=%s error=%s", extraction_job_id, exc)

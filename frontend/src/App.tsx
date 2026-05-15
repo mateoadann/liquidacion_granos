@@ -2,14 +2,13 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "./components/layout/Layout";
 import { ProtectedRoute } from "./components/layout";
-import { LoginPage, HomePage } from "./pages";
+import { LoginPage, HomePage, SchedulerPage } from "./pages";
 import { ClientsListPage } from "./pages/ClientsListPage";
 import { ClientDetailPage } from "./pages/ClientDetailPage";
 import { ClientEditPage } from "./pages/ClientEditPage";
 import { ClientCertificatesPage } from "./pages/ClientCertificatesPage";
 import { CoesListPage } from "./pages/CoesListPage";
 import { CoeDetailPage } from "./pages/CoeDetailPage";
-import { ExportPage } from "./pages/ExportPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { UsersListPage } from "./pages/UsersListPage";
 
@@ -33,13 +32,13 @@ export default function App() {
             <Route path="/clientes/:id/certificados" element={<Layout><ClientCertificatesPage /></Layout>} />
             <Route path="/coes" element={<Layout><CoesListPage /></Layout>} />
             <Route path="/coes/:id" element={<Layout><CoeDetailPage /></Layout>} />
-            <Route path="/exportar" element={<Layout><ExportPage /></Layout>} />
           </Route>
 
           {/* Rutas admin */}
           <Route element={<ProtectedRoute requireAdmin />}>
             <Route path="/configuracion" element={<Layout><ConfigPage /></Layout>} />
             <Route path="/configuracion/usuarios" element={<Layout><UsersListPage /></Layout>} />
+            <Route path="/configuracion/scheduler" element={<Layout><SchedulerPage /></Layout>} />
           </Route>
 
           {/* Fallback */}

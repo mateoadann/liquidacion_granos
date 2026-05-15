@@ -43,11 +43,31 @@ services:
     depends_on:
       - postgres
       - redis
+      - backend
     volumes:
       - ./backend:/app
       - ./data:/app/data
       - ./certificados_clientes:/app/certificados_clientes
-    command: sh -c "flask --app run.py db upgrade && python worker.py"
+    command: python worker.py
+
+  scheduler_worker:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Argentina/Cordoba
+      - SCHEDULER_TICK_INTERVAL_SECONDS=60
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./certificados_clientes:/app/certificados_clientes
+    command: python -u worker_scheduler.py
+    restart: unless-stopped
 
   frontend:
     build:

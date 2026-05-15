@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import CertificateUpload from "./CertificateUpload";
-import CoeExportPanel from "./CoeExportPanel";
 import ClientForm, { type ClientFormMode, type ClientFormValues } from "./ClientForm";
 import ClientTable from "./ClientTable";
 import ConfigValidationPanel from "./ConfigValidationPanel";
@@ -9,7 +8,6 @@ import type { Client, ClientValidationResult, PlaywrightPipelineRunResult } from
 import {
   useClientsQuery,
   useCreateClientMutation,
-  useDownloadClientJsonV7Mutation,
   usePlaywrightJobQuery,
   useDeleteClientMutation,
   useRunPlaywrightPipelineMutation,
@@ -18,7 +16,7 @@ import {
   useValidateConfigMutation,
 } from "./useClients";
 
-type PageView = "list" | "form" | "certificates" | "validation" | "exports";
+type PageView = "list" | "form" | "certificates" | "validation";
 
 interface UiMessage {
   type: "success" | "error";
@@ -43,7 +41,6 @@ export default function ClientsPage() {
   const [certificateError, setCertificateError] = useState<string | null>(null);
   const [certificateSuccess, setCertificateSuccess] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [runModalOpen, setRunModalOpen] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<PlaywrightPipelineRunResult | null>(null);
@@ -56,7 +53,6 @@ export default function ClientsPage() {
   const deleteClientMutation = useDeleteClientMutation();
   const uploadCertificatesMutation = useUploadCertificatesMutation();
   const validateConfigMutation = useValidateConfigMutation();
-  const downloadClientJsonV7Mutation = useDownloadClientJsonV7Mutation();
   const runPlaywrightMutation = useRunPlaywrightPipelineMutation();
   const runJobQuery = usePlaywrightJobQuery(runJobId);
 
@@ -80,7 +76,6 @@ export default function ClientsPage() {
   const anyRowActionLoading =
     deleteClientMutation.isPending ||
     uploadCertificatesMutation.isPending ||
-    downloadClientJsonV7Mutation.isPending ||
     validateConfigMutation.isPending ||
     runPlaywrightMutation.isPending;
 
@@ -211,44 +206,6 @@ export default function ClientsPage() {
     void runValidation(client);
   }
 
-  function openExportCoes(client: Client) {
-    setSelectedClient(client);
-    setExportError(null);
-    setView("exports");
-  }
-
-  async function handleDownloadJsonV7(
-    filters: { fechaDesde?: string; fechaHasta?: string; mes?: number; anio?: number }
-  ) {
-    if (!activeClient) return;
-    setExportError(null);
-    try {
-      const file = await downloadClientJsonV7Mutation.mutateAsync({
-        clientId: activeClient.id,
-        fechaDesde: filters.fechaDesde,
-        fechaHasta: filters.fechaHasta,
-        mes: filters.mes,
-        anio: filters.anio,
-      });
-
-      const url = URL.createObjectURL(file.blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = file.fileName;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-
-      setMessage({
-        type: "success",
-        text: `Archivo generado: ${file.fileName}`,
-      });
-    } catch (error) {
-      setExportError(getErrorMessage(error));
-    }
-  }
-
   function openRunModal() {
     setRunError(null);
     setRunModalOpen(true);
@@ -266,7 +223,7 @@ export default function ClientsPage() {
       setRunModalOpen(false);
       setMessage({
         type: "success",
-        text: `Proceso Playwright encolado (job ${job.id}). Seguimiento en logs con 'make logs SERVICE=worker'.`,
+        text: "Consulta iniciada.",
       });
     } catch (error) {
       setRunError(getErrorMessage(error));
@@ -285,13 +242,13 @@ export default function ClientsPage() {
           type: job.result.taxpayersError > 0 ? "error" : "success",
           text:
             job.result.taxpayersError > 0
-              ? `Playwright finalizó con errores (${job.result.taxpayersOk}/${job.result.taxpayersTotal} clientes OK). Revisá logs con 'make logs SERVICE=worker'.`
-              : `Playwright finalizó OK para ${job.result.taxpayersOk} cliente(s). Revisá logs con 'make logs SERVICE=worker'.`,
+              ? `Consulta finalizada con errores: ${job.result.taxpayersOk}/${job.result.taxpayersTotal} empresa(s) OK.`
+              : `Consulta finalizada: ${job.result.taxpayersOk} empresa(s) OK.`,
         });
       } else {
         setMessage({
           type: "error",
-          text: `El job ${job.id} finalizó sin resultado. Revisá logs con 'make logs SERVICE=worker'.`,
+          text: "Hubo un problema con la consulta. Reintentá más tarde.",
         });
       }
       setLastNotifiedJobId(job.id);
@@ -305,8 +262,8 @@ export default function ClientsPage() {
       setMessage({
         type: "error",
         text: job.result
-          ? `Playwright finalizó parcialmente (${job.result.taxpayersOk}/${job.result.taxpayersTotal} clientes OK). Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.`
-          : `El job ${job.id} finalizó parcialmente. Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.`,
+          ? `Consulta finalizada parcialmente: ${job.result.taxpayersOk}/${job.result.taxpayersTotal} empresa(s) OK. Revisá el detalle por empresa.`
+          : "Consulta finalizada parcialmente. Revisá el detalle por empresa.",
       });
       setLastNotifiedJobId(job.id);
       return;
@@ -318,9 +275,7 @@ export default function ClientsPage() {
       }
       setMessage({
         type: "error",
-        text: job.result
-          ? `Playwright finalizó con errores (${job.result.taxpayersOk}/${job.result.taxpayersTotal} clientes OK). ${job.errorMessage ?? ""} Revisá logs con 'make logs SERVICE=worker'.`
-          : `El job ${job.id} falló: ${job.errorMessage ?? "sin detalle"}. Revisá logs con 'make logs SERVICE=worker'.`,
+        text: "Hubo un problema con la consulta. Reintentá más tarde.",
       });
       setLastNotifiedJobId(job.id);
     }
@@ -352,9 +307,9 @@ export default function ClientsPage() {
 
       {runResult ? (
         <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Última corrida Playwright</h2>
+          <h2 className="text-base font-semibold text-slate-900">Última consulta</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Rango: {runResult.fechaDesde} → {runResult.fechaHasta} · Clientes:{" "}
+            Rango: {runResult.fechaDesde} → {runResult.fechaHasta} · Empresas:{" "}
             {runResult.taxpayersTotal} · OK: {runResult.taxpayersOk} · Parciales:{" "}
             {runResult.taxpayersPartial} · Error: {runResult.taxpayersError}
           </p>
@@ -389,9 +344,9 @@ export default function ClientsPage() {
 
       {runJobQuery.data ? (
         <section className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Job Playwright en segundo plano</h2>
+          <h2 className="text-base font-semibold text-slate-900">Consulta en curso</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Job #{runJobQuery.data.id} · Estado: {runJobQuery.data.status}
+            Estado: {runJobQuery.data.status}
           </p>
           {runJobQuery.data.progress ? (
             <>
@@ -412,7 +367,7 @@ export default function ClientsPage() {
                 </div>
                 <p className="mt-1 text-xs text-slate-600">
                   Progreso: {runJobQuery.data.progress.completedClients}/
-                  {runJobQuery.data.progress.totalClients} clientes
+                  {runJobQuery.data.progress.totalClients} empresas
                 </p>
               </div>
               <div className="mt-3 space-y-2">
@@ -456,9 +411,6 @@ export default function ClientsPage() {
               </div>
             </>
           ) : null}
-          <p className="mt-1 text-sm text-slate-600">
-            Logs en tiempo real: <code>make logs SERVICE=worker</code>
-          </p>
         </section>
       ) : null}
 
@@ -480,7 +432,6 @@ export default function ClientsPage() {
           onEdit={openEditForm}
           onCertificates={openCertificates}
           onValidate={openValidation}
-          onExportCoes={openExportCoes}
           onDeactivate={(client) => void handleDeactivate(client)}
           actionDisabled={anyRowActionLoading}
         />
@@ -515,16 +466,6 @@ export default function ClientsPage() {
           isValidating={validateConfigMutation.isPending}
           errorMessage={validationError}
           onRevalidate={() => runValidation(activeClient)}
-          onBack={goToList}
-        />
-      ) : null}
-
-      {view === "exports" && activeClient ? (
-        <CoeExportPanel
-          client={activeClient}
-          isDownloadingJsonV7={downloadClientJsonV7Mutation.isPending}
-          errorMessage={exportError}
-          onDownloadJsonV7={handleDownloadJsonV7}
           onBack={goToList}
         />
       ) : null}
