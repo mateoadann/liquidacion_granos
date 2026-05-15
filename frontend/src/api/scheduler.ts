@@ -86,6 +86,34 @@ export async function patchTaxpayerScheduler(
   return data as SchedulerConfig;
 }
 
+export interface BulkSchedulerConfig {
+  activo?: boolean;
+  dias_semana?: string[];
+  hora_local?: string;
+  dias_extraccion?: number;
+}
+
+export interface BulkSchedulerResponse {
+  actualizados: number;
+  taxpayer_ids: number[];
+  config_aplicada: BulkSchedulerConfig;
+}
+
+export async function bulkUpdateScheduler(
+  taxpayerIds: number[],
+  config: BulkSchedulerConfig,
+): Promise<BulkSchedulerResponse> {
+  const res = await fetchWithAuth("/scheduler/bulk", {
+    method: "PATCH",
+    body: JSON.stringify({ taxpayer_ids: taxpayerIds, config }),
+  });
+  const data = await readJson(res);
+  if (!res.ok) {
+    throw new Error(parseApiError(data, "Error al actualizar el scheduler en bloque"));
+  }
+  return data as BulkSchedulerResponse;
+}
+
 export async function runSchedulerNow(taxpayerId: number): Promise<RunNowResponse> {
   const res = await fetchWithAuth(`/scheduler/run-now/${taxpayerId}`, {
     method: "POST",

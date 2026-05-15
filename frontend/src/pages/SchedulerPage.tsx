@@ -1,11 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { PageHeader } from "../components/layout";
 import {
   Alert,
   Badge,
   Button,
   Card,
-  ConfirmModal,
   Modal,
   Spinner,
   Table,
@@ -14,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui";
-import { SchedulerStatusCard } from "../components/dashboard";
+import { BulkSchedulerModal, SchedulerStatusCard } from "../components/dashboard";
 import { useClientsQuery } from "../hooks/useClients";
 import {
   useRunSchedulerNowMutation,
@@ -78,22 +77,13 @@ export function SchedulerPage() {
   });
   const [editError, setEditError] = useState<string | null>(null);
 
-  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const [pendingToggleId, setPendingToggleId] = useState<number | null>(null);
   const [pendingRunNowId, setPendingRunNowId] = useState<number | null>(null);
 
   const clients = clientsQuery.data ?? [];
-
-  const bulkCandidates = useMemo(
-    () =>
-      clients.filter(
-        (c) => c.activo && c.playwrightEnabled && !c.schedulerActivo,
-      ),
-    [clients],
-  );
 
   function showToast(next: ToastState) {
     setToast(next);
@@ -209,39 +199,6 @@ export function SchedulerPage() {
     }
   }
 
-  async function handleBulkActivate() {
-    setBulkConfirmOpen(false);
-    if (bulkCandidates.length === 0) {
-      showToast({
-        variant: "info",
-        message: "No hay empresas elegibles para activar en bloque.",
-      });
-      return;
-    }
-    setBulkRunning(true);
-    let ok = 0;
-    let fail = 0;
-    for (const candidate of bulkCandidates) {
-      try {
-        await updateMutation.mutateAsync({
-          taxpayerId: candidate.id,
-          body: { activo: true },
-        });
-        ok += 1;
-      } catch {
-        fail += 1;
-      }
-    }
-    setBulkRunning(false);
-    showToast({
-      variant: fail === 0 ? "success" : "error",
-      message:
-        fail === 0
-          ? `Scheduler activado en ${ok} empresa(s).`
-          : `Activación parcial: ${ok} OK, ${fail} con error.`,
-    });
-  }
-
   const diasExtraccionInvalido =
     !Number.isInteger(editForm.diasExtraccion) ||
     editForm.diasExtraccion < DIAS_EXTRACCION_MIN ||
@@ -263,11 +220,10 @@ export function SchedulerPage() {
         actions={
           <Button
             variant="primary"
-            onClick={() => setBulkConfirmOpen(true)}
-            disabled={bulkRunning || bulkCandidates.length === 0}
-            isLoading={bulkRunning}
+            onClick={() => setBulkOpen(true)}
+            disabled={clients.length === 0}
           >
-            Activar en bloque ({bulkCandidates.length})
+            Programar masivamente
           </Button>
         }
       />
@@ -588,16 +544,12 @@ export function SchedulerPage() {
         </div>
       </Modal>
 
-      <ConfirmModal
-        isOpen={bulkConfirmOpen}
-        onClose={() => setBulkConfirmOpen(false)}
-        onConfirm={handleBulkActivate}
-        title="Activar scheduler en bloque"
-        message={`Se activará el scheduler en ${bulkCandidates.length} empresa(s) elegibles (con Playwright habilitado y empresa activa). ¿Continuar?`}
-        confirmLabel="Activar"
-        cancelLabel="Cancelar"
-        variant="primary"
-        isLoading={bulkRunning}
+      <BulkSchedulerModal
+        isOpen={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        clients={clients}
+        onSuccess={(message) => showToast({ variant: "success", message })}
+        onError={(message) => showToast({ variant: "error", message })}
       />
     </div>
   );

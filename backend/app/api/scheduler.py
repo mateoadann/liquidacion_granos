@@ -212,6 +212,149 @@ def run_scheduler_now(taxpayer_id: int):
     )
 
 
+def _validate_bulk_config(config: dict) -> tuple[dict | None, tuple | None]:
+    """Valida el dict ``config`` con la misma semántica del PATCH unitario.
+
+    Retorna ``(cambios, None)`` si todo está OK, o ``(None, error_response)``
+    cuando alguna validación falla. ``cambios`` es un dict listo para aplicar
+    sobre cada Taxpayer (claves: ``scheduler_activo``, ``scheduler_dias_semana``
+    (ya en CSV), ``scheduler_hora_local``, ``scheduler_dias_extraccion``).
+    """
+    cambios: dict[str, Any] = {}
+
+    if "activo" in config:
+        val = config["activo"]
+        if not isinstance(val, bool):
+            return None, _error(
+                "validacion_fallida",
+                "activo debe ser booleano.",
+                422,
+                detalle={"recibido": val},
+            )
+        cambios["scheduler_activo"] = val
+
+    if "dias_semana" in config:
+        dias = config["dias_semana"]
+        if not isinstance(dias, list):
+            return None, _error(
+                "dias_semana_invalido",
+                "dias_semana debe ser una lista.",
+                422,
+            )
+        invalidos = [d for d in dias if not isinstance(d, str) or d not in DIAS_VALIDOS]
+        if invalidos:
+            return None, _error(
+                "dias_semana_invalido",
+                "Algún día no es válido. Valores aceptados: lun, mar, mie, jue, vie, sab, dom.",
+                422,
+                detalle={"invalidos": invalidos},
+            )
+        cambios["scheduler_dias_semana"] = ",".join(dias)
+
+    if "hora_local" in config:
+        hora = config["hora_local"]
+        if not isinstance(hora, str) or not HORA_LOCAL_REGEX.match(hora):
+            return None, _error(
+                "hora_local_invalida",
+                "hora_local debe tener formato HH:MM (24h).",
+                422,
+                detalle={"recibido": hora},
+            )
+        cambios["scheduler_hora_local"] = hora
+
+    if "dias_extraccion" in config:
+        val = config["dias_extraccion"]
+        if isinstance(val, bool) or not isinstance(val, int) or val < 1 or val > 366:
+            return None, _error(
+                "validacion_fallida",
+                "dias_extraccion debe ser entero entre 1 y 366.",
+                422,
+                detalle={"recibido": val},
+            )
+        cambios["scheduler_dias_extraccion"] = val
+
+    return cambios, None
+
+
+@scheduler_bp.patch("/scheduler/bulk")
+@require_auth
+@require_admin
+def bulk_update_scheduler():
+    payload = request.get_json(silent=True) or {}
+
+    taxpayer_ids = payload.get("taxpayer_ids")
+    if not isinstance(taxpayer_ids, list) or not taxpayer_ids:
+        return _error(
+            "validacion_fallida",
+            "taxpayer_ids debe ser una lista no vacía.",
+            422,
+            detalle={"recibido": taxpayer_ids},
+        )
+
+    no_enteros = [
+        i for i in taxpayer_ids if isinstance(i, bool) or not isinstance(i, int)
+    ]
+    if no_enteros:
+        return _error(
+            "validacion_fallida",
+            "taxpayer_ids debe contener solo enteros.",
+            422,
+            detalle={"invalidos": no_enteros},
+        )
+
+    config = payload.get("config")
+    if not isinstance(config, dict) or not config:
+        return _error(
+            "validacion_fallida",
+            "config debe ser un objeto con al menos un campo a actualizar.",
+            422,
+        )
+
+    cambios, error_response = _validate_bulk_config(config)
+    if error_response is not None:
+        return error_response
+
+    # Lookup atómico: una sola query.
+    encontrados = Taxpayer.query.filter(Taxpayer.id.in_(taxpayer_ids)).all()
+    ids_encontrados = {t.id for t in encontrados}
+    ids_pedidos = set(taxpayer_ids)
+    faltan = sorted(ids_pedidos - ids_encontrados)
+    if faltan:
+        return _error(
+            "taxpayers_no_encontrados",
+            f"No existen {len(faltan)} taxpayer(s) solicitado(s).",
+            404,
+            detalle={"faltan": faltan},
+        )
+
+    try:
+        now = now_cordoba_naive()
+        for t in encontrados:
+            for attr, value in (cambios or {}).items():
+                setattr(t, attr, value)
+            t.updated_at = now
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception("SCHEDULER_BULK_UPDATE_FAILED | error=%s", exc)
+        return _error(
+            "bulk_update_fallido",
+            "No se pudo aplicar la actualización masiva.",
+            500,
+        )
+
+    return (
+        jsonify(
+            {
+                "actualizados": len(encontrados),
+                "taxpayer_ids": sorted(ids_encontrados),
+                "config_aplicada": config,
+            }
+        ),
+        200,
+    )
+
+
 @scheduler_bp.get("/scheduler/status")
 @require_auth
 @require_admin

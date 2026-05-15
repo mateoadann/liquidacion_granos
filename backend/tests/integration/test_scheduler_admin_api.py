@@ -324,6 +324,215 @@ def test_get_status_devuelve_totales_correctos(client, admin_headers):
     assert body["con_error_reciente"] == []
 
 
+# --- PATCH /api/scheduler/bulk ------------------------------------------
+
+
+def test_bulk_actualiza_multiples_taxpayers(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444441", scheduler_activo=False)
+    t2 = _create_taxpayer(cuit="20444444442", scheduler_activo=False)
+    t3 = _create_taxpayer(cuit="20444444443", scheduler_activo=False)
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id, t2.id, t3.id],
+            "config": {
+                "activo": True,
+                "dias_semana": ["lun", "mie", "vie"],
+                "hora_local": "07:30",
+                "dias_extraccion": 45,
+            },
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["actualizados"] == 3
+    assert sorted(body["taxpayer_ids"]) == sorted([t1.id, t2.id, t3.id])
+    assert body["config_aplicada"]["activo"] is True
+    assert body["config_aplicada"]["dias_extraccion"] == 45
+
+    for t in (t1, t2, t3):
+        db.session.refresh(t)
+        assert t.scheduler_activo is True
+        assert t.scheduler_dias_semana == "lun,mie,vie"
+        assert t.scheduler_hora_local == "07:30"
+        assert t.scheduler_dias_extraccion == 45
+
+
+def test_bulk_sin_taxpayer_ids_devuelve_422(client, admin_headers):
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"config": {"activo": True}},
+        headers=admin_headers,
+    )
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "validacion_fallida"
+
+
+def test_bulk_taxpayer_ids_vacio_devuelve_422(client, admin_headers):
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [], "config": {"activo": True}},
+        headers=admin_headers,
+    )
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "validacion_fallida"
+
+
+def test_bulk_taxpayer_ids_no_lista_devuelve_422(client, admin_headers):
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": "1,2,3", "config": {"activo": True}},
+        headers=admin_headers,
+    )
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "validacion_fallida"
+
+
+def test_bulk_config_vacio_devuelve_422(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444450")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [t1.id], "config": {}},
+        headers=admin_headers,
+    )
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "validacion_fallida"
+
+
+def test_bulk_id_inexistente_devuelve_404_con_detalle(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444451")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id, 999_999],
+            "config": {"activo": True},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 404
+    body = response.get_json()
+    assert body["error"] == "taxpayers_no_encontrados"
+    assert body["detalle"]["faltan"] == [999_999]
+
+
+def test_bulk_id_inexistente_NO_actualiza_los_demas(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444461", scheduler_activo=False)
+    t2 = _create_taxpayer(cuit="20444444462", scheduler_activo=False)
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id, 999_999, t2.id],
+            "config": {"activo": True},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 404
+    # Atomicidad: ningún taxpayer válido debe haberse tocado.
+    db.session.refresh(t1)
+    db.session.refresh(t2)
+    assert t1.scheduler_activo is False
+    assert t2.scheduler_activo is False
+
+
+def test_bulk_actualiza_solo_los_campos_provistos(client, admin_headers):
+    t1 = _create_taxpayer(
+        cuit="20444444471",
+        scheduler_dias_semana="lun,mar,mie",
+        scheduler_hora_local="06:00",
+    )
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id],
+            "config": {"dias_extraccion": 15},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    db.session.refresh(t1)
+    # dias_extraccion cambió, lo demás no.
+    assert t1.scheduler_dias_extraccion == 15
+    assert t1.scheduler_dias_semana == "lun,mar,mie"
+    assert t1.scheduler_hora_local == "06:00"
+
+
+def test_bulk_dias_extraccion_fuera_de_rango_devuelve_422(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444481")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id],
+            "config": {"dias_extraccion": 500},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "validacion_fallida"
+
+
+def test_bulk_hora_local_mal_formada_devuelve_422(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444491")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id],
+            "config": {"hora_local": "26:99"},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"] == "hora_local_invalida"
+
+
+def test_bulk_dia_semana_invalido_devuelve_422(client, admin_headers):
+    t1 = _create_taxpayer(cuit="20444444501")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id],
+            "config": {"dias_semana": ["lun", "xxx"]},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "dias_semana_invalido"
+    assert body["detalle"]["invalidos"] == ["xxx"]
+
+
+def test_bulk_sin_auth_devuelve_401(client):
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [1], "config": {"activo": True}},
+    )
+    assert response.status_code == 401
+
+
+def test_bulk_sin_admin_devuelve_403(client, auth_headers):
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [1], "config": {"activo": True}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
+
+
 def test_get_status_incluye_con_error_reciente(client, admin_headers):
     err_en = datetime(2026, 5, 14, 6, 15, 0)
     _create_taxpayer(
