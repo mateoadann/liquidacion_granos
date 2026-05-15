@@ -62,11 +62,11 @@ export function SchedulerStatusCard({
         <StatBlock
           label="Empresas activas"
           value={total}
-          helper={`${activos} con scheduler activo`}
+          helper={`${activos} programadas`}
           tone="default"
         />
         <StatBlock
-          label="Programadas (scheduler)"
+          label="Empresas programadas"
           value={activos}
           helper={
             total > 0
@@ -76,7 +76,7 @@ export function SchedulerStatusCard({
           tone="success"
         />
         <StatBlock
-          label="Último scrape global"
+          label="Última consulta global"
           value={ultimoGlobal ? formatDateTime(ultimoGlobal) : "Sin registros"}
           tone={ultimoGlobal ? "default" : "warning"}
         />
@@ -93,10 +93,10 @@ export function SchedulerStatusCard({
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">
-                Empresas con error reciente
+                Empresas con errores recientes
               </h3>
               <p className="text-sm text-slate-500">
-                Últimos errores reportados por el scheduler.
+                Últimos errores al consultar Arca.
               </p>
             </div>
             <Badge variant="error" size="md">

@@ -369,8 +369,8 @@ def run_playwright_pipeline_job(
                 ):
                     status = "failed"
                     error_message = (
-                        "No se pudo procesar ningún cliente. "
-                        "Revisá logs del worker para detalle técnico."
+                        "Hubo un problema al consultar las liquidaciones. "
+                        "Reintentará automáticamente."
                     )
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]
@@ -380,8 +380,8 @@ def run_playwright_pipeline_job(
                 ):
                     status = "partial"
                     error_message = (
-                        "Algunos clientes no pudieron procesarse. "
-                        "Revisá el detalle por cliente."
+                        "Algunas empresas no pudieron consultarse. "
+                        "Revisá el detalle por empresa."
                     )
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]

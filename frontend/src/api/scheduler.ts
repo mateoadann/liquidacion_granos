@@ -31,10 +31,31 @@ export interface PatchSchedulerBody {
   dias_extraccion?: number;
 }
 
+export interface BulkSchedulerBody {
+  taxpayer_ids: number[];
+  activo?: boolean;
+  dias_semana?: string[];
+  hora_local?: string;
+  dias_extraccion?: number;
+}
+
+export interface BulkSchedulerResponse {
+  total: number;
+  actualizados: SchedulerConfig[];
+}
+
 export interface RunNowResponse {
   taxpayer_id: number;
   extraction_job_id: number;
   estado: string;
+}
+
+export interface LastErrorDetail {
+  taxpayer_id: number;
+  extraction_job_id?: number;
+  failure_phase: string | null;
+  failure_message_technical: string | null;
+  finished_at: string | null;
 }
 
 interface ApiErrorBody {
@@ -66,7 +87,7 @@ export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const res = await fetchWithAuth("/scheduler/status", { method: "GET" });
   const data = await readJson(res);
   if (!res.ok) {
-    throw new Error(parseApiError(data, "Error al obtener estado del scheduler"));
+    throw new Error(parseApiError(data, "No se pudo obtener el estado de la programación."));
   }
   return data as SchedulerStatus;
 }
@@ -81,9 +102,27 @@ export async function patchTaxpayerScheduler(
   });
   const data = await readJson(res);
   if (!res.ok) {
-    throw new Error(parseApiError(data, "Error al actualizar el scheduler"));
+    throw new Error(parseApiError(data, "No se pudo actualizar la programación."));
   }
   return data as SchedulerConfig;
+}
+
+export async function bulkUpdateScheduler(
+  body: BulkSchedulerBody,
+): Promise<BulkSchedulerResponse> {
+  const res = await fetchWithAuth("/scheduler/bulk", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  const data = await readJson(res);
+  if (!res.ok) {
+    // Forward backend message but tag 404 specially for the UI.
+    const message = parseApiError(data, "No se pudo programar las empresas.");
+    const error = new Error(message) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
+  return data as BulkSchedulerResponse;
 }
 
 export async function runSchedulerNow(taxpayerId: number): Promise<RunNowResponse> {
@@ -92,7 +131,23 @@ export async function runSchedulerNow(taxpayerId: number): Promise<RunNowRespons
   });
   const data = await readJson(res);
   if (!res.ok) {
-    throw new Error(parseApiError(data, "Error al disparar el scheduler"));
+    throw new Error(parseApiError(data, "No se pudo iniciar la consulta."));
   }
   return data as RunNowResponse;
+}
+
+export async function getLastErrorDetail(
+  taxpayerId: number,
+): Promise<LastErrorDetail> {
+  const res = await fetchWithAuth(
+    `/scheduler/taxpayers/${taxpayerId}/last-error-detail`,
+    { method: "GET" },
+  );
+  const data = await readJson(res);
+  if (!res.ok) {
+    throw new Error(
+      parseApiError(data, "No se pudo obtener el detalle técnico."),
+    );
+  }
+  return data as LastErrorDetail;
 }

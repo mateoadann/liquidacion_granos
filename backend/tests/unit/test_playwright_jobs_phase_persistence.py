@@ -194,7 +194,7 @@ def test_persist_taxpayer_failure_search_service_dropdown_clicked_maps_arca_slow
         exception_text="TimeoutError: Timeout 30000ms exceeded",
     )
 
-    expected_user = "ARCA está respondiendo lento, reintentá en unos minutos."
+    expected_user = "Arca tardó demasiado en responder. Reintentará automáticamente."
     assert user_es == expected_user
     assert tech_combined.startswith("ARCA_SLOW_AFTER_DROPDOWN | ")
 
@@ -246,7 +246,7 @@ def test_persist_taxpayer_failure_phase_none_passes_through(app) -> None:
 
     # UNKNOWN_ERROR mapping with no exception text → tech is just the code.
     assert tech_combined == "UNKNOWN_ERROR"
-    assert "No pudimos completar la extracción" in user_es
+    assert "Ocurrió un problema al consultar Arca" in user_es
 
     clients = (payload.get("progress") or {}).get("clients") or []
     assert clients[0]["failure_phase"] is None
@@ -443,7 +443,7 @@ def test_run_playwright_pipeline_job_failure_calls_mapper_and_truncates(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "failed"
     # Job-level failure_message_user is the ARCA_SLOW_AFTER_DROPDOWN wording.
-    expected_user = "ARCA está respondiendo lento, reintentá en unos minutos."
+    expected_user = "Arca tardó demasiado en responder. Reintentará automáticamente."
     assert refreshed.failure_message_user == expected_user
     assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
     # Technical message contains the tech code AND is truncated.
@@ -689,7 +689,11 @@ def test_run_playwright_pipeline_job_all_error_sets_status_failed(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "failed"
     assert refreshed.error_message is not None
-    assert "No se pudo procesar ningún cliente" in refreshed.error_message
+    assert (
+        refreshed.error_message
+        == "Hubo un problema al consultar las liquidaciones. "
+        "Reintentará automáticamente."
+    )
     assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
     assert refreshed.failure_message_user is not None
     assert refreshed.failure_message_technical is not None
@@ -716,8 +720,10 @@ def test_run_playwright_pipeline_job_mixed_results_sets_status_partial(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "partial"
     assert refreshed.error_message is not None
-    assert "Algunos clientes no pudieron procesarse" in refreshed.error_message
-    assert "Revisá el detalle por cliente" in refreshed.error_message
+    assert refreshed.error_message == (
+        "Algunas empresas no pudieron consultarse. "
+        "Revisá el detalle por empresa."
+    )
     # Partial inherits last_taxpayer_failure info so the user has at least one
     # hint of what went wrong.
     assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
@@ -772,7 +778,10 @@ def test_run_playwright_pipeline_job_partial_coe_level_sets_partial_status(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "partial"
     assert refreshed.error_message is not None
-    assert "Algunos clientes no pudieron procesarse" in refreshed.error_message
+    assert refreshed.error_message == (
+        "Algunas empresas no pudieron consultarse. "
+        "Revisá el detalle por empresa."
+    )
     # El partial poblá last_taxpayer_failure con la phase del COE que falló.
     assert refreshed.failure_phase == ExtractionPhase.SAVING_TO_WS.value
     assert refreshed.failure_message_user is not None
@@ -809,6 +818,9 @@ def test_run_playwright_pipeline_job_one_done_one_partial_sets_partial(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "partial"
     assert refreshed.error_message is not None
-    assert "Algunos clientes no pudieron procesarse" in refreshed.error_message
+    assert refreshed.error_message == (
+        "Algunas empresas no pudieron consultarse. "
+        "Revisá el detalle por empresa."
+    )
     assert refreshed.failure_phase == ExtractionPhase.SAVING_TO_WS.value
     assert refreshed.failure_message_user is not None
