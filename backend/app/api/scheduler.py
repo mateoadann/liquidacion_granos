@@ -57,7 +57,7 @@ def update_taxpayer_scheduler(taxpayer_id: int):
     if t is None:
         return _error(
             "taxpayer_no_encontrado",
-            f"No existe taxpayer con id {taxpayer_id}.",
+            f"La empresa con id {taxpayer_id} no fue encontrada.",
             404,
         )
 
@@ -71,14 +71,14 @@ def update_taxpayer_scheduler(taxpayer_id: int):
         if not isinstance(dias, list):
             return _error(
                 "dias_semana_invalido",
-                "dias_semana debe ser una lista.",
+                "Tenés que elegir al menos un día.",
                 422,
             )
         invalidos = [d for d in dias if not isinstance(d, str) or d not in DIAS_VALIDOS]
         if invalidos:
             return _error(
                 "dias_semana_invalido",
-                "Algún día no es válido. Valores aceptados: lun, mar, mie, jue, vie, sab, dom.",
+                "Hay un día inválido en la selección.",
                 422,
                 detalle={"invalidos": invalidos},
             )
@@ -90,7 +90,7 @@ def update_taxpayer_scheduler(taxpayer_id: int):
         if not isinstance(hora, str) or not HORA_LOCAL_REGEX.match(hora):
             return _error(
                 "hora_local_invalida",
-                "hora_local debe tener formato HH:MM (24h).",
+                "La hora debe tener formato HH:MM.",
                 422,
                 detalle={"recibido": hora},
             )
@@ -102,7 +102,7 @@ def update_taxpayer_scheduler(taxpayer_id: int):
         if isinstance(val, bool) or not isinstance(val, int) or val < 1 or val > 366:
             return _error(
                 "validacion_fallida",
-                "dias_extraccion debe ser entero entre 1 y 366.",
+                "El período debe estar entre 1 y 366 días.",
                 422,
                 detalle={"recibido": val},
             )
@@ -122,14 +122,14 @@ def run_scheduler_now(taxpayer_id: int):
     if t is None:
         return _error(
             "taxpayer_no_encontrado",
-            f"No existe taxpayer con id {taxpayer_id}.",
+            f"La empresa con id {taxpayer_id} no fue encontrada.",
             404,
         )
 
     if not t.activo:
         return _error(
             "taxpayer_inactivo",
-            "El taxpayer está marcado como inactivo. No se puede disparar la extracción.",
+            "La empresa está inactiva. No se puede consultar.",
             409,
             detalle={"taxpayer_id": t.id, "activo": False},
         )
@@ -137,7 +137,7 @@ def run_scheduler_now(taxpayer_id: int):
     if not t.scheduler_activo:
         return _error(
             "scheduler_inactivo",
-            "El scheduler del taxpayer está desactivado. Activalo antes de disparar manualmente.",
+            "La empresa no está programada. Activala antes de consultar manualmente.",
             409,
             detalle={"taxpayer_id": t.id, "scheduler_activo": False},
         )
@@ -160,7 +160,7 @@ def run_scheduler_now(taxpayer_id: int):
             db.session.commit()
             return _error(
                 "playwright_no_instalado",
-                "Playwright no está instalado en backend.",
+                "El servicio de consulta no está disponible. Contactá a soporte.",
                 503,
             )
         raise
@@ -190,7 +190,7 @@ def run_scheduler_now(taxpayer_id: int):
         )
         return _error(
             "encolado_fallido",
-            "No se pudo encolar el job manual. Verificá Redis/worker e intentá nuevamente.",
+            "No se pudo iniciar la consulta. Reintentá en unos minutos.",
             503,
         )
 
@@ -264,3 +264,181 @@ def get_scheduler_status():
             "con_error_reciente": con_error_reciente,
         }
     ), 200
+
+
+@scheduler_bp.patch("/scheduler/bulk")
+@require_auth
+@require_admin
+def bulk_update_scheduler():
+    """Aplica la misma configuración a una lista de taxpayers.
+
+    Body esperado:
+        {
+            "taxpayer_ids": [int, ...],
+            "activo": bool (opcional, default true),
+            "dias_semana": [str, ...] (opcional),
+            "hora_local": "HH:MM" (opcional),
+            "dias_extraccion": int (opcional, 1..366)
+        }
+
+    Reglas:
+    - `taxpayer_ids` no puede estar vacío.
+    - Si algún id no existe en DB, devuelve 404 con la lista de ids faltantes.
+    - Validaciones de campos idénticas al PATCH unitario.
+    - Aplicación atómica: si algún taxpayer falla, hace rollback de todos.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    ids_raw = payload.get("taxpayer_ids")
+    if not isinstance(ids_raw, list) or len(ids_raw) == 0:
+        return _error(
+            "taxpayer_ids_invalido",
+            "Tenés que seleccionar al menos una empresa.",
+            422,
+        )
+    if not all(isinstance(i, int) and not isinstance(i, bool) for i in ids_raw):
+        return _error(
+            "taxpayer_ids_invalido",
+            "Los identificadores de empresa deben ser números enteros.",
+            422,
+        )
+
+    # Validar campos antes de tocar DB.
+    update_fields: dict[str, Any] = {}
+
+    if "activo" in payload:
+        update_fields["activo"] = bool(payload["activo"])
+
+    if "dias_semana" in payload:
+        dias = payload["dias_semana"]
+        if not isinstance(dias, list) or len(dias) == 0:
+            return _error(
+                "dias_semana_invalido",
+                "Tenés que elegir al menos un día.",
+                422,
+            )
+        invalidos = [d for d in dias if not isinstance(d, str) or d not in DIAS_VALIDOS]
+        if invalidos:
+            return _error(
+                "dias_semana_invalido",
+                "Hay un día inválido en la selección.",
+                422,
+                detalle={"invalidos": invalidos},
+            )
+        update_fields["dias_semana"] = list(dias)
+
+    if "hora_local" in payload:
+        hora = payload["hora_local"]
+        if not isinstance(hora, str) or not HORA_LOCAL_REGEX.match(hora):
+            return _error(
+                "hora_local_invalida",
+                "La hora debe tener formato HH:MM.",
+                422,
+                detalle={"recibido": hora},
+            )
+        update_fields["hora_local"] = hora
+
+    if "dias_extraccion" in payload:
+        val = payload["dias_extraccion"]
+        if isinstance(val, bool) or not isinstance(val, int) or val < 1 or val > 366:
+            return _error(
+                "validacion_fallida",
+                "El período debe estar entre 1 y 366 días.",
+                422,
+                detalle={"recibido": val},
+            )
+        update_fields["dias_extraccion"] = val
+
+    # Resolver taxpayers.
+    taxpayers = Taxpayer.query.filter(Taxpayer.id.in_(ids_raw)).all()
+    encontrados = {t.id for t in taxpayers}
+    faltantes = [i for i in ids_raw if i not in encontrados]
+    if faltantes:
+        return _error(
+            "taxpayers_no_encontrados",
+            "Algunas empresas no fueron encontradas.",
+            404,
+            detalle={"faltantes": faltantes},
+        )
+
+    ahora = now_cordoba_naive()
+    for t in taxpayers:
+        if "activo" in update_fields:
+            t.scheduler_activo = update_fields["activo"]
+        if "dias_semana" in update_fields:
+            t.scheduler_dias_semana = ",".join(update_fields["dias_semana"])
+        if "hora_local" in update_fields:
+            t.scheduler_hora_local = update_fields["hora_local"]
+        if "dias_extraccion" in update_fields:
+            t.scheduler_dias_extraccion = update_fields["dias_extraccion"]
+        t.updated_at = ahora
+
+    db.session.commit()
+
+    return (
+        jsonify(
+            {
+                "actualizados": [_serialize_scheduler_config(t) for t in taxpayers],
+                "total": len(taxpayers),
+            }
+        ),
+        200,
+    )
+
+
+@scheduler_bp.get("/scheduler/taxpayers/<int:taxpayer_id>/last-error-detail")
+@require_auth
+@require_admin
+def get_last_error_detail(taxpayer_id: int):
+    """Devuelve el detalle técnico del último ExtractionJob fallido del scheduler
+    para un taxpayer. Pensado para el panel admin: muestra la fase y el mensaje
+    técnico no traducido para diagnosticar problemas que el usuario final no
+    debe ver.
+    """
+    t = Taxpayer.query.get(taxpayer_id)
+    if t is None:
+        return _error(
+            "taxpayer_no_encontrado",
+            f"La empresa con id {taxpayer_id} no fue encontrada.",
+            404,
+        )
+
+    last_failed = (
+        ExtractionJob.query.filter(
+            ExtractionJob.taxpayer_id == taxpayer_id,
+            ExtractionJob.operation.like("scheduler_%"),
+            ExtractionJob.status.in_(("failed", "partial")),
+        )
+        .order_by(ExtractionJob.finished_at.desc().nullslast(), ExtractionJob.id.desc())
+        .first()
+    )
+
+    if last_failed is None:
+        return (
+            jsonify(
+                {
+                    "taxpayer_id": taxpayer_id,
+                    "failure_phase": None,
+                    "failure_message_technical": None,
+                    "finished_at": None,
+                }
+            ),
+            200,
+        )
+
+    return (
+        jsonify(
+            {
+                "taxpayer_id": taxpayer_id,
+                "extraction_job_id": last_failed.id,
+                "failure_phase": last_failed.failure_phase,
+                "failure_message_technical": last_failed.failure_message_technical,
+                "finished_at": (
+                    last_failed.finished_at.isoformat()
+                    if last_failed.finished_at
+                    else None
+                ),
+            }
+        ),
+        200,
+    )

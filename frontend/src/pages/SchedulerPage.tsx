@@ -5,7 +5,6 @@ import {
   Badge,
   Button,
   Card,
-  ConfirmModal,
   Modal,
   Spinner,
   Table,
@@ -14,9 +13,14 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui";
-import { SchedulerStatusCard } from "../components/dashboard";
+import {
+  BulkSchedulerModal,
+  SchedulerStatusCard,
+} from "../components/dashboard";
 import { useClientsQuery } from "../hooks/useClients";
 import {
+  useBulkUpdateSchedulerMutation,
+  useLastErrorDetailQuery,
   useRunSchedulerNowMutation,
   useSchedulerStatusQuery,
   useUpdateTaxpayerSchedulerMutation,
@@ -58,6 +62,15 @@ function toErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function hasStatus(err: unknown): err is { status: number; message: string } {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    typeof (err as { status: unknown }).status === "number"
+  );
+}
+
 interface ToastState {
   variant: "success" | "error" | "info";
   message: string;
@@ -68,6 +81,7 @@ export function SchedulerPage() {
   const statusQuery = useSchedulerStatusQuery();
   const updateMutation = useUpdateTaxpayerSchedulerMutation();
   const runNowMutation = useRunSchedulerNowMutation();
+  const bulkMutation = useBulkUpdateSchedulerMutation();
 
   const [editing, setEditing] = useState<Client | null>(null);
   const [editForm, setEditForm] = useState<EditFormState>({
@@ -78,21 +92,34 @@ export function SchedulerPage() {
   });
   const [editError, setEditError] = useState<string | null>(null);
 
-  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const [pendingToggleId, setPendingToggleId] = useState<number | null>(null);
   const [pendingRunNowId, setPendingRunNowId] = useState<number | null>(null);
+  const [errorDetailTaxpayerId, setErrorDetailTaxpayerId] = useState<
+    number | null
+  >(null);
 
   const clients = clientsQuery.data ?? [];
 
-  const bulkCandidates = useMemo(
-    () =>
-      clients.filter(
-        (c) => c.activo && c.playwrightEnabled && !c.schedulerActivo,
-      ),
+  const eligibleBulkClients = useMemo(
+    () => clients.filter((c) => c.activo && c.playwrightEnabled),
     [clients],
+  );
+
+  const errorDetailQuery = useLastErrorDetailQuery(
+    errorDetailTaxpayerId,
+    errorDetailTaxpayerId !== null,
+  );
+
+  const errorDetailClient = useMemo(
+    () =>
+      errorDetailTaxpayerId !== null
+        ? clients.find((c) => c.id === errorDetailTaxpayerId) ?? null
+        : null,
+    [clients, errorDetailTaxpayerId],
   );
 
   function showToast(next: ToastState) {
@@ -129,11 +156,11 @@ export function SchedulerPage() {
     if (!editing) return;
     setEditError(null);
     if (!HORA_LOCAL_REGEX.test(editForm.horaLocal)) {
-      setEditError("Hora inválida. Formato esperado HH:MM (24h).");
+      setEditError("La hora debe tener formato HH:MM.");
       return;
     }
     if (editForm.diasSemana.length === 0) {
-      setEditError("Seleccioná al menos un día.");
+      setEditError("Elegí al menos un día.");
       return;
     }
     if (
@@ -142,7 +169,7 @@ export function SchedulerPage() {
       editForm.diasExtraccion > DIAS_EXTRACCION_MAX
     ) {
       setEditError(
-        `Días a extraer debe estar entre ${DIAS_EXTRACCION_MIN} y ${DIAS_EXTRACCION_MAX}.`,
+        `El período debe estar entre ${DIAS_EXTRACCION_MIN} y ${DIAS_EXTRACCION_MAX} días.`,
       );
       return;
     }
@@ -160,11 +187,11 @@ export function SchedulerPage() {
       });
       showToast({
         variant: "success",
-        message: `Configuración actualizada para ${editing.empresa}.`,
+        message: `Programación actualizada para ${editing.empresa}.`,
       });
       closeEdit();
     } catch (err) {
-      setEditError(toErrorMessage(err, "No se pudo guardar la configuración."));
+      setEditError(toErrorMessage(err, "No se pudo guardar la programación."));
     }
   }
 
@@ -178,13 +205,13 @@ export function SchedulerPage() {
       showToast({
         variant: "success",
         message: !client.schedulerActivo
-          ? `Scheduler activado para ${client.empresa}.`
-          : `Scheduler desactivado para ${client.empresa}.`,
+          ? `${client.empresa} quedó programada.`
+          : `${client.empresa} quedó pausada.`,
       });
     } catch (err) {
       showToast({
         variant: "error",
-        message: toErrorMessage(err, "No se pudo actualizar el scheduler."),
+        message: toErrorMessage(err, "No se pudo actualizar la programación."),
       });
     } finally {
       setPendingToggleId(null);
@@ -194,52 +221,50 @@ export function SchedulerPage() {
   async function handleRunNow(client: Client) {
     setPendingRunNowId(client.id);
     try {
-      const result = await runNowMutation.mutateAsync(client.id);
+      await runNowMutation.mutateAsync(client.id);
       showToast({
         variant: "success",
-        message: `Job ${result.extraction_job_id} encolado para ${client.empresa}.`,
+        message: "Consulta iniciada.",
       });
     } catch (err) {
       showToast({
         variant: "error",
-        message: toErrorMessage(err, "No se pudo disparar la extracción."),
+        message: toErrorMessage(
+          err,
+          "No se pudo iniciar la consulta. Reintentá más tarde.",
+        ),
       });
     } finally {
       setPendingRunNowId(null);
     }
   }
 
-  async function handleBulkActivate() {
-    setBulkConfirmOpen(false);
-    if (bulkCandidates.length === 0) {
+  async function handleBulkSubmit(body: {
+    taxpayer_ids: number[];
+    activo: boolean;
+    dias_semana: string[];
+    hora_local: string;
+    dias_extraccion: number;
+  }) {
+    setBulkError(null);
+    try {
+      const result = await bulkMutation.mutateAsync(body);
+      setBulkModalOpen(false);
       showToast({
-        variant: "info",
-        message: "No hay empresas elegibles para activar en bloque.",
+        variant: "success",
+        message: `${result.total} ${
+          result.total === 1 ? "empresa programada" : "empresas programadas"
+        }.`,
       });
-      return;
-    }
-    setBulkRunning(true);
-    let ok = 0;
-    let fail = 0;
-    for (const candidate of bulkCandidates) {
-      try {
-        await updateMutation.mutateAsync({
-          taxpayerId: candidate.id,
-          body: { activo: true },
-        });
-        ok += 1;
-      } catch {
-        fail += 1;
+    } catch (err) {
+      if (hasStatus(err) && err.status === 404) {
+        setBulkError("Algunas empresas no se encontraron. Reintentá.");
+      } else {
+        setBulkError(
+          toErrorMessage(err, "No se pudieron programar las empresas."),
+        );
       }
     }
-    setBulkRunning(false);
-    showToast({
-      variant: fail === 0 ? "success" : "error",
-      message:
-        fail === 0
-          ? `Scheduler activado en ${ok} empresa(s).`
-          : `Activación parcial: ${ok} OK, ${fail} con error.`,
-    });
   }
 
   const diasExtraccionInvalido =
@@ -252,22 +277,27 @@ export function SchedulerPage() {
     ? toErrorMessage(clientsQuery.error, "Error al cargar empresas.")
     : null;
   const statusError = statusQuery.error
-    ? toErrorMessage(statusQuery.error, "Error al cargar el estado del scheduler.")
+    ? toErrorMessage(
+        statusQuery.error,
+        "Error al cargar el estado de la programación.",
+      )
     : null;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Scheduler de extracción automática"
-        subtitle="Gestioná los disparos programados de Arca por empresa."
+        title="Programación de consultas"
+        subtitle="Programar consultas automáticas a Arca por empresa"
         actions={
           <Button
             variant="primary"
-            onClick={() => setBulkConfirmOpen(true)}
-            disabled={bulkRunning || bulkCandidates.length === 0}
-            isLoading={bulkRunning}
+            onClick={() => {
+              setBulkError(null);
+              setBulkModalOpen(true);
+            }}
+            disabled={eligibleBulkClients.length === 0}
           >
-            Activar en bloque ({bulkCandidates.length})
+            Programar empresas
           </Button>
         }
       />
@@ -284,7 +314,8 @@ export function SchedulerPage() {
         <div className="border-b border-slate-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-900">Empresas</h2>
           <p className="text-sm text-slate-500">
-            Configurá el scheduler de cada empresa o ejecutá una extracción manual.
+            Configurá la programación de cada empresa o consultá Arca
+            manualmente.
           </p>
         </div>
 
@@ -306,15 +337,10 @@ export function SchedulerPage() {
               <TableRow>
                 <TableCell header>Empresa</TableCell>
                 <TableCell header>CUIT</TableCell>
-                <TableCell header>Scheduler</TableCell>
+                <TableCell header>Estado</TableCell>
                 <TableCell header>Días</TableCell>
                 <TableCell header>Hora</TableCell>
-                <TableCell header>
-                  <span title="Ventana temporal hacia atrás desde hoy para cada scrape">
-                    Días extracción
-                  </span>
-                </TableCell>
-                <TableCell header>Último OK</TableCell>
+                <TableCell header>Última consulta exitosa</TableCell>
                 <TableCell header>Último error</TableCell>
                 <TableCell header className="text-right">
                   Acciones
@@ -338,37 +364,47 @@ export function SchedulerPage() {
                       </div>
                       {!client.activo ? (
                         <Badge variant="warning" className="mt-1">
-                          Inactivo
+                          Inactiva
                         </Badge>
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs">{client.cuitRepresentado || client.cuit}</code>
+                      <code className="text-xs">
+                        {client.cuitRepresentado || client.cuit}
+                      </code>
                     </TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleActivo(client)}
-                        disabled={togglePending || !client.activo}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                          client.schedulerActivo
-                            ? "bg-emerald-500"
-                            : "bg-slate-300"
-                        }`}
-                        aria-label={
-                          client.schedulerActivo
-                            ? "Desactivar scheduler"
-                            : "Activar scheduler"
-                        }
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleActivo(client)}
+                          disabled={togglePending || !client.activo}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                             client.schedulerActivo
-                              ? "translate-x-6"
-                              : "translate-x-1"
+                              ? "bg-emerald-500"
+                              : "bg-slate-300"
                           }`}
-                        />
-                      </button>
+                          aria-label={
+                            client.schedulerActivo
+                              ? "Pausar programación"
+                              : "Activar programación"
+                          }
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              client.schedulerActivo
+                                ? "translate-x-6"
+                                : "translate-x-1"
+                            }`}
+                          />
+                        </button>
+                        <Badge
+                          variant={client.schedulerActivo ? "success" : "default"}
+                          size="sm"
+                        >
+                          {client.schedulerActivo ? "Activa" : "Pausada"}
+                        </Badge>
+                      </div>
                     </TableCell>
                     <TableCell>
                       {client.schedulerDiasSemana.length === 0 ? (
@@ -389,26 +425,26 @@ export function SchedulerPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span
-                        className="text-sm tabular-nums text-slate-700"
-                        title="Ventana temporal hacia atrás desde hoy para cada scrape"
-                      >
-                        {client.schedulerDiasExtraccion} d
-                      </span>
-                    </TableCell>
-                    <TableCell>
                       <span className="text-xs text-slate-600">
                         {formatDateTime(client.schedulerUltimoOk)}
                       </span>
                     </TableCell>
                     <TableCell>
                       {errorMessage ? (
-                        <span
-                          title={errorMessage}
-                          className="inline-flex max-w-[14rem] truncate"
-                        >
-                          <Badge variant="error">{errorMessage}</Badge>
-                        </span>
+                        <div className="max-w-[16rem]">
+                          <Badge variant="error" className="whitespace-normal">
+                            {errorMessage}
+                          </Badge>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setErrorDetailTaxpayerId(client.id)
+                            }
+                            className="block text-xs text-blue-600 underline mt-1 hover:text-blue-800"
+                          >
+                            Ver detalle técnico
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
@@ -431,11 +467,11 @@ export function SchedulerPage() {
                           isLoading={runPending}
                           title={
                             canRunNow
-                              ? "Disparar extracción ahora"
-                              : "El scheduler debe estar activo y la empresa habilitada"
+                              ? "Consultar Arca ahora"
+                              : "Activá la programación de la empresa para consultar manualmente."
                           }
                         >
-                          Scrapear ahora
+                          Consultar ahora
                         </Button>
                       </div>
                     </TableCell>
@@ -452,8 +488,8 @@ export function SchedulerPage() {
         onClose={closeEdit}
         title={
           editing
-            ? `Configurar scheduler — ${editing.empresa}`
-            : "Configurar scheduler"
+            ? `Configurar programación — ${editing.empresa}`
+            : "Configurar programación"
         }
         size="lg"
         footer={
@@ -507,7 +543,7 @@ export function SchedulerPage() {
               className="block text-sm font-medium text-slate-700 mb-1"
               htmlFor="scheduler-hora"
             >
-              Hora local (HH:MM)
+              Hora (HH:MM)
             </label>
             <input
               id="scheduler-hora"
@@ -528,10 +564,10 @@ export function SchedulerPage() {
               className="block text-sm font-medium text-slate-700 mb-1"
               htmlFor="scheduler-dias-extraccion"
             >
-              Días a extraer
+              Período a consultar
             </label>
             <p className="text-xs text-slate-500 mb-2">
-              Ventana temporal hacia atrás desde hoy para cada scrape.
+              Cuántos días hacia atrás desde hoy se consultan en cada corrida.
             </p>
             <div className="flex flex-wrap gap-2 mb-2">
               {DIAS_EXTRACCION_PRESETS.map((preset) => {
@@ -579,7 +615,8 @@ export function SchedulerPage() {
             editForm.diasExtraccion < DIAS_EXTRACCION_MIN ||
             editForm.diasExtraccion > DIAS_EXTRACCION_MAX ? (
               <p className="text-xs text-red-600 mt-1">
-                Debe estar entre {DIAS_EXTRACCION_MIN} y {DIAS_EXTRACCION_MAX}.
+                El período debe estar entre {DIAS_EXTRACCION_MIN} y{" "}
+                {DIAS_EXTRACCION_MAX}.
               </p>
             ) : null}
           </div>
@@ -588,17 +625,72 @@ export function SchedulerPage() {
         </div>
       </Modal>
 
-      <ConfirmModal
-        isOpen={bulkConfirmOpen}
-        onClose={() => setBulkConfirmOpen(false)}
-        onConfirm={handleBulkActivate}
-        title="Activar scheduler en bloque"
-        message={`Se activará el scheduler en ${bulkCandidates.length} empresa(s) elegibles (con Playwright habilitado y empresa activa). ¿Continuar?`}
-        confirmLabel="Activar"
-        cancelLabel="Cancelar"
-        variant="primary"
-        isLoading={bulkRunning}
+      <BulkSchedulerModal
+        isOpen={bulkModalOpen}
+        clients={eligibleBulkClients}
+        isSubmitting={bulkMutation.isPending}
+        errorMessage={bulkError}
+        onClose={() => setBulkModalOpen(false)}
+        onSubmit={handleBulkSubmit}
       />
+
+      <Modal
+        isOpen={errorDetailTaxpayerId !== null}
+        onClose={() => setErrorDetailTaxpayerId(null)}
+        title={
+          errorDetailClient
+            ? `Detalle técnico — ${errorDetailClient.empresa}`
+            : "Detalle técnico"
+        }
+        size="md"
+        footer={
+          <Button
+            variant="secondary"
+            onClick={() => setErrorDetailTaxpayerId(null)}
+          >
+            Cerrar
+          </Button>
+        }
+      >
+        {errorDetailQuery.isLoading ? (
+          <div className="flex justify-center py-6">
+            <Spinner />
+          </div>
+        ) : errorDetailQuery.error ? (
+          <Alert variant="error">
+            {toErrorMessage(
+              errorDetailQuery.error,
+              "No se pudo cargar el detalle técnico.",
+            )}
+          </Alert>
+        ) : errorDetailQuery.data ? (
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs font-medium text-slate-500">Fase</p>
+              <p className="text-slate-800 font-mono">
+                {errorDetailQuery.data.failure_phase ?? "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500">
+                Mensaje técnico
+              </p>
+              <pre className="text-xs text-slate-800 bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+                {errorDetailQuery.data.failure_message_technical ??
+                  "No hay detalle técnico disponible."}
+              </pre>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500">Finalizado</p>
+              <p className="text-slate-800 text-xs">
+                {errorDetailQuery.data.finished_at
+                  ? formatDateTime(errorDetailQuery.data.finished_at)
+                  : "—"}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

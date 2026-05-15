@@ -1,8 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  bulkUpdateScheduler,
+  getLastErrorDetail,
   getSchedulerStatus,
   patchTaxpayerScheduler,
   runSchedulerNow,
+  type BulkSchedulerBody,
+  type BulkSchedulerResponse,
+  type LastErrorDetail,
   type PatchSchedulerBody,
   type RunNowResponse,
   type SchedulerConfig,
@@ -40,5 +45,27 @@ export function useRunSchedulerNowMutation() {
       void queryClient.invalidateQueries({ queryKey: ["scheduler"] });
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
+  });
+}
+
+export function useBulkUpdateSchedulerMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<BulkSchedulerResponse, Error, BulkSchedulerBody>({
+    mutationFn: (body) => bulkUpdateScheduler(body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scheduler"] });
+      void queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useLastErrorDetailQuery(
+  taxpayerId: number | null,
+  enabled: boolean,
+) {
+  return useQuery<LastErrorDetail, Error>({
+    queryKey: ["scheduler", "last-error-detail", taxpayerId],
+    queryFn: () => getLastErrorDetail(taxpayerId as number),
+    enabled: enabled && taxpayerId !== null,
   });
 }

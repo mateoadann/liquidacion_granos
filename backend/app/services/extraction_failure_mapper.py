@@ -17,36 +17,44 @@ _ARCA_SLOW_ERRORS = {"timeout", "arca_unavailable"}
 _SEARCH_SERVICE_AFTER_DROPDOWN_ERRORS = {"timeout", "arca_unavailable", "unknown"}
 _SERVICE_NOT_ADHERED_ERRORS = {"timeout", "arca_unavailable", "unknown"}
 
+# Mensajes orientados al usuario final (estudio contable). Reglas:
+# - Usar "Arca" (no "ARCA" ni "AFIP").
+# - Nunca mencionar "playwright", "scheduler", "scrape", "worker".
+# - Hablar de "consulta", "descarga", "liquidaciones", "empresa".
 _AUTH_FAILED_USER_ES = (
-    "La clave fiscal del cliente es incorrecta o está vencida. "
-    "Actualizala en el detalle del cliente."
+    "La clave fiscal de la empresa parece ser incorrecta. "
+    "Verificá las credenciales."
 )
 _TRANSIENT_LOGIN_USER_ES = (
-    "ARCA está respondiendo lento durante el login. Reintentá en unos minutos."
+    "Arca tardó demasiado en responder durante el ingreso. "
+    "Reintentará automáticamente."
 )
 _ARCA_SLOW_AFTER_DROPDOWN_USER_ES = (
-    "ARCA está respondiendo lento, reintentá en unos minutos."
+    "Arca tardó demasiado en responder. Reintentará automáticamente."
 )
 _SERVICE_NOT_ADHERED_USER_ES = (
-    "Verificá que el servicio 'Liquidación primaria de granos' esté adherido "
-    "en ARCA para este cliente."
+    "El servicio 'Liquidación primaria de granos' no parece estar adherido "
+    "en Arca para esta empresa."
 )
 _OPEN_SERVICE_TIMEOUT_USER_ES = (
-    "ARCA tardó en abrir el servicio. Reintentá en unos minutos."
+    "Arca tardó demasiado en abrir el servicio. Reintentará automáticamente."
 )
 _EMPRESA_NOT_FOUND_USER_ES = (
-    "No aparece el CUIT representado como empresa disponible. "
-    "Revisá la adhesión en ARCA."
+    "La empresa no aparece disponible en Arca. "
+    "Revisá que la adhesión esté vigente."
 )
-_CONSULTA_FAILURE_USER_ES = "ARCA falló al consultar liquidaciones. Reintentá."
+_CONSULTA_FAILURE_USER_ES = (
+    "Arca falló al consultar las liquidaciones. Reintentará automáticamente."
+)
 _WS_COE_ERRORS_USER_ES = (
-    "Hubo errores procesando algunos COEs. Revisá el detalle por cliente."
+    "Hubo problemas al descargar algunas liquidaciones. "
+    "Revisá el detalle por empresa."
 )
 _NETWORK_ERROR_USER_ES = (
-    "Sin conexión con ARCA. Verificá la red e intentá de nuevo."
+    "No se pudo conectar a Arca. Reintentará automáticamente."
 )
 _UNKNOWN_ERROR_USER_ES = (
-    "No pudimos completar la extracción. Reintentá; si persiste, contactá soporte."
+    "Ocurrió un problema al consultar Arca. Reintentará automáticamente."
 )
 
 

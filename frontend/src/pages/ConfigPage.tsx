@@ -27,13 +27,14 @@ export function ConfigPage() {
 
         <Card className="p-6">
           <h3 className="text-lg font-medium text-slate-900 mb-2">
-            Scheduler de extracción
+            Programación de consultas
           </h3>
           <p className="text-sm text-slate-500 mb-4">
-            Programar scraping automático de COEs desde ARCA por empresa
+            Programar consultas automáticas a Arca para descargar las
+            liquidaciones de tus empresas
           </p>
           <Button onClick={() => navigate("/configuracion/scheduler")}>
-            Administrar scheduler
+            Administrar programación
           </Button>
         </Card>
       </div>

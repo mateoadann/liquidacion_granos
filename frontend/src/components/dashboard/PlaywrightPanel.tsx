@@ -81,8 +81,8 @@ export function PlaywrightPanel() {
   return (
     <Card padding="lg">
       <CardHeader
-        title="Extracción de COEs"
-        subtitle="Obtener documentos desde ARCA para los clientes seleccionados"
+        title="Consulta de liquidaciones"
+        subtitle="Descargar liquidaciones desde Arca para las empresas seleccionadas"
       />
 
       <div className="space-y-4">
@@ -108,7 +108,7 @@ export function PlaywrightPanel() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-slate-700">
-              Clientes ({selectedClients.length} de {activeClients.length} seleccionados)
+              Empresas ({selectedClients.length} de {activeClients.length} seleccionadas)
             </label>
             <Button
               variant="ghost"
@@ -126,7 +126,7 @@ export function PlaywrightPanel() {
             </div>
           ) : activeClients.length === 0 ? (
             <Alert variant="warning">
-              No hay clientes configurados para extracción automática
+              No hay empresas configuradas para consultar Arca.
             </Alert>
           ) : (
             <div className="border border-slate-200 rounded-md max-h-48 overflow-y-auto">
@@ -155,7 +155,7 @@ export function PlaywrightPanel() {
           <Alert variant="error">
             {runMutation.error instanceof Error
               ? runMutation.error.message
-              : "Error al iniciar extracción"}
+              : "No se pudo iniciar la consulta."}
           </Alert>
         ) : null}
 
@@ -168,14 +168,14 @@ export function PlaywrightPanel() {
           disabled={!canRun}
           isLoading={runMutation.isPending}
         >
-          {isRunning ? "Extracción en curso..." : "Iniciar Extracción"}
+          {isRunning ? "Consulta en curso..." : "Iniciar consulta"}
         </Button>
 
         {/* Estado del job */}
         {jobQuery.data ? (
           <div className="border-t border-slate-200 pt-4 mt-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-slate-700">Estado del Job</span>
+              <span className="text-sm font-medium text-slate-700">Estado de la consulta</span>
               <JobStatusBadge status={jobQuery.data.status} />
             </div>
 
@@ -200,7 +200,7 @@ export function PlaywrightPanel() {
                   />
                 </div>
                 <p className="text-sm text-slate-600">
-                  {jobQuery.data.currentMessage ?? "Extracción en curso..."}
+                  {jobQuery.data.currentMessage ?? "Consulta en curso..."}
                 </p>
               </div>
             ) : null}
@@ -210,10 +210,10 @@ export function PlaywrightPanel() {
               <div className="text-sm text-slate-600 space-y-1">
                 {jobQuery.data.status === "partial" ? (
                   <p className="text-amber-700 font-medium">
-                    Algunos clientes no pudieron procesarse. Revisá el detalle por cliente.
+                    Algunas empresas no pudieron consultarse. Revisá el detalle por empresa.
                   </p>
                 ) : null}
-                <p>Clientes procesados: {jobQuery.data.result.taxpayersTotal}</p>
+                <p>Empresas consultadas: {jobQuery.data.result.taxpayersTotal}</p>
                 <p className="text-green-600">Exitosos: {jobQuery.data.result.taxpayersOk}</p>
                 {jobQuery.data.result.taxpayersError > 0 ? (
                   <p className="text-red-600">Con errores: {jobQuery.data.result.taxpayersError}</p>
@@ -225,7 +225,7 @@ export function PlaywrightPanel() {
               <Alert variant="error">
                 {jobQuery.data.failureMessageUser ??
                   jobQuery.data.errorMessage ??
-                  "Error desconocido"}
+                  "Hubo un problema con la consulta. Reintentá más tarde."}
               </Alert>
             ) : null}
           </div>

@@ -350,3 +350,227 @@ def test_get_status_incluye_con_error_reciente(client, admin_headers):
     assert item["empresa"] == "Foo SRL"
     assert item["ultimo_scrape_error"] == "ARCA timeout"
     assert item["ultimo_scrape_error_en"] == err_en.isoformat()
+
+
+# --- PATCH /api/scheduler/bulk ------------------------------------------
+
+
+def test_bulk_update_aplica_los_4_campos_a_todos(client, admin_headers):
+    t1 = _create_taxpayer(cuit="30000000010", empresa="Empresa A")
+    t2 = _create_taxpayer(cuit="30000000011", empresa="Empresa B")
+    t3 = _create_taxpayer(cuit="30000000012", empresa="Empresa C")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={
+            "taxpayer_ids": [t1.id, t2.id, t3.id],
+            "activo": True,
+            "dias_semana": ["lun", "mie", "vie"],
+            "hora_local": "07:30",
+            "dias_extraccion": 30,
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total"] == 3
+    assert len(body["actualizados"]) == 3
+
+    for original in (t1, t2, t3):
+        db.session.refresh(original)
+        assert original.scheduler_activo is True
+        assert original.scheduler_dias_semana == "lun,mie,vie"
+        assert original.scheduler_hora_local == "07:30"
+        assert original.scheduler_dias_extraccion == 30
+
+
+def test_bulk_update_lista_vacia_devuelve_422(client, admin_headers):
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [], "activo": True},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "taxpayer_ids_invalido"
+    assert "al menos una empresa" in body["mensaje"]
+
+
+def test_bulk_update_ids_inexistentes_devuelve_404(client, admin_headers):
+    t1 = _create_taxpayer(cuit="30000000020")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [t1.id, 99998, 99999], "activo": True},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 404
+    body = response.get_json()
+    assert body["error"] == "taxpayers_no_encontrados"
+    assert set(body["detalle"]["faltantes"]) == {99998, 99999}
+
+
+def test_bulk_update_hora_local_mal_formada_devuelve_422(client, admin_headers):
+    t1 = _create_taxpayer(cuit="30000000030")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [t1.id], "hora_local": "25:99"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "hora_local_invalida"
+    assert body["mensaje"] == "La hora debe tener formato HH:MM."
+
+
+def test_bulk_update_dias_extraccion_fuera_de_rango_devuelve_422(
+    client, admin_headers
+):
+    t1 = _create_taxpayer(cuit="30000000040")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [t1.id], "dias_extraccion": 0},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+    body = response.get_json()
+    assert body["error"] == "validacion_fallida"
+    assert body["mensaje"] == "El período debe estar entre 1 y 366 días."
+
+
+def test_bulk_update_sin_auth_401(client):
+    t1 = _create_taxpayer(cuit="30000000050")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [t1.id], "activo": True},
+    )
+
+    assert response.status_code == 401
+
+
+def test_bulk_update_sin_admin_403(client, auth_headers):
+    t1 = _create_taxpayer(cuit="30000000060")
+
+    response = client.patch(
+        "/api/scheduler/bulk",
+        json={"taxpayer_ids": [t1.id], "activo": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+# --- GET /api/scheduler/taxpayers/<id>/last-error-detail ----------------
+
+
+def test_get_last_error_detail_sin_jobs_devuelve_payload_vacio(
+    client, admin_headers
+):
+    t = _create_taxpayer(cuit="30000000070")
+
+    response = client.get(
+        f"/api/scheduler/taxpayers/{t.id}/last-error-detail",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["taxpayer_id"] == t.id
+    assert body["failure_phase"] is None
+    assert body["failure_message_technical"] is None
+    assert body["finished_at"] is None
+
+
+def test_get_last_error_detail_devuelve_ultimo_failed_scheduler(
+    client, admin_headers
+):
+    from app.models import ExtractionJob
+
+    t = _create_taxpayer(cuit="30000000080")
+    finished_old = datetime(2026, 5, 13, 6, 0, 0)
+    finished_new = datetime(2026, 5, 14, 6, 0, 0)
+
+    # Job antiguo failed con scheduler operation
+    old_job = ExtractionJob()
+    old_job.taxpayer_id = t.id
+    old_job.operation = "scheduler_lpg_extract"
+    old_job.status = "failed"
+    old_job.failure_phase = "LOGIN_START"
+    old_job.failure_message_technical = "AUTH_FAILED | old"
+    old_job.finished_at = finished_old
+    db.session.add(old_job)
+
+    # Job más reciente failed con scheduler operation
+    new_job = ExtractionJob()
+    new_job.taxpayer_id = t.id
+    new_job.operation = "scheduler_run_now"
+    new_job.status = "failed"
+    new_job.failure_phase = "SEARCH_SERVICE"
+    new_job.failure_message_technical = "ARCA_SLOW_AFTER_DROPDOWN | new"
+    new_job.finished_at = finished_new
+    db.session.add(new_job)
+
+    # Job NO scheduler (debe ignorarse)
+    manual_job = ExtractionJob()
+    manual_job.taxpayer_id = t.id
+    manual_job.operation = "playwright_lpg_run"
+    manual_job.status = "failed"
+    manual_job.failure_phase = "LOGIN_START"
+    manual_job.failure_message_technical = "should be ignored"
+    manual_job.finished_at = finished_new + timedelta(minutes=10)
+    db.session.add(manual_job)
+
+    db.session.commit()
+
+    response = client.get(
+        f"/api/scheduler/taxpayers/{t.id}/last-error-detail",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["taxpayer_id"] == t.id
+    assert body["extraction_job_id"] == new_job.id
+    assert body["failure_phase"] == "SEARCH_SERVICE"
+    assert body["failure_message_technical"] == "ARCA_SLOW_AFTER_DROPDOWN | new"
+    assert body["finished_at"] == finished_new.isoformat()
+
+
+def test_get_last_error_detail_taxpayer_inexistente_404(client, admin_headers):
+    response = client.get(
+        "/api/scheduler/taxpayers/99999/last-error-detail",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 404
+    body = response.get_json()
+    assert body["error"] == "taxpayer_no_encontrado"
+
+
+def test_get_last_error_detail_sin_auth_401(client):
+    t = _create_taxpayer(cuit="30000000090")
+
+    response = client.get(
+        f"/api/scheduler/taxpayers/{t.id}/last-error-detail",
+    )
+
+    assert response.status_code == 401
+
+
+def test_get_last_error_detail_sin_admin_403(client, auth_headers):
+    t = _create_taxpayer(cuit="30000000091")
+
+    response = client.get(
+        f"/api/scheduler/taxpayers/{t.id}/last-error-detail",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 403
