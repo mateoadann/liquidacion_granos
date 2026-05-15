@@ -306,6 +306,7 @@ def get_v2_empresas():
                         if d.strip()
                     ],
                     "hora_local": t.scheduler_hora_local,
+                    "dias_extraccion": t.scheduler_dias_extraccion,
                     "ultimo_scrape_ok": (
                         t.scheduler_ultimo_ok.isoformat()
                         if t.scheduler_ultimo_ok else None

@@ -19,6 +19,7 @@ export interface Client {
   schedulerActivo: boolean;
   schedulerDiasSemana: string[];
   schedulerHoraLocal: string | null;
+  schedulerDiasExtraccion: number;
   schedulerUltimoOk: string | null;
   schedulerUltimoError: string | null;
   schedulerUltimoErrorEn: string | null;
@@ -315,6 +316,7 @@ function normalizeClient(raw: unknown): Client {
     schedulerActivo: asBoolean(data.scheduler_activo, false),
     schedulerDiasSemana: rawDiasSemana,
     schedulerHoraLocal: asNullableString(data.scheduler_hora_local),
+    schedulerDiasExtraccion: asNumber(data.scheduler_dias_extraccion, 90),
     schedulerUltimoOk: asNullableString(data.scheduler_ultimo_ok),
     schedulerUltimoError: asNullableString(data.scheduler_ultimo_error),
     schedulerUltimoErrorEn: asNullableString(data.scheduler_ultimo_error_en),

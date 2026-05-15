@@ -86,3 +86,38 @@ def test_scheduler_enqueue_kwargs_fecha_hasta_es_hoy_local():
     hasta = datetime.strptime(kwargs["fecha_hasta"], "%d/%m/%Y").date()
     hoy = date.today()
     assert abs((hasta - hoy).days) <= 1
+
+
+def test_scheduler_enqueue_kwargs_usa_dias_extraccion_param():
+    """El parámetro `dias_extraccion` debe controlar la ventana fecha_desde."""
+    from datetime import datetime
+
+    kwargs = scheduler_enqueue_kwargs(taxpayer_id=1, dias_extraccion=30)
+    fmt = "%d/%m/%Y"
+    desde = datetime.strptime(kwargs["fecha_desde"], fmt).date()
+    hasta = datetime.strptime(kwargs["fecha_hasta"], fmt).date()
+    assert (hasta - desde).days == 30
+
+
+def test_scheduler_enqueue_kwargs_default_90_si_no_se_pasa():
+    """Sin pasar dias_extraccion, ventana debe ser 90 días (compatibilidad)."""
+    from datetime import datetime
+
+    kwargs = scheduler_enqueue_kwargs(taxpayer_id=1)
+    fmt = "%d/%m/%Y"
+    desde = datetime.strptime(kwargs["fecha_desde"], fmt).date()
+    hasta = datetime.strptime(kwargs["fecha_hasta"], fmt).date()
+    assert (hasta - desde).days == 90
+
+
+def test_scheduler_enqueue_kwargs_fecha_desde_es_hoy_menos_dias():
+    """fecha_desde debe ser exactamente hoy - dias_extraccion (zona Cordoba)."""
+    from datetime import datetime, timedelta
+
+    kwargs = scheduler_enqueue_kwargs(taxpayer_id=1, dias_extraccion=10)
+    fmt = "%d/%m/%Y"
+    desde = datetime.strptime(kwargs["fecha_desde"], fmt).date()
+    hoy = date.today()
+    esperado = hoy - timedelta(days=10)
+    # +/- 1 día para flake en cambio de día (zona Córdoba vs UTC).
+    assert abs((desde - esperado).days) <= 1

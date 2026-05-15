@@ -32,24 +32,30 @@ DEFAULT_RETRY_MAX_ATTEMPTS = 2
 DEFAULT_RETRY_BASE_DELAY_MS = 1000
 
 
-def _default_fechas() -> tuple[str, str]:
+def _default_fechas(dias_extraccion: int = DEFAULT_VENTANA_DIAS) -> tuple[str, str]:
     """Devuelve `(fecha_desde, fecha_hasta)` en formato DD/MM/YYYY.
 
-    Ventana: últimos DEFAULT_VENTANA_DIAS días hasta hoy (zona Córdoba).
+    Ventana: últimos `dias_extraccion` días hasta hoy (zona Córdoba).
     """
     hoy = now_cordoba_naive().date()
-    desde = hoy - timedelta(days=DEFAULT_VENTANA_DIAS)
+    desde = hoy - timedelta(days=dias_extraccion)
     fmt = "%d/%m/%Y"
     return desde.strftime(fmt), hoy.strftime(fmt)
 
 
-def scheduler_enqueue_kwargs(taxpayer_id: int) -> dict:
+def scheduler_enqueue_kwargs(
+    taxpayer_id: int, dias_extraccion: int = DEFAULT_VENTANA_DIAS
+) -> dict:
     """Kwargs completos para `queue.enqueue(run_playwright_pipeline_job, **)`.
+
+    `dias_extraccion` controla la ventana temporal (hoy - N días → hoy). Default
+    DEFAULT_VENTANA_DIAS (90) por compatibilidad — llamadores nuevos pasan el
+    valor configurado por taxpayer.
 
     El `extraction_job_id` NO va acá — lo agrega el llamador después de
     persistir el `ExtractionJob`.
     """
-    fecha_desde, fecha_hasta = _default_fechas()
+    fecha_desde, fecha_hasta = _default_fechas(dias_extraccion)
     return {
         "fecha_desde": fecha_desde,
         "fecha_hasta": fecha_hasta,

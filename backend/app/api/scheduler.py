@@ -41,6 +41,7 @@ def _serialize_scheduler_config(t: Taxpayer) -> dict:
         "activo": bool(t.scheduler_activo),
         "dias_semana": _dias_semana_to_list(t.scheduler_dias_semana),
         "hora_local": t.scheduler_hora_local,
+        "dias_extraccion": t.scheduler_dias_extraccion,
         "ultimo_scrape_ok": (
             t.scheduler_ultimo_ok.isoformat() if t.scheduler_ultimo_ok else None
         ),
@@ -94,6 +95,18 @@ def update_taxpayer_scheduler(taxpayer_id: int):
                 detalle={"recibido": hora},
             )
         t.scheduler_hora_local = hora
+
+    if "dias_extraccion" in payload:
+        val = payload["dias_extraccion"]
+        # bool es subclase de int; rechazar explícitamente.
+        if isinstance(val, bool) or not isinstance(val, int) or val < 1 or val > 366:
+            return _error(
+                "validacion_fallida",
+                "dias_extraccion debe ser entero entre 1 y 366.",
+                422,
+                detalle={"recibido": val},
+            )
+        t.scheduler_dias_extraccion = val
 
     t.updated_at = now_cordoba_naive()
     db.session.commit()
@@ -159,7 +172,10 @@ def run_scheduler_now(taxpayer_id: int):
         queue.enqueue(
             run_playwright_pipeline_job,
             extraction_job_id=job.id,
-            **scheduler_enqueue_kwargs(t.id),
+            **scheduler_enqueue_kwargs(
+                t.id,
+                dias_extraccion=t.scheduler_dias_extraccion or 90,
+            ),
         )
     except Exception as exc:
         job.status = "failed"

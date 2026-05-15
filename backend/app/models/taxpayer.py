@@ -24,6 +24,7 @@ class Taxpayer(db.Model):
         db.String(50), nullable=False, default="lun,mar,mie,jue,vie"
     )
     scheduler_hora_local = db.Column(db.String(5), nullable=False, default="06:00")
+    scheduler_dias_extraccion = db.Column(db.Integer, nullable=False, default=90)
     scheduler_ultimo_ok = db.Column(db.DateTime, nullable=True)
     scheduler_ultimo_error = db.Column(db.Text, nullable=True)
     scheduler_ultimo_error_en = db.Column(db.DateTime, nullable=True)

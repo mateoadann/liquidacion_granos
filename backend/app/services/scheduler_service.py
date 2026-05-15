@@ -88,7 +88,10 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
     queue.enqueue(
         run_playwright_pipeline_job,
         extraction_job_id=job.id,
-        **scheduler_enqueue_kwargs(taxpayer.id),
+        **scheduler_enqueue_kwargs(
+            taxpayer.id,
+            dias_extraccion=taxpayer.scheduler_dias_extraccion or 90,
+        ),
     )
     logger.info(
         "SCHEDULER_DISPARO | taxpayer_id=%s job_id=%s operation=%s",

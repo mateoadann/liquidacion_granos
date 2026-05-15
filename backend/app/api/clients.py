@@ -71,6 +71,7 @@ def _serialize_client(item: Taxpayer, coes_count: int | None = None) -> dict:
         "scheduler_activo": bool(item.scheduler_activo),
         "scheduler_dias_semana": scheduler_dias_semana,
         "scheduler_hora_local": item.scheduler_hora_local,
+        "scheduler_dias_extraccion": item.scheduler_dias_extraccion,
         "scheduler_ultimo_ok": item.scheduler_ultimo_ok.isoformat()
         if item.scheduler_ultimo_ok
         else None,

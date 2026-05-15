@@ -200,6 +200,24 @@ def test_disparar_extraccion_encola_en_rq(app, _patch_queue):
             assert key in call_kwargs, f"falta kwarg {key} para el worker"
 
 
+def test_disparar_extraccion_usa_dias_extraccion_del_taxpayer(app, _patch_queue):
+    """El campo `scheduler_dias_extraccion` del taxpayer debe propagarse al
+    cálculo de fecha_desde via scheduler_enqueue_kwargs.
+    """
+    from datetime import datetime
+
+    with app.app_context():
+        tp = _create_taxpayer(scheduler_dias_extraccion=30)
+        _disparar_extraccion(tp)
+
+        fake_queue = _patch_queue.return_value
+        call_kwargs = fake_queue.enqueue.call_args.kwargs
+        fmt = "%d/%m/%Y"
+        desde = datetime.strptime(call_kwargs["fecha_desde"], fmt).date()
+        hasta = datetime.strptime(call_kwargs["fecha_hasta"], fmt).date()
+        assert (hasta - desde).days == 30
+
+
 def test_tick_dispara_uno_por_taxpayer_matcheante(app, _patch_queue):
     with app.app_context():
         tp1 = _create_taxpayer(scheduler_hora_local="09:00")
