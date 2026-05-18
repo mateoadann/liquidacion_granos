@@ -36,16 +36,24 @@ def _build_comprobante(doc: Any, datos: dict) -> dict:
     else:
         codigo = "F1"
 
-    coe = getattr(doc, "coe", "") or ""
+    coe = str(getattr(doc, "coe", "") or "")
 
-    # nro from doc fields or COE split
-    nro_orden = getattr(doc, "nro_orden", None)
-    nro = int(nro_orden) if nro_orden is not None else (
-        int(coe[4:]) if len(coe) > 4 else 0
-    )
+    # nro_comprobante = últimos 8 dígitos del COE (RG 1116):
+    # COE (12 dígitos) = tipo_pto_vta (4) + nro_comprobante (8). El COE
+    # es la fuente de verdad — doc.nro_orden es un numerador interno del
+    # talonario y NO se corresponde con el nro_comprobante real.
+    nro = int(coe[-8:]) if len(coe) >= 8 else 0
 
     # tipo_pto_vta is FIXED per comprobante type, NOT from the LPG
     tipo_pto_vta = TIPO_PTO_VTA_POR_CODIGO.get(codigo, 0)
+
+    if tipo_pto_vta and len(coe) == 12:
+        expected = f"{tipo_pto_vta:04d}{nro:08d}"
+        if coe != expected:
+            logger.warning(
+                "COE_INCONSISTENT | coe=%s expected=%s tipo_pto_vta=%s nro=%s",
+                coe, expected, tipo_pto_vta, nro,
+            )
 
     return {
         "codigo": codigo,

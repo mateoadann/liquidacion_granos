@@ -131,10 +131,31 @@ class TestBuildComprobante:
         result = _build_comprobante(doc, {"codTipoOperacion": 2})
         assert result["tipo_pto_vta"] == 3302  # fixed, NOT 617 from COE
 
-    def test_build_comprobante_nro_from_doc_field(self):
-        doc = _make_doc(coe="330230384112", nro_orden=12345678)
+    def test_build_comprobante_nro_ignores_nro_orden(self):
+        # nro_orden es un numerador interno del talonario, NO el nro_comprobante.
+        # El feed debe derivar nro siempre de los últimos 8 dígitos del COE.
+        doc = _make_doc(coe="330130605423", nro_orden=3283)
         result = _build_comprobante(doc, {})
-        assert result["nro"] == 12345678
+        assert result["nro"] == 30605423
+
+    def test_build_comprobante_nro_ignores_nro_orden_zero(self):
+        # Caso del bug en prod: nro_orden=0 hacía que el feed emitiera nro=0
+        # aunque el COE tuviera el sufijo correcto.
+        doc = _make_doc(coe="330130592563", nro_orden=0)
+        result = _build_comprobante(doc, {})
+        assert result["nro"] == 30592563
+
+    def test_build_comprobante_satisfies_rg1116_invariant(self):
+        # RG 1116: COE (12 dig) = tipo_pto_vta (4) + nro_comprobante (8).
+        # Para F1 (3301) y F2 (3302) la invariante debe cumplirse exacto.
+        for coe, cod_op in [("330130605423", 1), ("330230656362", 2)]:
+            doc = _make_doc(coe=coe)
+            result = _build_comprobante(doc, {"codTipoOperacion": cod_op})
+            tipo = result["tipo_pto_vta"]
+            nro = result["nro"]
+            assert f"{tipo:04d}{nro:08d}" == coe, (
+                f"Invariante RG 1116 rota: coe={coe} tipo={tipo} nro={nro}"
+            )
 
 
 # ─── _build_grano ──────────────────────────────────────────────────────
