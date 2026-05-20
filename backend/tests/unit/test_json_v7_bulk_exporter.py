@@ -72,19 +72,19 @@ def _make_coe_estado(
 
 def test_build_bulk_returns_schema_v7_1(app):
     doc = _make_doc()
-    result = build_json_v7_bulk([doc], filtros={})
-    assert result["schema_version"] == "v7.1"
-    assert "meta" in result
-    assert "liquidaciones" in result
-    assert isinstance(result["liquidaciones"], list)
-    assert len(result["liquidaciones"]) == 1
+    body, _ = build_json_v7_bulk([doc], filtros={})
+    assert body["schema_version"] == "v7.1"
+    assert "meta" in body
+    assert "liquidaciones" in body
+    assert isinstance(body["liquidaciones"], list)
+    assert len(body["liquidaciones"]) == 1
 
 
 def test_build_bulk_meta_includes_fuente_and_filtros(app):
     doc = _make_doc()
     filtros = {"cuit_empresa": "30500120882", "desde": "2025-01-01", "hasta": "2025-12-31"}
-    result = build_json_v7_bulk([doc], filtros=filtros)
-    meta = result["meta"]
+    body, _ = build_json_v7_bulk([doc], filtros=filtros)
+    meta = body["meta"]
     assert meta["fuente"] == "api_v2_liquidaciones"
     assert meta["filtros_aplicados"] == filtros
     assert meta["generador"] == "liquidacion-granos@2.0.0"
@@ -97,10 +97,10 @@ def test_build_bulk_meta_total_matches_liquidaciones_length(app):
         _make_doc(coe="110000000002", doc_id=2),
         _make_doc(coe="110000000003", doc_id=3),
     ]
-    result = build_json_v7_bulk(docs, filtros={})
-    assert result["meta"]["total_liquidaciones"] == 3
-    assert len(result["liquidaciones"]) == 3
-    assert result["meta"]["total_liquidaciones"] == len(result["liquidaciones"])
+    body, _ = build_json_v7_bulk(docs, filtros={})
+    assert body["meta"]["total_liquidaciones"] == 3
+    assert len(body["liquidaciones"]) == 3
+    assert body["meta"]["total_liquidaciones"] == len(body["liquidaciones"])
 
 
 # ─── NO filtra cargado ─────────────────────────────────────────────────
@@ -111,20 +111,20 @@ def test_build_bulk_does_NOT_filter_cargado(app):
     _make_coe_estado(coe=coe, estado="cargado", id_liquidacion="liq_already_loaded")
 
     doc = _make_doc(coe=coe)
-    result = build_json_v7_bulk([doc], filtros={})
+    body, _ = build_json_v7_bulk([doc], filtros={})
 
     # CoeEstado.estado == 'cargado' DEBE estar incluido (v2 devuelve el universo completo)
-    assert len(result["liquidaciones"]) == 1
-    liq = result["liquidaciones"][0]
+    assert len(body["liquidaciones"]) == 1
+    liq = body["liquidaciones"][0]
     assert liq["coe"] == coe
     assert liq["estado_origen"] == "cargado"
     assert liq["id_liquidacion"] == "liq_already_loaded"
 
 
-# ─── NO transiciona estado ─────────────────────────────────────────────
+# ─── NO persiste por sí mismo ──────────────────────────────────────────
 
 
-def test_build_bulk_does_NOT_transition_state(app):
+def test_build_bulk_does_NOT_persist_state_changes(app):
     coe = "110000000020"
     entry = _make_coe_estado(coe=coe, estado="pendiente")
 
@@ -133,13 +133,19 @@ def test_build_bulk_does_NOT_transition_state(app):
     hash_antes = entry.hash_payload_emitido
 
     doc = _make_doc(coe=coe)
-    build_json_v7_bulk([doc], filtros={})
+    body, coes_a_persistir = build_json_v7_bulk([doc], filtros={})
 
-    # Re-fetch
+    # Re-fetch — el constructor NO debe haber persistido nada
     refreshed = CoeEstado.query.filter_by(coe=coe).first()
     assert refreshed.estado == estado_antes == "pendiente"
     assert refreshed.descargado_en == descargado_en_antes
     assert refreshed.hash_payload_emitido == hash_antes
+
+    # Pero SÍ debe haber devuelto el COE en coes_a_persistir con su hash
+    assert len(coes_a_persistir) == 1
+    coe_estado_id, hash_calc = coes_a_persistir[0]
+    assert coe_estado_id == entry.id
+    assert hash_calc.startswith("sha256:")
 
 
 def test_build_bulk_does_NOT_call_marcar_descargado(app):
@@ -166,10 +172,10 @@ def test_build_bulk_skips_docs_without_taxpayer(app, caplog):
     doc_no_tp.taxpayer = None
 
     with caplog.at_level("WARNING"):
-        result = build_json_v7_bulk([doc_ok, doc_no_tp], filtros={})
+        body, _ = build_json_v7_bulk([doc_ok, doc_no_tp], filtros={})
 
-    assert len(result["liquidaciones"]) == 1
-    assert result["liquidaciones"][0]["coe"] == "110000000030"
+    assert len(body["liquidaciones"]) == 1
+    assert body["liquidaciones"][0]["coe"] == "110000000030"
     assert any(
         "BULK_EXPORT_SKIP_NO_TAXPAYER" in r.message for r in caplog.records
     )
@@ -188,12 +194,12 @@ def test_build_bulk_skips_docs_with_invalid_fecha_liquidacion(app, caplog):
     )
 
     with caplog.at_level("WARNING"):
-        result = build_json_v7_bulk(
+        body, _ = build_json_v7_bulk(
             [doc_ok, doc_invalida, doc_sin_fecha], filtros={}
         )
 
-    assert len(result["liquidaciones"]) == 1
-    assert result["liquidaciones"][0]["coe"] == "110000000040"
+    assert len(body["liquidaciones"]) == 1
+    assert body["liquidaciones"][0]["coe"] == "110000000040"
     skip_logs = [
         r for r in caplog.records if "BULK_EXPORT_SKIP_INVALID_FECHA" in r.message
     ]
@@ -206,13 +212,15 @@ def test_build_bulk_skips_docs_with_invalid_fecha_liquidacion(app, caplog):
 def test_build_bulk_uses_pendiente_default_estado_origen_when_no_coe_estado(app):
     # No CoeEstado in DB
     doc = _make_doc(coe="110000000050")
-    result = build_json_v7_bulk([doc], filtros={})
+    body, coes_a_persistir = build_json_v7_bulk([doc], filtros={})
 
-    assert len(result["liquidaciones"]) == 1
-    liq = result["liquidaciones"][0]
+    assert len(body["liquidaciones"]) == 1
+    liq = body["liquidaciones"][0]
     assert liq["estado_origen"] == "pendiente"
     # transform_single genera un uuid liq_*
     assert liq["id_liquidacion"].startswith("liq_")
+    # Sin CoeEstado row no hay nada para persistir
+    assert coes_a_persistir == []
 
 
 def test_build_bulk_reads_estado_and_id_from_coe_estado_when_exists(app):
@@ -224,9 +232,9 @@ def test_build_bulk_reads_estado_and_id_from_coe_estado_when_exists(app):
     )
 
     doc = _make_doc(coe=coe)
-    result = build_json_v7_bulk([doc], filtros={})
+    body, _ = build_json_v7_bulk([doc], filtros={})
 
-    assert len(result["liquidaciones"]) == 1
-    liq = result["liquidaciones"][0]
+    assert len(body["liquidaciones"]) == 1
+    liq = body["liquidaciones"][0]
     assert liq["estado_origen"] == "descargado"
     assert liq["id_liquidacion"] == "liq_existing_abc123"
