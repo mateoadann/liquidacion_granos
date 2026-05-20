@@ -194,13 +194,43 @@ def _parse_iso_date(value: str, field: str) -> datetime:
         raise ValueError(field) from exc
 
 
+def _aplicar_side_effects_emision(
+    coes_a_persistir: list[tuple[int, str]],
+) -> None:
+    """UPDATE idempotente por cada COE incluido en el body emitido.
+
+    Por cada (coe_estado_id, hash_calculado):
+    - Si hash_payload_emitido IS NULL → setea al hash_calculado.
+    - Si descargado_en IS NULL → setea a now().
+    - Si estado == 'pendiente' → transiciona a 'descargado'.
+
+    Idempotente: re-llamadas no rotan hashes, timestamps ni regresan estado.
+    El commit lo dispara el caller (la transacción del endpoint).
+    """
+    from ..models.coe_estado import CoeEstado
+
+    ahora = now_cordoba_naive()
+    for coe_estado_id, hash_calc in coes_a_persistir:
+        coe_estado = db.session.get(CoeEstado, coe_estado_id)
+        if coe_estado is None:
+            continue
+        if coe_estado.hash_payload_emitido is None:
+            coe_estado.hash_payload_emitido = hash_calc
+        if coe_estado.descargado_en is None:
+            coe_estado.descargado_en = ahora
+        if coe_estado.estado == "pendiente":
+            coe_estado.estado = "descargado"
+
+
 @integration_bp.get("/v2/liquidaciones")
 @require_api_key
 def get_v2_liquidaciones():
     """Universo bulk de liquidaciones v7.1 para rpa-holistor.
 
-    Read-only: no modifica estado de ningún COE. La transición a 'cargado'
-    sigue siendo responsabilidad de POST /v1/coes/cargado.
+    Side-effects idempotentes acotados: por cada COE incluido en el
+    response, en la PRIMERA emisión persiste ``hash_payload_emitido``,
+    ``descargado_en`` y transiciona ``pendiente → descargado``. Re-llamadas
+    preservan esos valores. Ver docs/spec_fix_emision_v2.md.
 
     Query params:
         desde_fecha_emision (opcional, ISO YYYY-MM-DD): filtro inferior
@@ -234,25 +264,6 @@ def get_v2_liquidaciones():
             "detalle": {"campo": campo, "valor": request.args.get(campo)},
         }), 422
 
-    query = (
-        db.session.query(LpgDocument)
-        .join(Taxpayer, LpgDocument.taxpayer_id == Taxpayer.id)
-        .filter(Taxpayer.activo.is_(True))
-        .filter(Taxpayer.scheduler_activo.is_(True))
-    )
-
-    if cuits:
-        query = query.filter(Taxpayer.cuit_representado.in_(cuits))
-
-    if desde_date is not None or hasta_date is not None:
-        fecha_col = fecha_liquidacion_as_date(fecha_liquidacion_expr())
-        if desde_date is not None:
-            query = query.filter(fecha_col >= desde_date)
-        if hasta_date is not None:
-            query = query.filter(fecha_col <= hasta_date)
-
-    docs = query.all()
-
     from ..services.json_v7_exporter import build_json_v7_bulk
 
     filtros = {
@@ -260,7 +271,33 @@ def get_v2_liquidaciones():
         "hasta_fecha_emision": hasta_raw,
         "cuit_empresa": cuits or None,
     }
-    body = build_json_v7_bulk(docs, filtros)
+
+    try:
+        query = (
+            db.session.query(LpgDocument)
+            .join(Taxpayer, LpgDocument.taxpayer_id == Taxpayer.id)
+            .filter(Taxpayer.activo.is_(True))
+            .filter(Taxpayer.scheduler_activo.is_(True))
+        )
+
+        if cuits:
+            query = query.filter(Taxpayer.cuit_representado.in_(cuits))
+
+        if desde_date is not None or hasta_date is not None:
+            fecha_col = fecha_liquidacion_as_date(fecha_liquidacion_expr())
+            if desde_date is not None:
+                query = query.filter(fecha_col >= desde_date)
+            if hasta_date is not None:
+                query = query.filter(fecha_col <= hasta_date)
+
+        docs = query.all()
+        body, coes_a_persistir = build_json_v7_bulk(docs, filtros)
+        _aplicar_side_effects_emision(coes_a_persistir)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
     return jsonify(body), 200
 
 

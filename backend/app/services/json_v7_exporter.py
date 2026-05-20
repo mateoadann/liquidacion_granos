@@ -263,13 +263,22 @@ def build_json_v7(documents: list, taxpayer: Any, mes: int, anio: int) -> dict:
     }
 
 
-def build_json_v7_bulk(docs: list, filtros: dict) -> dict:
-    """Build a v7.1 JSON export from multiple taxpayers (read-only, no side-effects).
+def build_json_v7_bulk(
+    docs: list, filtros: dict
+) -> tuple[dict, list[tuple[int, str]]]:
+    """Build a v7.1 JSON export from multiple taxpayers.
 
-    Used by GET /v2/liquidaciones (PR3). Differences with build_json_v7():
+    Stateless: computes hashes per emitted liquidación but does NOT persist.
+    Returns ``(body, coes_a_persistir)`` where ``coes_a_persistir`` is a list
+    of ``(coe_estado_id, hash_calculado)`` tuples. The caller (the
+    ``GET /v2/liquidaciones`` endpoint) is responsible for applying the
+    idempotent side-effects within a single transaction.
 
-    - NO side-effects: does NOT transition CoeEstado, does NOT compute/persist
-      hash, does NOT call marcar_descargado(). Pure read-only construction.
+    Used by GET /v2/liquidaciones. Differences with build_json_v7():
+
+    - Does NOT call marcar_descargado() and does NOT commit. The endpoint
+      receives the list of ``(coe_estado_id, hash)`` tuples and applies the
+      idempotent UPDATEs in its own transaction.
     - NO filtering by estado='cargado': returns the full universe matching
       the SQL-level filtros provided by the caller. rpa-holistor reconciles
       against its own local ledger.
@@ -281,16 +290,20 @@ def build_json_v7_bulk(docs: list, filtros: dict) -> dict:
       YYYY-MM-DD). If missing or invalid, the doc is skipped with a warning.
     - estado_origen / id_liquidacion come from CoeEstado.query.filter_by(coe).
       If no CoeEstado row exists, default to estado_origen="pendiente" and
-      id_liquidacion=None (transform_single generates a uuid one).
+      id_liquidacion=None (transform_single generates a uuid one). In that
+      case the doc is NOT added to ``coes_a_persistir`` since there is no
+      CoeEstado row to update.
     - meta block is enriched with fuente="api_v2_liquidaciones",
       filtros_aplicados=filtros, and total_liquidaciones.
     - generador is "liquidacion-granos@2.0.0" to distinguish from v1.
     """
+    from .coe_estado_service import calcular_hash
     from ..models.coe_estado import CoeEstado
 
     generado_en = now_cordoba_naive().isoformat(timespec="seconds")
 
     liquidaciones: list[dict] = []
+    coes_a_persistir: list[tuple[int, str]] = []
     for doc in docs:
         taxpayer = getattr(doc, "taxpayer", None)
         if taxpayer is None:
@@ -338,7 +351,10 @@ def build_json_v7_bulk(docs: list, filtros: dict) -> dict:
         )
         liquidaciones.append(liq)
 
-    return {
+        if coe_estado_entry is not None:
+            coes_a_persistir.append((coe_estado_entry.id, calcular_hash(liq)))
+
+    body = {
         "schema_version": "v7.1",
         "meta": {
             "generado_en": generado_en,
@@ -349,3 +365,4 @@ def build_json_v7_bulk(docs: list, filtros: dict) -> dict:
         },
         "liquidaciones": liquidaciones,
     }
+    return body, coes_a_persistir

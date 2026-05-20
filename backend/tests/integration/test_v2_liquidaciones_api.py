@@ -204,17 +204,28 @@ def test_get_filtra_por_cuit_empresa_repetible(client, app, api_headers):
 
 
 # -----------------------------------------------------------------------
-# Side-effect cero
+# Side-effects idempotentes acotados (ver docs/spec_fix_emision_v2.md)
+#
+# El endpoint persiste hash_payload_emitido + descargado_en y transiciona
+# pendiente→descargado por cada COE emitido. Re-llamadas son no-op.
+# Los tests detallados de idempotencia y rollback viven en
+# tests/integration/test_v2_emision_side_effects.py.
 # -----------------------------------------------------------------------
 
 
-def test_get_NO_modifica_estado_de_coe_estado(client, app, api_headers):
+def test_get_transiciona_pendiente_a_descargado_y_preserva_otros(
+    client, app, api_headers
+):
     with app.app_context():
         t = _create_taxpayer()
         doc1 = _create_doc(taxpayer_id=t.id, coe="33010000000200")
         doc2 = _create_doc(taxpayer_id=t.id, coe="33010000000201")
-        _create_coe_estado(coe="33010000000200", estado="pendiente", lpg_document_id=doc1.id)
-        _create_coe_estado(coe="33010000000201", estado="descargado", lpg_document_id=doc2.id)
+        _create_coe_estado(
+            coe="33010000000200", estado="pendiente", lpg_document_id=doc1.id
+        )
+        _create_coe_estado(
+            coe="33010000000201", estado="descargado", lpg_document_id=doc2.id
+        )
 
     resp = client.get(URL, headers=api_headers)
     assert resp.status_code == 200
@@ -222,11 +233,14 @@ def test_get_NO_modifica_estado_de_coe_estado(client, app, api_headers):
     with app.app_context():
         e1 = CoeEstado.query.filter_by(coe="33010000000200").first()
         e2 = CoeEstado.query.filter_by(coe="33010000000201").first()
-        assert e1.estado == "pendiente"
+        # pendiente → descargado, con hash + descargado_en seteados
+        assert e1.estado == "descargado"
+        assert e1.hash_payload_emitido is not None
+        assert e1.hash_payload_emitido.startswith("sha256:")
+        assert e1.descargado_en is not None
+        # descargado preserva su estado, pero recibe hash + descargado_en
+        # si estaban en null (primera emisión)
         assert e2.estado == "descargado"
-        # hash_payload_emitido no debería modificarse tampoco
-        assert e1.hash_payload_emitido in (None, "")
-        assert e2.hash_payload_emitido in (None, "")
 
 
 # -----------------------------------------------------------------------
