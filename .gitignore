@@ -39,6 +39,7 @@ certificados_clientes/**
 *.pdf
 
 # Local notes/artifacts
+doc_generacion_key_csr.md
 *.pen
 ui_clientes_crud.md
 manual_wslpg_*.txt
