@@ -15,3 +15,14 @@ class LpgDocument(db.Model):
     raw_data = db.Column(db.JSON, nullable=True)
     datos_limpios = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)
+
+    # Controlada — locally audited in Holistor flag
+    controlada = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+        server_default=db.text("false"),
+    )
+    controlada_por = db.Column(db.String(80), nullable=True)
+    controlada_por_nombre = db.Column(db.String(255), nullable=True)
+    controlada_en = db.Column(db.DateTime, nullable=True)
