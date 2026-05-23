@@ -1,5 +1,38 @@
 import { fetchWithAuth } from "./client";
 
+// ---------------------------------------------------------------------------
+// Manual WS load types
+// ---------------------------------------------------------------------------
+
+export interface ConsultManualCoeRequest {
+  coe: string;
+  taxpayer_id: number;
+}
+
+export interface CoePreview {
+  tipo_documento: string;
+  pto_emision: number | null;
+  nro_orden: number | null;
+  estado: string | null;
+  raw_data: Record<string, unknown> | null;
+}
+
+export interface ConsultManualCoeResponse {
+  preview: CoePreview;
+  tipo_documento: "LPG" | "AJUSTE";
+  duplicado: boolean;
+  coe_id: number | null;
+}
+
+export interface CreateManualCoeRequest {
+  coe: string;
+  taxpayer_id: number;
+}
+
+// ---------------------------------------------------------------------------
+// Existing types
+// ---------------------------------------------------------------------------
+
 export interface Coe {
   id: number;
   taxpayer_id: number;
@@ -88,4 +121,39 @@ export async function downloadCoePdf(docId: number): Promise<Blob> {
     throw new Error(errorMsg);
   }
   return res.blob();
+}
+
+export async function consultManualCoe(
+  payload: ConsultManualCoeRequest
+): Promise<ConsultManualCoeResponse> {
+  const res = await fetchWithAuth("/coes/consultar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Error al consultar COE");
+  }
+  return data;
+}
+
+export async function createManualCoe(
+  payload: CreateManualCoeRequest
+): Promise<Coe> {
+  const res = await fetchWithAuth("/coes/manual", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    // 409 Conflict — attach coe_id if present for duplicate handling
+    const err = new Error(data?.error ?? "Error al cargar COE") as Error & { coe_id?: number };
+    if (data?.coe_id !== undefined) {
+      err.coe_id = data.coe_id;
+    }
+    throw err;
+  }
+  return data;
 }
