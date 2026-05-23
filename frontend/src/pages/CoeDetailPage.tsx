@@ -618,6 +618,19 @@ export function CoeDetailPage() {
               </dd>
             </div>
             <div>
+              <dt className="text-sm font-medium text-slate-500">Documento PDF</dt>
+              <dd className="mt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPdf()}
+                  disabled={downloadingPdf}
+                  className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 disabled:opacity-50"
+                >
+                  {downloadingPdf ? "Descargando..." : "Descargar PDF"}
+                </button>
+              </dd>
+            </div>
+            <div className="col-span-3">
               <dt className="text-sm font-medium text-slate-500">Control</dt>
               <dd className="mt-1 flex items-center gap-2">
                 <input
@@ -635,7 +648,7 @@ export function CoeDetailPage() {
                   className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 {coe.controlada && (
-                  <span className="text-sm text-slate-700">
+                  <span className="text-sm text-slate-700 whitespace-nowrap">
                     {`Controlada por ${coe.controlada_por_nombre ?? coe.controlada_por ?? "—"} el ${formatDateTime(coe.controlada_en)}`}
                   </span>
                 )}
@@ -647,19 +660,6 @@ export function CoeDetailPage() {
                     : "Error al actualizar controlada"}
                 </Alert>
               )}
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Documento PDF</dt>
-              <dd className="mt-1">
-                <button
-                  type="button"
-                  onClick={() => void handleDownloadPdf()}
-                  disabled={downloadingPdf}
-                  className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100 disabled:opacity-50"
-                >
-                  {downloadingPdf ? "Descargando..." : "Descargar PDF"}
-                </button>
-              </dd>
             </div>
           </dl>
         </Card>
