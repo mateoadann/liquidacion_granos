@@ -20,6 +20,7 @@ import {
   Drawer,
   Combobox,
 } from "../components/ui";
+import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
 import { downloadCoePdf, type Coe } from "../api/coes";
@@ -63,6 +64,7 @@ export function CoesListPage() {
   const [fechaHasta, setFechaHasta] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
+  const [isManualLoadOpen, setIsManualLoadOpen] = useState(false);
 
   const clientsQuery = useClientsQuery();
   const coesQuery = useCoesQuery({
@@ -183,6 +185,13 @@ export function CoesListPage() {
                 </span>
               ) : null}
             </Button>
+            <Button
+              variant="primary"
+              onClick={() => setIsManualLoadOpen(true)}
+              className="md:w-auto"
+            >
+              Cargar COE manual
+            </Button>
           </div>
         </div>
 
@@ -284,6 +293,11 @@ export function CoesListPage() {
           </>
         )}
       </Card>
+
+      <CoeManualLoadModal
+        isOpen={isManualLoadOpen}
+        onClose={() => setIsManualLoadOpen(false)}
+      />
 
       <Drawer
         isOpen={isFilterOpen}
