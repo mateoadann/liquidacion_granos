@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
-import { Card, CardHeader, Badge, Button, Spinner, Alert } from "../components/ui";
+import { Card, CardHeader, Badge, Button, Spinner, Alert, ConfirmModal } from "../components/ui";
 import { useCoeQuery, useToggleCoeControladaMutation } from "../hooks/useCoes";
 import { usePersonaQuery } from "../hooks/usePadron";
 import { downloadCoePdf } from "../api/coes";
@@ -533,6 +533,7 @@ export function CoeDetailPage() {
   const [datosExpanded, setDatosExpanded] = useState(true);
   const [rawDataExpanded, setRawDataExpanded] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [confirmUncheckOpen, setConfirmUncheckOpen] = useState(false);
 
   const coeQuery = useCoeQuery(coeId);
   const coe = coeQuery.data;
@@ -617,6 +618,37 @@ export function CoeDetailPage() {
               </dd>
             </div>
             <div>
+              <dt className="text-sm font-medium text-slate-500">Control</dt>
+              <dd className="mt-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={coe.controlada}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      toggleMutation.mutate({ id: coe.id, controlada: true });
+                    } else {
+                      setConfirmUncheckOpen(true);
+                    }
+                  }}
+                  disabled={toggleMutation.isPending}
+                  aria-label="Marcar como controlada"
+                  className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                {coe.controlada && (
+                  <span className="text-sm text-slate-700">
+                    {`Controlada por ${coe.controlada_por_nombre ?? coe.controlada_por ?? "—"} el ${formatDateTime(coe.controlada_en)}`}
+                  </span>
+                )}
+              </dd>
+              {toggleMutation.isError && (
+                <Alert variant="error" className="mt-2">
+                  {toggleMutation.error instanceof Error
+                    ? toggleMutation.error.message
+                    : "Error al actualizar controlada"}
+                </Alert>
+              )}
+            </div>
+            <div>
               <dt className="text-sm font-medium text-slate-500">Documento PDF</dt>
               <dd className="mt-1">
                 <button
@@ -628,33 +660,6 @@ export function CoeDetailPage() {
                   {downloadingPdf ? "Descargando..." : "Descargar PDF"}
                 </button>
               </dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Controlada</dt>
-              <dd className="mt-1 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={coe.controlada}
-                  onChange={(e) =>
-                    toggleMutation.mutate({ id: coe.id, controlada: e.target.checked })
-                  }
-                  disabled={toggleMutation.isPending}
-                  aria-label="Marcar como controlada"
-                  className="h-4 w-4 rounded border-slate-300 text-green-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <span className="text-sm text-slate-700">
-                  {coe.controlada
-                    ? `Controlada por ${coe.controlada_por_nombre ?? coe.controlada_por ?? "—"} el ${formatDateTime(coe.controlada_en)}`
-                    : "No controlada"}
-                </span>
-              </dd>
-              {toggleMutation.isError && (
-                <Alert variant="error" className="mt-2">
-                  {toggleMutation.error instanceof Error
-                    ? toggleMutation.error.message
-                    : "Error al actualizar controlada"}
-                </Alert>
-              )}
             </div>
           </dl>
         </Card>
@@ -734,6 +739,22 @@ export function CoeDetailPage() {
           </Card>
         ) : null}
       </div>
+      <ConfirmModal
+        isOpen={confirmUncheckOpen}
+        onClose={() => setConfirmUncheckOpen(false)}
+        onConfirm={() => {
+          toggleMutation.mutate(
+            { id: coe.id, controlada: false },
+            { onSettled: () => setConfirmUncheckOpen(false) },
+          );
+        }}
+        title="Desmarcar control"
+        message="Vas a desmarcar esta liquidación como controlada. Se perderá el registro de quién la controló. ¿Confirmás?"
+        confirmLabel="Desmarcar"
+        cancelLabel="Cancelar"
+        variant="danger"
+        isLoading={toggleMutation.isPending}
+      />
     </div>
   );
 }

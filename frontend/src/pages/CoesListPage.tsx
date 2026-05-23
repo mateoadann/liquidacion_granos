@@ -214,7 +214,7 @@ export function CoesListPage() {
                   <TableCell header>Cliente</TableCell>
                   <TableCell header>Fecha</TableCell>
                   <TableCell header>Estado Ciclo</TableCell>
-                  <TableCell header className="w-20 text-center">Controlada</TableCell>
+                  <TableCell header className="w-20 text-center">Control</TableCell>
                   <TableCell header className="w-20"></TableCell>
                 </TableRow>
               </TableHeader>
@@ -257,7 +257,7 @@ export function CoesListPage() {
                           checked={coe.controlada}
                           disabled
                           aria-label="controlada"
-                          className="h-4 w-4 rounded border-slate-300 text-green-600"
+                          className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600"
                         />
                       </TableCell>
                       <TableCell>
