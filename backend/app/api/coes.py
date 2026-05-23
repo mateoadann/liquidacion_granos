@@ -18,6 +18,14 @@ from ..services import (
     fecha_liquidacion_expr,
     get_or_fetch_pdf,
 )
+from ..services.lpg_document_utils import coe_already_exists
+from ..services.lpg_manual_pipeline import (
+    ArcaWsError,
+    CoeAlreadyExistsError,
+    InvalidCoeFormatError,
+    LpgManualWsService,
+    TaxpayerConfigInvalidError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -225,3 +233,76 @@ def refetch_ajustes():
         "errors": sum(1 for r in results if not r["ok"]),
         "results": results,
     })
+
+
+# ---------------------------------------------------------------------------
+# Manual WS load endpoints
+# ---------------------------------------------------------------------------
+
+
+@coes_bp.post("/coes/consultar")
+@require_auth
+def consultar_coe():
+    """POST /api/coes/consultar — read-only WS fetch. No DB writes."""
+    body = request.get_json(silent=True) or {}
+    coe = (body.get("coe") or "").strip()
+    taxpayer_id = body.get("taxpayer_id")
+
+    if not isinstance(taxpayer_id, int):
+        return {"error": "taxpayer_id requerido"}, 400
+
+    taxpayer = Taxpayer.query.filter_by(id=taxpayer_id, activo=True).first()
+    if not taxpayer:
+        return {"error": "Cliente no encontrado"}, 404
+
+    try:
+        result = LpgManualWsService().fetch_only(taxpayer, coe)
+    except InvalidCoeFormatError as exc:
+        return {"error": str(exc)}, 400
+    except TaxpayerConfigInvalidError as exc:
+        return {"error": str(exc)}, 422
+    except ArcaWsError as exc:
+        return {"error": f"ARCA: {exc}"}, 502
+    except Exception:
+        logger.exception("CONSULTAR_COE_UNEXPECTED | taxpayer_id=%s coe=%s", taxpayer_id, coe)
+        return {"error": "Error interno"}, 500
+
+    existing = coe_already_exists(taxpayer_id, coe)
+    return {
+        "preview": result["preview"],
+        "tipo_documento": result["tipo_documento"],
+        "duplicado": existing is not None,
+        "coe_id": existing.id if existing else None,
+    }, 200
+
+
+@coes_bp.post("/coes/manual")
+@require_auth
+def cargar_coe_manual():
+    """POST /api/coes/manual — persist COE from WS. Writes LpgDocument + AuditEvent."""
+    body = request.get_json(silent=True) or {}
+    coe = (body.get("coe") or "").strip()
+    taxpayer_id = body.get("taxpayer_id")
+
+    if not isinstance(taxpayer_id, int):
+        return {"error": "taxpayer_id requerido"}, 400
+
+    taxpayer = Taxpayer.query.filter_by(id=taxpayer_id, activo=True).first()
+    if not taxpayer:
+        return {"error": "Cliente no encontrado"}, 404
+
+    try:
+        doc = LpgManualWsService().fetch_and_persist(taxpayer, coe)
+    except InvalidCoeFormatError as exc:
+        return {"error": str(exc)}, 400
+    except TaxpayerConfigInvalidError as exc:
+        return {"error": str(exc)}, 422
+    except CoeAlreadyExistsError as exc:
+        return {"error": str(exc), "coe_id": exc.coe_id}, 409
+    except ArcaWsError as exc:
+        return {"error": f"ARCA: {exc}"}, 502
+    except Exception:
+        logger.exception("CARGAR_COE_MANUAL_UNEXPECTED | taxpayer_id=%s coe=%s", taxpayer_id, coe)
+        return {"error": "Error interno"}, 500
+
+    return _serialize_coe(doc, include_taxpayer=True), 201
