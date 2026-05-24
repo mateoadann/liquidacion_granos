@@ -25,6 +25,12 @@ from .certificate_validator import (
 from .crypto_service import decrypt_secret, is_placeholder_secret
 from .datos_limpios_builder import DatosLimpiosBuilder
 from .extraction_phases import PHASE_MESSAGES_ES, ExtractionPhase
+from .lpg_document_utils import (
+    build_ws_client_for_taxpayer,
+    coe_already_exists,
+    save_lpg_document_from_ws,
+    validate_taxpayer_ws_config,
+)
 from ..time_utils import now_cordoba_naive
 
 logger = logging.getLogger(__name__)
@@ -457,33 +463,13 @@ class LpgPlaywrightPipelineService:
             ) from exc
 
     def _validate_taxpayer_ws_config(self, taxpayer: Taxpayer) -> None:
-        if not taxpayer.cuit_representado:
-            raise ValueError(f"Cliente id={taxpayer.id} sin cuit_representado.")
-        if not taxpayer.cert_crt_path or not taxpayer.cert_key_path:
-            raise ValueError(f"Cliente id={taxpayer.id} sin certificados cargados.")
-        try:
-            validate_certificate_and_key_paths(taxpayer.cert_crt_path, taxpayer.cert_key_path)
-        except CertificateValidationError as exc:
-            raise ValueError(
-                f"Certificados inválidos para cliente id={taxpayer.id}: {exc}"
-            ) from exc
+        validate_taxpayer_ws_config(taxpayer)
 
     def _build_ws_client_for_taxpayer(self, taxpayer: Taxpayer) -> ArcaWslpgClient:
-        config = ArcaDiscoveryConfig.from_env()
-        config.environment = taxpayer.ambiente or config.environment
-        config.cuit_representada = taxpayer.cuit_representado
-        config.cert_path = taxpayer.cert_crt_path
-        config.key_path = taxpayer.cert_key_path
-
-        ta_base = config.ta_path or os.getenv("ARCA_TA_PATH") or "/tmp/ta"
-        config.ta_path = str(Path(ta_base) / f"taxpayer_{taxpayer.id}")
-        return ArcaWslpgClient(config=config)
+        return build_ws_client_for_taxpayer(taxpayer)
 
     def _coe_exists(self, taxpayer_id: int, coe: str) -> bool:
-        return (
-            LpgDocument.query.filter_by(taxpayer_id=taxpayer_id, coe=coe).first()
-            is not None
-        )
+        return coe_already_exists(taxpayer_id, coe) is not None
 
     def _is_ajuste_error(self, ws_result: dict[str, Any]) -> bool:
         """Detecta si la respuesta WSLPG contiene error 1861 (COE es un ajuste)."""
@@ -508,57 +494,16 @@ class LpgPlaywrightPipelineService:
         self, taxpayer_id: int, coe: str, ws_result: dict[str, Any],
         tipo_documento: str = "LPG",
     ) -> None:
-        data = ws_result.get("data") if isinstance(ws_result, dict) else ws_result
-        document = LpgDocument()
-        document.taxpayer_id = taxpayer_id
-        document.coe = coe
-        document.tipo_documento = tipo_documento
-        document.pto_emision = self._to_int(self._find_key(data, {"ptoEmision", "pto_emision"}))
-        document.nro_orden = self._to_int(self._find_key(data, {"nroOrden", "nro_orden"}))
-        document.estado = self._to_str(self._find_key(data, {"estado", "estadoLiquidacion"}))
-        document.raw_data = ws_result
-        db.session.add(document)
-        db.session.commit()
-
-        builder = DatosLimpiosBuilder()
-        builder.process_document(document)
-
-        # Auto-create CoeEstado tracking entry
-        if document.coe:
-            try:
-                from .coe_estado_service import crear_pendiente
-                crear_pendiente(document)
-            except Exception:
-                # Never block document save — crear_pendiente is best-effort
-                pass
+        save_lpg_document_from_ws(taxpayer_id, coe, ws_result, tipo_documento)
 
     def _find_key(self, value: Any, keys: set[str]) -> Any:
-        lowered = {item.casefold() for item in keys}
-        stack = [value]
-        while stack:
-            current = stack.pop()
-            if isinstance(current, dict):
-                for key, child in current.items():
-                    if str(key).casefold() in lowered:
-                        return child
-                    stack.append(child)
-            elif isinstance(current, list):
-                stack.extend(current)
-        return None
+        from .lpg_document_utils import _find_key
+        return _find_key(value, keys)
 
     def _to_int(self, value: Any) -> int | None:
-        if value is None:
-            return None
-        digits = re.sub(r"\D", "", str(value))
-        if not digits:
-            return None
-        try:
-            return int(digits)
-        except ValueError:
-            return None
+        from .lpg_document_utils import _to_int
+        return _to_int(value)
 
     def _to_str(self, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
+        from .lpg_document_utils import _to_str
+        return _to_str(value)
