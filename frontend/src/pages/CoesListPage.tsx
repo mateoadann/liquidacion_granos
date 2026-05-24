@@ -20,6 +20,7 @@ import {
   Drawer,
   Combobox,
 } from "../components/ui";
+import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
 import { downloadCoePdf, type Coe } from "../api/coes";
@@ -64,6 +65,7 @@ export function CoesListPage() {
   const [controlada, setControlada] = useState<"" | "true" | "false">("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
+  const [isManualLoadOpen, setIsManualLoadOpen] = useState(false);
 
   const clientsQuery = useClientsQuery();
   const coesQuery = useCoesQuery({
@@ -155,6 +157,26 @@ export function CoesListPage() {
         {/* Filtros */}
         <div className="p-4 border-b border-slate-200">
           <div className="flex flex-col md:flex-row gap-3 md:items-center">
+            <Button
+              variant="primary"
+              onClick={() => setIsManualLoadOpen(true)}
+              className="md:w-auto"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              COE
+            </Button>
             <div className="flex-1">
               <SearchInput
                 value={search}
@@ -308,6 +330,11 @@ export function CoesListPage() {
           </>
         )}
       </Card>
+
+      <CoeManualLoadModal
+        isOpen={isManualLoadOpen}
+        onClose={() => setIsManualLoadOpen(false)}
+      />
 
       <Drawer
         isOpen={isFilterOpen}

@@ -1,5 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listCoes, getCoe, toggleCoeControlada, type Coe, type CoesListResponse, type CoesListParams } from "../api/coes";
+import {
+  consultManualCoe,
+  createManualCoe,
+  getCoe,
+  listCoes,
+  toggleCoeControlada,
+  type Coe,
+  type CoesListParams,
+  type CoesListResponse,
+  type ConsultManualCoeRequest,
+  type ConsultManualCoeResponse,
+  type CreateManualCoeRequest,
+} from "../api/coes";
 
 export function useCoesQuery(params?: CoesListParams) {
   return useQuery<CoesListResponse, Error>({
@@ -40,6 +52,21 @@ export function useToggleCoeControladaMutation() {
     },
     onSettled: (_data, _err, { id }) => {
       qc.invalidateQueries({ queryKey: ["coe", id] });
+    },
+  });
+}
+
+export function useConsultManualCoe() {
+  return useMutation<ConsultManualCoeResponse, Error, ConsultManualCoeRequest>({
+    mutationFn: consultManualCoe,
+  });
+}
+
+export function useCreateManualCoe() {
+  const qc = useQueryClient();
+  return useMutation<Coe, Error, CreateManualCoeRequest>({
+    mutationFn: createManualCoe,
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["coes"] });
     },
   });
