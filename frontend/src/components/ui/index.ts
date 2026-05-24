@@ -13,3 +13,4 @@ export { Modal, ConfirmModal } from "./Modal";
 export { Drawer } from "./Drawer";
 export { Combobox, type ComboboxOption } from "./Combobox";
 export { SearchInput } from "./SearchInput";
+export { DatePicker } from "./DatePicker";

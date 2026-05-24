@@ -19,6 +19,7 @@ import {
   Input,
   Drawer,
   Combobox,
+  DatePicker,
 } from "../components/ui";
 import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
 import { useCoesQuery } from "../hooks/useCoes";
@@ -411,19 +412,17 @@ export function CoesListPage() {
               Fecha de emisión
             </p>
             <div className="space-y-3">
-              <Input
-                type="date"
+              <DatePicker
                 label="Desde"
                 value={fechaDesde}
                 max={fechaHasta || undefined}
-                onChange={(e) => handleFechaDesdeChange(e.target.value)}
+                onChange={handleFechaDesdeChange}
               />
-              <Input
-                type="date"
+              <DatePicker
                 label="Hasta"
                 value={fechaHasta}
                 min={fechaDesde || undefined}
-                onChange={(e) => handleFechaHastaChange(e.target.value)}
+                onChange={handleFechaHastaChange}
               />
             </div>
           </div>

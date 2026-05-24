@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, CardHeader, Input, Alert, Badge, Spinner } from "../ui";
+import { Button, Card, CardHeader, Input, DatePicker, Alert, Badge, Spinner } from "../ui";
 import { useClientsQuery } from "../../hooks/useClients";
 import { usePlaywrightJobQuery, useRunPlaywrightMutation } from "../../hooks/useClients";
 
@@ -13,7 +13,7 @@ function formatDate(date: Date): string {
 function getDefaultDateRange() {
   const hasta = new Date();
   const desde = new Date();
-  desde.setMonth(desde.getMonth() - 6);
+  desde.setDate(desde.getDate() - 30);
   return {
     desde: desde.toISOString().split("T")[0],
     hasta: hasta.toISOString().split("T")[0],
@@ -88,18 +88,16 @@ export function PlaywrightPanel() {
       <div className="space-y-4">
         {/* Fechas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
+          <DatePicker
             label="Fecha desde"
-            type="date"
             value={fechaDesde}
-            onChange={(e) => setFechaDesde(e.target.value)}
+            onChange={setFechaDesde}
             disabled={isRunning}
           />
-          <Input
+          <DatePicker
             label="Fecha hasta"
-            type="date"
             value={fechaHasta}
-            onChange={(e) => setFechaHasta(e.target.value)}
+            onChange={setFechaHasta}
             disabled={isRunning}
           />
         </div>
