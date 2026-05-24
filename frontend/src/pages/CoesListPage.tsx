@@ -153,6 +153,26 @@ export function CoesListPage() {
         {/* Filtros */}
         <div className="p-4 border-b border-slate-200">
           <div className="flex flex-col md:flex-row gap-3 md:items-center">
+            <Button
+              variant="primary"
+              onClick={() => setIsManualLoadOpen(true)}
+              className="md:w-auto"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              COE
+            </Button>
             <div className="flex-1">
               <SearchInput
                 value={search}
@@ -184,13 +204,6 @@ export function CoesListPage() {
                   {drawerFilterCount}
                 </span>
               ) : null}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => setIsManualLoadOpen(true)}
-              className="md:w-auto"
-            >
-              Cargar COE manual
             </Button>
           </div>
         </div>

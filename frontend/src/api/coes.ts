@@ -15,6 +15,7 @@ export interface CoePreview {
   nro_orden: number | null;
   estado: string | null;
   raw_data: Record<string, unknown> | null;
+  datos_limpios: Record<string, unknown> | null;
 }
 
 export interface ConsultManualCoeResponse {
@@ -111,6 +112,26 @@ export async function getCoe(id: number): Promise<Coe> {
 
 export async function downloadCoePdf(docId: number): Promise<Blob> {
   const res = await fetchWithAuth(`/coes/${docId}/pdf`, { method: "GET" });
+  if (!res.ok) {
+    const text = await res.text();
+    let errorMsg = "No se pudo descargar el PDF";
+    try {
+      const json = JSON.parse(text);
+      if (json.error) errorMsg = json.error;
+    } catch { /* ignore */ }
+    throw new Error(errorMsg);
+  }
+  return res.blob();
+}
+
+export async function downloadConsultedCoePdf(
+  payload: ConsultManualCoeRequest
+): Promise<Blob> {
+  const res = await fetchWithAuth("/coes/consultar/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
   if (!res.ok) {
     const text = await res.text();
     let errorMsg = "No se pudo descargar el PDF";

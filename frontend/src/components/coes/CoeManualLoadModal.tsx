@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Alert, Button, Combobox, Input, Modal, Spinner } from "../ui";
 import { useConsultManualCoe, useCreateManualCoe } from "../../hooks/useCoes";
 import { useClientsQuery } from "../../useClients";
-import type { CoePreview } from "../../api/coes";
+import { downloadConsultedCoePdf, type CoePreview } from "../../api/coes";
+import { DatosLimpiosSection } from "./dataDisplay";
 
 // ---------------------------------------------------------------------------
 // State machine
@@ -25,60 +26,6 @@ type ModalState =
   | { kind: "loaded" };
 
 // ---------------------------------------------------------------------------
-// Preview panel helper
-// ---------------------------------------------------------------------------
-
-function CoePreviewPanel({
-  preview,
-  tipoDocumento,
-  duplicado,
-  coeId,
-}: {
-  preview: CoePreview;
-  tipoDocumento: "LPG" | "AJUSTE";
-  duplicado: boolean;
-  coeId: number | null;
-}) {
-  return (
-    <div className="space-y-3">
-      {duplicado && (
-        <Alert variant="warning">
-          Esta liquidación ya está cargada.{" "}
-          {coeId !== null && (
-            <a
-              href={`/coes/${coeId}`}
-              className="underline font-medium"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Ver COE #{coeId}
-            </a>
-          )}
-        </Alert>
-      )}
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm space-y-2">
-        <div className="flex justify-between">
-          <span className="text-slate-500">Tipo</span>
-          <span className="font-medium">{tipoDocumento === "AJUSTE" ? "Ajuste" : "Liquidación"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-500">Pto. Emisión</span>
-          <span className="font-mono">{preview.pto_emision ?? "-"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-500">Nro. Orden</span>
-          <span className="font-mono">{preview.nro_orden ?? "-"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-500">Estado ARCA</span>
-          <span className="font-mono">{preview.estado ?? "-"}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -95,6 +42,30 @@ export function CoeManualLoadModal({ isOpen, onClose }: CoeManualLoadModalProps)
   const [state, setState] = useState<ModalState>({ kind: "idle" });
   const [coe, setCoe] = useState("");
   const [taxpayerId, setTaxpayerId] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  async function handleDownloadPdf() {
+    if (!coe.trim() || !taxpayerId) return;
+    setDownloadingPdf(true);
+    try {
+      const blob = await downloadConsultedCoePdf({
+        coe: coe.trim(),
+        taxpayer_id: Number(taxpayerId),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `liquidacion_${coe.trim()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al descargar PDF");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
 
   const clientsQuery = useClientsQuery();
   const clients = clientsQuery.data ?? [];
@@ -186,7 +157,7 @@ export function CoeManualLoadModal({ isOpen, onClose }: CoeManualLoadModalProps)
       isOpen={isOpen}
       onClose={handleClose}
       title="Cargar COE manual"
-      size="md"
+      size="7xl"
       footer={
         showStep1 ? (
           <>
@@ -206,6 +177,18 @@ export function CoeManualLoadModal({ isOpen, onClose }: CoeManualLoadModalProps)
           <>
             <Button variant="secondary" onClick={handleClose} disabled={isLoading}>
               Cerrar
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleDownloadPdf}
+              isLoading={downloadingPdf}
+              disabled={
+                isLoading ||
+                downloadingPdf ||
+                state.kind === "loaded"
+              }
+            >
+              PDF
             </Button>
             <Button
               variant="primary"
@@ -256,7 +239,7 @@ export function CoeManualLoadModal({ isOpen, onClose }: CoeManualLoadModalProps)
       )}
 
       {showStep2 && (
-        <div className="space-y-4">
+        <div className="max-h-[75vh] overflow-y-auto pr-1 space-y-4">
           {state.kind === "loaded" ? (
             <Alert variant="success">
               COE cargado exitosamente. Cerrando...
@@ -266,12 +249,28 @@ export function CoeManualLoadModal({ isOpen, onClose }: CoeManualLoadModalProps)
               {(state.kind === "consulted" ||
                 state.kind === "loading" ||
                 state.kind === "load-error") && (
-                <CoePreviewPanel
-                  preview={state.preview}
-                  tipoDocumento={state.tipoDocumento}
-                  duplicado={state.duplicado}
-                  coeId={state.coeId}
-                />
+                <>
+                  {state.duplicado && (
+                    <Alert variant="warning">
+                      Esta liquidación ya está cargada.{" "}
+                      {state.coeId !== null && (
+                        <a
+                          href={`/coes/${state.coeId}`}
+                          className="underline font-medium"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Ver COE #{state.coeId}
+                        </a>
+                      )}
+                    </Alert>
+                  )}
+                  <DatosLimpiosSection
+                    rawData={state.preview.raw_data ?? {}}
+                    datosLimpios={state.preview.datos_limpios}
+                    taxpayerId={Number(taxpayerId) || null}
+                  />
+                </>
               )}
 
               {state.kind === "loading" && (
