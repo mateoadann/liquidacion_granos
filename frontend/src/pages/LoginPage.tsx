@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useLocation, Navigate } from "react-router-dom";
-import { Button, Input, Alert } from "../components/ui";
+import { Button, Input, PasswordInput, Alert } from "../components/ui";
 import { useAuthStore } from "../store/useAuthStore";
 import { login } from "../api/authApi";
 
@@ -74,9 +74,8 @@ export function LoginPage() {
               disabled={isLoading}
             />
 
-            <Input
+            <PasswordInput
               label="Contraseña"
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Ingrese su contraseña"
