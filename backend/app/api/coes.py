@@ -262,7 +262,7 @@ def consultar_coe():
     except TaxpayerConfigInvalidError as exc:
         return {"error": str(exc)}, 422
     except ArcaWsError as exc:
-        return {"error": f"ARCA: {exc}"}, 502
+        return {"error": str(exc)}, 422
     except Exception:
         logger.exception("CONSULTAR_COE_UNEXPECTED | taxpayer_id=%s coe=%s", taxpayer_id, coe)
         return {"error": "Error interno"}, 500
@@ -274,6 +274,89 @@ def consultar_coe():
         "duplicado": existing is not None,
         "coe_id": existing.id if existing else None,
     }, 200
+
+
+@coes_bp.post("/coes/consultar/pdf")
+@require_auth
+def consultar_coe_pdf():
+    """POST /api/coes/consultar/pdf — fetch PDF for a COE without persisting.
+
+    Calls ARCA WS with pdf="S" and streams the binary back. No DB writes,
+    no PdfCache entry, no AuditEvent. Used by the manual-load modal to let
+    the user preview/download the PDF before deciding to persist.
+    """
+    body = request.get_json(silent=True) or {}
+    coe = (body.get("coe") or "").strip()
+    taxpayer_id = body.get("taxpayer_id")
+
+    if not isinstance(taxpayer_id, int):
+        return {"error": "taxpayer_id requerido"}, 400
+
+    taxpayer = Taxpayer.query.filter_by(id=taxpayer_id, activo=True).first()
+    if not taxpayer:
+        return {"error": "Cliente no encontrado"}, 404
+
+    if not taxpayer.cert_crt_path or not taxpayer.cert_key_path:
+        return {"error": "Cliente no tiene certificados ARCA configurados"}, 422
+
+    from ..services.lpg_manual_pipeline import COE_PATTERN
+
+    if not COE_PATTERN.match(coe):
+        return {"error": "COE inválido. Debe ser numérico y tener entre 6 y 16 dígitos."}, 400
+
+    import base64
+    from pathlib import Path
+    from ..integrations.arca.client import ArcaWslpgClient, ArcaDiscoveryConfig
+
+    try:
+        config = ArcaDiscoveryConfig.from_env()
+        config.environment = taxpayer.ambiente or config.environment
+        config.cuit_representada = taxpayer.cuit_representado
+        config.cert_path = taxpayer.cert_crt_path
+        config.key_path = taxpayer.cert_key_path
+        ta_base = config.ta_path or "/tmp/ta"
+        config.ta_path = str(Path(ta_base) / f"taxpayer_{taxpayer.id}")
+
+        ws_client = ArcaWslpgClient(config=config)
+        ws_client.connect()
+
+        coe_int = int(coe)
+        # Try LPG first; if WS returns the ajuste marker, retry as ajuste
+        result = ws_client.call_liquidacion_x_coe(coe_int, pdf="S")
+        data = (result or {}).get("data") or {}
+        if isinstance(data, dict) and data.get("ajusteUnificado") is not None:
+            result = ws_client.call_ajuste_x_coe(coe_int, pdf="S")
+            data = (result or {}).get("data") or {}
+
+        from ..services.lpg_manual_pipeline import _extract_arca_error
+
+        arca_error = _extract_arca_error(result)
+        if arca_error:
+            return {"error": arca_error[1]}, 422
+
+        pdf_raw = data.get("pdf") if isinstance(data, dict) else None
+        if not pdf_raw:
+            return {"error": "ARCA no devolvió PDF para este COE"}, 502
+
+        if isinstance(pdf_raw, bytes):
+            pdf_bytes = pdf_raw
+        else:
+            pdf_bytes = base64.b64decode(pdf_raw)
+    except Exception:
+        logger.exception(
+            "CONSULTAR_COE_PDF_UNEXPECTED | taxpayer_id=%s coe=%s",
+            taxpayer_id,
+            coe,
+        )
+        return {"error": "Error al consultar PDF"}, 502
+
+    filename = f"liquidacion_{coe}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @coes_bp.post("/coes/manual")
@@ -300,7 +383,7 @@ def cargar_coe_manual():
     except CoeAlreadyExistsError as exc:
         return {"error": str(exc), "coe_id": exc.coe_id}, 409
     except ArcaWsError as exc:
-        return {"error": f"ARCA: {exc}"}, 502
+        return {"error": str(exc)}, 422
     except Exception:
         logger.exception("CARGAR_COE_MANUAL_UNEXPECTED | taxpayer_id=%s coe=%s", taxpayer_id, coe)
         return {"error": "Error interno"}, 500

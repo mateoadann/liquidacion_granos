@@ -58,6 +58,35 @@ class ArcaWsError(LpgManualError):
     """502 — ARCA upstream failure (auth, timeout, functional, parser)."""
 
 
+def _extract_arca_error(ws_result: dict[str, Any]) -> tuple[str, str] | None:
+    """Return (code, description) when ARCA replied 200 with an embedded error.
+
+    The WSLPG returns HTTP 200 even on functional errors (wrong CUIT, COE not
+    found, etc.), surfacing them inside ``data.errores.error``. Callers should
+    convert this to a 422 with a user-friendly message.
+    """
+    if not isinstance(ws_result, dict):
+        return None
+    data = ws_result.get("data") if isinstance(ws_result.get("data"), dict) else ws_result
+    if not isinstance(data, dict):
+        return None
+    errores = data.get("errores")
+    if not isinstance(errores, dict):
+        return None
+    error_list = errores.get("error")
+    if not error_list:
+        return None
+    # error can be a dict or a list of dicts
+    first = error_list[0] if isinstance(error_list, list) else error_list
+    if not isinstance(first, dict):
+        return None
+    code = str(first.get("codigo") or first.get("code") or "").strip() or "?"
+    desc = str(first.get("descripcion") or first.get("description") or "").strip()
+    if not desc:
+        return None
+    return code, desc
+
+
 # ---------------------------------------------------------------------------
 # Pure helper: build preview dict from WS result (no DB access)
 # ---------------------------------------------------------------------------
@@ -99,12 +128,25 @@ def build_preview_from_ws(ws_result: dict[str, Any], tipo_documento: str) -> dic
         except ValueError:
             return None
 
+    # Build flattened datos_limpios using the same transformer used at persist
+    # time, so the preview shape matches what /coes/<id> shows after loading.
+    try:
+        from .datos_limpios_builder import DatosLimpiosBuilder
+
+        datos_limpios: dict[str, Any] | None = DatosLimpiosBuilder().build(ws_result)
+        if not datos_limpios:
+            datos_limpios = None
+    except Exception:
+        logger.exception("BUILD_PREVIEW_DATOS_LIMPIOS_FAILED")
+        datos_limpios = None
+
     return {
         "tipo_documento": tipo_documento,
         "pto_emision": _to_int_safe(_find({"ptoEmision", "pto_emision"})),
         "nro_orden": _to_int_safe(_find({"nroOrden", "nro_orden"})),
         "estado": str(_find({"estado", "estadoLiquidacion"}) or "").strip() or None,
         "raw_data": ws_result,
+        "datos_limpios": datos_limpios,
     }
 
 
@@ -179,6 +221,18 @@ class LpgManualWsService:
                 raise ArcaWsError(
                     f"Error al consultar ARCA: {fallback_exc}"
                 ) from fallback_exc
+
+        # Check for application-level ARCA errors embedded in 200 OK responses
+        arca_error = _extract_arca_error(ws_result)
+        if arca_error:
+            logger.warning(
+                "MANUAL_WS_ARCA_ERROR | taxpayer_id=%s coe=%s code=%s msg=%s",
+                taxpayer.id,
+                coe_stripped,
+                arca_error[0],
+                arca_error[1],
+            )
+            raise ArcaWsError(arca_error[1])
 
         preview = build_preview_from_ws(ws_result, tipo_documento)
         return {
