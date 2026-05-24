@@ -58,6 +58,10 @@ export interface Coe {
     empresa: string;
     cuit: string;
   };
+  controlada: boolean;
+  controlada_por: string | null;
+  controlada_por_nombre: string | null;
+  controlada_en: string | null;
 }
 
 export interface CoesListResponse {
@@ -77,6 +81,7 @@ export interface CoesListParams {
   fecha_desde?: string;
   fecha_hasta?: string;
   search?: string;
+  controlada?: "true" | "false";
 }
 
 export async function listCoes(params?: CoesListParams): Promise<CoesListResponse> {
@@ -89,6 +94,7 @@ export async function listCoes(params?: CoesListParams): Promise<CoesListRespons
   if (params?.fecha_desde) searchParams.set("fecha_desde", params.fecha_desde);
   if (params?.fecha_hasta) searchParams.set("fecha_hasta", params.fecha_hasta);
   if (params?.search) searchParams.set("search", params.search);
+  if (params?.controlada) searchParams.set("controlada", params.controlada);
 
   const query = searchParams.toString();
   const path = query ? `/coes?${query}` : "/coes";
@@ -108,6 +114,17 @@ export async function getCoe(id: number): Promise<Coe> {
     throw new Error(data?.error ?? "Error al obtener COE");
   }
   return data;
+}
+
+export async function toggleCoeControlada(id: number, controlada: boolean): Promise<Coe> {
+  const res = await fetchWithAuth(`/coes/${id}/controlada`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ controlada }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error ?? "No se pudo actualizar controlada");
+  return data as Coe;
 }
 
 export async function downloadCoePdf(docId: number): Promise<Blob> {

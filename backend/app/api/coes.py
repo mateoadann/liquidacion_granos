@@ -7,8 +7,9 @@ from datetime import date, datetime
 from flask import Blueprint, jsonify, request, send_file
 
 from ..extensions import db
-from ..models import CoeEstado, LpgDocument, Taxpayer
-from ..middleware import require_auth, require_admin
+from ..models import AuditEvent, CoeEstado, LpgDocument, Taxpayer, User
+from ..middleware import require_auth, require_admin, get_current_user
+from ..time_utils import now_cordoba_naive
 from ..services import (
     PdfFetchError,
     PdfNoCertificatesError,
@@ -67,6 +68,10 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "raw_data": doc.raw_data,
         "datos_limpios": doc.datos_limpios,
         "coe_estado": coe_estado_info,
+        "controlada": bool(doc.controlada),
+        "controlada_por": doc.controlada_por,
+        "controlada_por_nombre": doc.controlada_por_nombre,
+        "controlada_en": doc.controlada_en.isoformat() if doc.controlada_en else None,
     }
     if include_taxpayer and doc.taxpayer_id:
         taxpayer = db.session.get(Taxpayer, doc.taxpayer_id)
@@ -118,6 +123,12 @@ def list_coes():
     if search:
         query = query.filter(LpgDocument.coe.ilike(f"%{search}%"))
 
+    controlada_raw = (request.args.get("controlada") or "").strip().lower()
+    if controlada_raw == "true":
+        query = query.filter(LpgDocument.controlada.is_(True))
+    elif controlada_raw == "false":
+        query = query.filter(LpgDocument.controlada.is_(False))
+
     total = query.count()
     pages = (total + per_page - 1) // per_page
 
@@ -144,6 +155,68 @@ def get_coe(coe_id: int):
     if not doc:
         return {"error": "COE no encontrado"}, 404
     return _serialize_coe(doc, include_taxpayer=True)
+
+
+@coes_bp.patch("/coes/<int:coe_id>/controlada")
+@require_auth
+def toggle_coe_controlada(coe_id: int):
+    """Toggle the controlada flag on a COE document."""
+    body = request.get_json(silent=True) or {}
+    new_value = body.get("controlada")
+    if not isinstance(new_value, bool):
+        return {"error": "controlada (boolean) requerido"}, 400
+
+    doc = db.session.get(LpgDocument, coe_id)
+    if not doc:
+        return {"error": "COE no encontrado"}, 404
+
+    prev_value = bool(doc.controlada)
+    if prev_value == new_value:
+        # No-op — return current state without emitting an audit event
+        return _serialize_coe(doc, include_taxpayer=True), 200
+
+    current_user = get_current_user() or {}
+    username = current_user.get("username")
+
+    # Resolve nombre from User table (one read per toggle; not on hot path)
+    nombre: str | None = None
+    if username:
+        user_row = db.session.query(User).filter(User.username == username).first()
+        nombre = user_row.nombre if user_row else None
+
+    if new_value:
+        doc.controlada = True
+        doc.controlada_por = username
+        doc.controlada_por_nombre = nombre
+        doc.controlada_en = now_cordoba_naive()
+    else:
+        doc.controlada = False
+        doc.controlada_por = None
+        doc.controlada_por_nombre = None
+        doc.controlada_en = None
+
+    audit = AuditEvent(
+        taxpayer_id=doc.taxpayer_id,
+        operation="coe_controlada_toggle",
+        level="info",
+        metadata_json={
+            "coe_id": doc.id,
+            "coe": doc.coe,
+            "from": prev_value,
+            "to": new_value,
+            "by_username": username,
+            "by_nombre": nombre,
+        },
+    )
+    db.session.add(audit)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("COE_CONTROLADA_TOGGLE_ERROR | coe_id=%s", coe_id)
+        return {"error": "Error interno al actualizar controlada"}, 500
+
+    return _serialize_coe(doc, include_taxpayer=True), 200
 
 
 @coes_bp.get("/coes/<int:doc_id>/pdf")
