@@ -61,6 +61,7 @@ export function CoesListPage() {
   const [estadoCiclo, setEstadoCiclo] = useState<string>("");
   const [fechaDesde, setFechaDesde] = useState<string>("");
   const [fechaHasta, setFechaHasta] = useState<string>("");
+  const [controlada, setControlada] = useState<"" | "true" | "false">("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
 
@@ -73,12 +74,14 @@ export function CoesListPage() {
     fecha_desde: fechaDesde || undefined,
     fecha_hasta: fechaHasta || undefined,
     search: search || undefined,
+    controlada: controlada || undefined,
   });
 
   const drawerFilterCount =
     (taxpayerId !== undefined ? 1 : 0) +
     (estadoCiclo ? 1 : 0) +
-    (fechaDesde || fechaHasta ? 1 : 0);
+    (fechaDesde || fechaHasta ? 1 : 0) +
+    (controlada ? 1 : 0);
 
   const hasActiveFilters = !!search || drawerFilterCount > 0;
 
@@ -88,6 +91,7 @@ export function CoesListPage() {
     setEstadoCiclo("");
     setFechaDesde("");
     setFechaHasta("");
+    setControlada("");
     setPage(1);
   }
 
@@ -220,6 +224,7 @@ export function CoesListPage() {
                   <TableCell header>Cliente</TableCell>
                   <TableCell header>Fecha</TableCell>
                   <TableCell header>Estado Ciclo</TableCell>
+                  <TableCell header className="w-20 text-center">Control</TableCell>
                   <TableCell header className="w-20"></TableCell>
                 </TableRow>
               </TableHeader>
@@ -255,6 +260,15 @@ export function CoesListPage() {
                       </TableCell>
                       <TableCell>
                         <EstadoCicloBadge estado={coe.coe_estado?.estado} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={coe.controlada}
+                          disabled
+                          aria-label="controlada"
+                          className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600"
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -343,6 +357,24 @@ export function CoesListPage() {
                 { value: "descargado", label: "Descargado" },
                 { value: "cargado", label: "Cargado" },
                 { value: "error", label: "Error" },
+              ]}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Controlada
+            </label>
+            <Select
+              value={controlada}
+              onChange={(e) => {
+                setControlada(e.target.value as "" | "true" | "false");
+                setPage(1);
+              }}
+              options={[
+                { value: "", label: "Todas" },
+                { value: "true", label: "Sí" },
+                { value: "false", label: "No" },
               ]}
             />
           </div>
