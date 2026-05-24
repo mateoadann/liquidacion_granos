@@ -201,6 +201,16 @@ export function CoesListPage() {
           </div>
         ) : (
           <>
+            {coesQuery.data && coesQuery.data.pages > 1 ? (
+              <Pagination
+                page={coesQuery.data.page}
+                pages={coesQuery.data.pages}
+                total={coesQuery.data.total}
+                perPage={coesQuery.data.per_page}
+                onPageChange={setPage}
+              />
+            ) : null}
+
             <Table>
               <TableHeader>
                 <TableRow>
