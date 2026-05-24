@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Client, ClientEnvironment } from "./clients";
+import { PasswordInput } from "./components/ui";
 
 export type ClientFormMode = "create" | "edit";
 
@@ -151,19 +152,15 @@ export default function ClientForm({
           </select>
         </label>
 
-        <label className="block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">Clave fiscal</span>
-          <input
-            type="password"
-            value={values.claveFiscal}
-            onChange={(event) => setField("claveFiscal", event.target.value)}
-            placeholder={
-              mode === "edit" ? "Dejar vacío para no modificar" : "Ingresar clave fiscal"
-            }
-            className="w-full rounded-md border border-slate-300 px-3 py-2"
-          />
-          <p className="mt-1 text-xs text-slate-500">La clave fiscal se almacena cifrada</p>
-        </label>
+        <PasswordInput
+          label="Clave fiscal"
+          value={values.claveFiscal}
+          onChange={(event) => setField("claveFiscal", event.target.value)}
+          placeholder={
+            mode === "edit" ? "Dejar vacío para no modificar" : "Ingresar clave fiscal"
+          }
+          helperText="La clave fiscal se almacena cifrada"
+        />
 
         {mode === "edit" ? (
           <label className="flex items-center gap-2 text-sm text-slate-700">

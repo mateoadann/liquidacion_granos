@@ -13,6 +13,7 @@ import {
   TableCell,
   Modal,
   ConfirmModal,
+  PasswordInput,
 } from "../components/ui";
 import {
   useUsersQuery,
@@ -263,17 +264,11 @@ export function UsersListPage() {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            />
-          </div>
+          <PasswordInput
+            label="Contraseña"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Rol
@@ -365,12 +360,10 @@ export function UsersListPage() {
           <p className="text-sm text-slate-500 mb-4">
             Nueva contraseña para <strong>{resettingUser?.username}</strong>
           </p>
-          <input
-            type="password"
+          <PasswordInput
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="Nueva contraseña (mín. 8 caracteres)"
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
           />
         </div>
       </Modal>
