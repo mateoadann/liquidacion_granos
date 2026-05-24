@@ -7,7 +7,7 @@ Key invariants:
   - 400 for invalid COE format.
   - 404 for unknown taxpayer_id.
   - 422 for taxpayer without valid certs.
-  - 502 for ARCA WS error.
+  - 422 for ARCA WS functional error.
 """
 from __future__ import annotations
 
@@ -190,8 +190,8 @@ def test_consultar_422_taxpayer_no_certs(client, auth_headers):
     assert "error" in resp.get_json()
 
 
-def test_consultar_502_ws_error(client, auth_headers):
-    """POST /consultar returns 502 when ARCA WS fails."""
+def test_consultar_422_ws_error(client, auth_headers):
+    """POST /consultar returns 422 when ARCA WS reports a functional error."""
     tp = _create_taxpayer()
 
     from app.services.lpg_manual_pipeline import ArcaWsError
@@ -206,7 +206,7 @@ def test_consultar_502_ws_error(client, auth_headers):
             headers=auth_headers,
         )
 
-    assert resp.status_code == 502
+    assert resp.status_code == 422
     assert "error" in resp.get_json()
 
 

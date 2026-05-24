@@ -6,7 +6,7 @@ Covers:
   - 404 taxpayer not found.
   - 409 duplicate (response includes coe_id).
   - 422 taxpayer no certs.
-  - 502 WS error.
+  - 422 WS functional error.
   - Audit event payload shape verification.
 """
 from __future__ import annotations
@@ -221,8 +221,8 @@ def test_manual_422_taxpayer_no_certs(client, auth_headers):
     assert "error" in resp.get_json()
 
 
-def test_manual_502_ws_error(client, auth_headers):
-    """POST /manual returns 502 when ARCA WS fails."""
+def test_manual_422_ws_error(client, auth_headers):
+    """POST /manual returns 422 when ARCA WS reports a functional error."""
     tp = _create_taxpayer()
 
     from app.services.lpg_manual_pipeline import ArcaWsError
@@ -237,7 +237,7 @@ def test_manual_502_ws_error(client, auth_headers):
             headers=auth_headers,
         )
 
-    assert resp.status_code == 502
+    assert resp.status_code == 422
     assert "error" in resp.get_json()
 
 
