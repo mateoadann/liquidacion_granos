@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardHeader, Spinner } from "../ui";
 import { useJobsQuery } from "../../hooks/useJobs";
 import { formatDateTime } from "../../dateUtils";
@@ -17,6 +18,14 @@ export function RecentJobsPanel() {
       <CardHeader
         title="Extracciones Recientes"
         subtitle="Últimas 10 ejecuciones de extracción."
+        action={
+          <Link
+            to="/extracciones"
+            className="text-sm font-medium text-green-700 hover:text-green-800"
+          >
+            Ver todas →
+          </Link>
+        }
       />
 
       {jobsQuery.isLoading ? (

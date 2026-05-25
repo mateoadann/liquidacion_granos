@@ -24,6 +24,14 @@ export interface JobsListResponse {
   total: number;
 }
 
+export interface JobsPaginatedResponse {
+  jobs: Job[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
 function normalizeJobsListResponse(data: unknown): JobsListResponse {
   if (Array.isArray(data)) {
     return {
@@ -63,6 +71,28 @@ export async function listJobs(params?: {
   }
 
   return normalizeJobsListResponse(data);
+}
+
+export async function listJobsPaginated(params: {
+  page: number;
+  per_page?: number;
+  status?: string;
+  taxpayer_id?: number;
+}): Promise<JobsPaginatedResponse> {
+  const searchParams = new URLSearchParams();
+  searchParams.set("page", params.page.toString());
+  if (params.per_page) searchParams.set("per_page", params.per_page.toString());
+  if (params.status) searchParams.set("status", params.status);
+  if (params.taxpayer_id !== undefined) {
+    searchParams.set("taxpayer_id", params.taxpayer_id.toString());
+  }
+
+  const res = await fetchWithAuth(`/jobs?${searchParams.toString()}`);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Error al obtener jobs");
+  }
+  return data as JobsPaginatedResponse;
 }
 
 export async function getJob(id: number): Promise<Job> {
