@@ -24,6 +24,7 @@ import {
 import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
+import { usePageQueryParam } from "../hooks/usePageQueryParam";
 import { downloadCoePdf, type Coe } from "../api/coes";
 
 function EstadoCicloBadge({ estado }: { estado: string | null | undefined }) {
@@ -57,7 +58,7 @@ function getTipoCte(coe: Coe): "F1" | "F2" | "NL" | "-" {
 
 export function CoesListPage() {
   const navigate = useNavigate();
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePageQueryParam();
   const [search, setSearch] = useState("");
   const [taxpayerId, setTaxpayerId] = useState<number | undefined>();
   const [estadoCiclo, setEstadoCiclo] = useState<string>("");

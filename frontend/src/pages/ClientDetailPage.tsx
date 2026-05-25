@@ -39,7 +39,7 @@ export function ClientDetailPage() {
         subtitle={`CUIT: ${client.cuit}`}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => navigate("/clientes")}>
+            <Button variant="secondary" onClick={() => navigate(-1)}>
               Volver
             </Button>
             <Button onClick={() => navigate(`/clientes/${client.id}/editar`)}>

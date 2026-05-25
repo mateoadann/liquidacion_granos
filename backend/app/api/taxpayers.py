@@ -51,7 +51,7 @@ def create_taxpayer():
         return jsonify({"error": "Ambiente inválido."}), 400
 
     if Taxpayer.query.filter_by(cuit=cuit).first():
-        return jsonify({"error": "La CUIT ya existe."}), 409
+        return jsonify({"error": "Ya existe un taxpayer con ese CUIT."}), 409
 
     item = Taxpayer()
     item.cuit = cuit

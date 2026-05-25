@@ -30,6 +30,7 @@ FIXED_NOW_SAB_0900 = datetime(2026, 5, 16, 9, 0, 0)
 
 
 _CUIT_COUNTER = {"value": 20_111_111_110}
+_CUIT_REPR_COUNTER = {"value": 30_711_165_377}
 
 
 def _next_cuit() -> str:
@@ -37,11 +38,16 @@ def _next_cuit() -> str:
     return str(_CUIT_COUNTER["value"])
 
 
+def _next_cuit_repr() -> str:
+    _CUIT_REPR_COUNTER["value"] += 1
+    return str(_CUIT_REPR_COUNTER["value"])
+
+
 def _create_taxpayer(**kwargs) -> Taxpayer:
     defaults = {
         "cuit": _next_cuit(),
         "empresa": "Test SA",
-        "cuit_representado": "30711165378",
+        "cuit_representado": _next_cuit_repr(),
         "activo": True,
         "scheduler_activo": True,
         "scheduler_dias_semana": "lun,mar,mie,jue,vie",

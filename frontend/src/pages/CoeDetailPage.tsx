@@ -108,7 +108,7 @@ export function CoeDetailPage() {
         title={`COE: ${coe.coe ?? "Sin número"}`}
         subtitle={coe.taxpayer?.empresa}
         actions={
-          <Button variant="secondary" onClick={() => navigate("/coes")}>
+          <Button variant="secondary" onClick={() => navigate(-1)}>
             Volver
           </Button>
         }

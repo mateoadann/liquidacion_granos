@@ -35,20 +35,42 @@ def test_create_client_ok(client, auth_headers):
     assert "clave_fiscal_encrypted" not in body
 
 
-def test_create_client_duplicate_cuit_returns_409(client, auth_headers):
+def test_create_client_same_cuit_different_representado_is_allowed(client, auth_headers):
+    """Un mismo CUIT (operador) puede representar a distintos cuit_representado."""
     _create_client(client, auth_headers)
 
     response = client.post(
         "/api/clients",
         json=_base_payload(
             empresa="Otra Empresa",
-            cuit_representado="20999888777",
+            cuit_representado="20999888779",
+            clave_fiscal="otra-clave",
+        ),
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["cuit"] == "20304050607"
+    assert body["cuit_representado"] == "20999888779"
+
+
+def test_create_client_duplicate_cuit_representado_returns_409(client, auth_headers):
+    """cuit_representado debe ser único: dos clientes no pueden representar al mismo CUIT."""
+    _create_client(client, auth_headers)
+
+    response = client.post(
+        "/api/clients",
+        json=_base_payload(
+            empresa="Otra Empresa",
+            cuit="20111222339",
             clave_fiscal="otra-clave",
         ),
         headers=auth_headers,
     )
 
     assert response.status_code == 409
+    assert "CUIT Representado" in response.get_json()["error"]
 
 
 def test_patch_without_clave_fiscal_keeps_has_clave_fiscal(client, auth_headers):

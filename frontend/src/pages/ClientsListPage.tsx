@@ -24,6 +24,7 @@ import {
   useDeleteClientMutation,
   usePermanentDeleteClientMutation,
 } from "../useClients";
+import { usePageQueryParam } from "../hooks/usePageQueryParam";
 import type { Client } from "../clients";
 
 type DeleteAction = "deactivate" | "permanent";
@@ -46,7 +47,7 @@ function MoreIcon() {
 
 export function ClientsListPage() {
   const navigate = useNavigate();
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePageQueryParam();
   const [search, setSearch] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{
     client: Client;
@@ -142,6 +143,16 @@ export function ClientsListPage() {
           </div>
         ) : (
           <>
+          {clientsQuery.data && clientsQuery.data.pages > 1 ? (
+            <Pagination
+              page={clientsQuery.data.page}
+              pages={clientsQuery.data.pages}
+              total={clientsQuery.data.total}
+              perPage={clientsQuery.data.per_page}
+              onPageChange={setPage}
+            />
+          ) : null}
+
           <Table>
             <TableHeader>
               <TableRow>
