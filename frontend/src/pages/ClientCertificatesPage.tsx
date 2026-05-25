@@ -137,6 +137,14 @@ export function ClientCertificatesPage() {
         </div>
       )}
 
+      {client.certificadosCargados ? (
+        <DangerZoneDeleteCertificates
+          clientId={clientId}
+          empresa={client.empresa}
+          onDeleted={() => clientQuery.refetch()}
+        />
+      ) : null}
+
       <CertificateTutorial />
 
       <Modal
@@ -192,6 +200,131 @@ export function ClientCertificatesPage() {
         </form>
       </Modal>
     </div>
+  );
+}
+
+function DangerZoneDeleteCertificates({
+  clientId,
+  empresa,
+  onDeleted,
+}: {
+  clientId: number;
+  empresa: string;
+  onDeleted: () => void;
+}) {
+  const removeMutation = useRemoveCertificatesMutation();
+  const [isOpen, setIsOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const matches = typed === empresa;
+
+  function handleOpen() {
+    removeMutation.reset();
+    setTyped("");
+    setError(null);
+    setIsOpen(true);
+  }
+
+  function handleClose() {
+    if (removeMutation.isPending) return;
+    setIsOpen(false);
+    setTyped("");
+    setError(null);
+    removeMutation.reset();
+  }
+
+  async function handleConfirm() {
+    if (!matches) return;
+    try {
+      await removeMutation.mutateAsync(clientId);
+      setIsOpen(false);
+      setTyped("");
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al eliminar certificados");
+    }
+  }
+
+  function blockClipboard(e: React.ClipboardEvent | React.SyntheticEvent) {
+    e.preventDefault();
+  }
+
+  return (
+    <Card className="mt-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-medium text-slate-700">Acciones avanzadas</h4>
+          <p className="text-xs text-slate-500 mt-1">
+            Eliminar los certificados del servidor para empezar de cero.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="text-sm text-rose-600/80 hover:text-rose-700 hover:underline focus:outline-none focus:underline"
+        >
+          Eliminar certificados
+        </button>
+      </div>
+
+      <Modal isOpen={isOpen} onClose={handleClose} title="Eliminar certificados" size="md">
+        <div className="space-y-4">
+          <Alert variant="error">
+            Esta acción <strong>no se puede deshacer</strong>. Se eliminarán los archivos{" "}
+            <span className="font-mono">.crt</span> y <span className="font-mono">.key</span>{" "}
+            del servidor y se limpiará la configuración de certificados del cliente.
+          </Alert>
+
+          <div>
+            <p className="text-sm text-slate-700 mb-2">
+              Para confirmar, escribí el nombre exacto del cliente:
+            </p>
+            <div
+              className="select-none bg-slate-100 border border-slate-300 rounded-md px-3 py-2 font-mono text-sm text-slate-900"
+              onCopy={blockClipboard}
+              onCut={blockClipboard}
+              onContextMenu={blockClipboard}
+              onDragStart={blockClipboard}
+              style={{ userSelect: "none", WebkitUserSelect: "none" }}
+            >
+              {empresa}
+            </div>
+            <input
+              type="text"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onPaste={blockClipboard}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="Tipeá el nombre del cliente"
+              className="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-red-500"
+              disabled={removeMutation.isPending}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              El nombre debe coincidir exactamente (mayúsculas y minúsculas incluidas).
+            </p>
+          </div>
+
+          {error ? <Alert variant="error">{error}</Alert> : null}
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+            <Button variant="secondary" onClick={handleClose} disabled={removeMutation.isPending}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleConfirm}
+              disabled={!matches || removeMutation.isPending}
+              isLoading={removeMutation.isPending}
+            >
+              Eliminar definitivamente
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </Card>
   );
 }
 
