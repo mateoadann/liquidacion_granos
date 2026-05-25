@@ -284,8 +284,8 @@ def create_client():
         return _error("ambiente invalido. Valores permitidos: homologacion, produccion.", 400)
     if not isinstance(clave_fiscal, str) or not clave_fiscal.strip():
         return _error("clave_fiscal es obligatoria.", 400)
-    if Taxpayer.query.filter_by(cuit=cuit).first():
-        return _error("La CUIT ya existe.", 409)
+    if Taxpayer.query.filter_by(cuit_representado=cuit_representado).first():
+        return _error("Ya existe un cliente con ese CUIT Representado.", 409)
 
     try:
         encrypted_secret = encrypt_secret(clave_fiscal)
@@ -306,7 +306,7 @@ def create_client():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return _error("La CUIT ya existe.", 409)
+        return _error("Ya existe un cliente con ese CUIT Representado.", 409)
 
     return jsonify(_serialize_client(item)), 201
 
@@ -334,15 +334,18 @@ def update_client(client_id: int):
         cuit = str(payload.get("cuit", "")).strip()
         if not is_valid_cuit(cuit):
             return _error("CUIT invalida. Debe tener 11 digitos.", 400)
-        existing = Taxpayer.query.filter(Taxpayer.cuit == cuit, Taxpayer.id != item.id).first()
-        if existing:
-            return _error("La CUIT ya existe.", 409)
         item.cuit = cuit
 
     if "cuit_representado" in payload:
         cuit_representado = str(payload.get("cuit_representado", "")).strip()
         if not is_valid_cuit(cuit_representado):
             return _error("cuit_representado invalido. Debe tener 11 digitos.", 400)
+        existing = Taxpayer.query.filter(
+            Taxpayer.cuit_representado == cuit_representado,
+            Taxpayer.id != item.id,
+        ).first()
+        if existing:
+            return _error("Ya existe un cliente con ese CUIT Representado.", 409)
         item.cuit_representado = cuit_representado
 
     if "ambiente" in payload:
@@ -382,7 +385,7 @@ def update_client(client_id: int):
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return _error("La CUIT ya existe.", 409)
+        return _error("Ya existe un cliente con ese CUIT Representado.", 409)
 
     return jsonify(_serialize_client(item))
 
