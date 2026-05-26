@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from app.integrations.playwright.lpg_consulta_client import ArcaLpgPlaywrightClient
+import pytest
+
+from app.integrations.playwright.lpg_consulta_client import (
+    ArcaLpgPlaywrightClient,
+    ExtractionPhase,
+    PlaywrightFlowError,
+)
 
 
 def test_lpg_consulta_client_exposes_direct_url_constant() -> None:
@@ -91,11 +97,6 @@ def test_open_lpg_service_via_direct_url_navigates_and_validates() -> None:
 
 
 def test_open_lpg_service_via_direct_url_closes_page_on_failure() -> None:
-    from app.integrations.playwright.lpg_consulta_client import (
-        ExtractionPhase,
-        PlaywrightFlowError,
-    )
-
     client = ArcaLpgPlaywrightClient()
     failure = PlaywrightFlowError("not ready", phase=ExtractionPhase.OPEN_SERVICE)
     client._wait_for_service_page_ready = MagicMock(side_effect=failure)
@@ -107,9 +108,7 @@ def test_open_lpg_service_via_direct_url_closes_page_on_failure() -> None:
     login_page = MagicMock(name="login_page")
     login_page.context = context
 
-    import pytest as _pytest
-
-    with _pytest.raises(PlaywrightFlowError):
+    with pytest.raises(PlaywrightFlowError):
         client._open_lpg_service_via_direct_url(
             login_page, timeout_ms=10_000, empresa="ACME SRL"
         )
