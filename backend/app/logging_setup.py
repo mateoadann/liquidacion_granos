@@ -16,3 +16,8 @@ def configure_logging(level_name: str | None) -> None:
     logging.getLogger("rq.worker").setLevel(level)
     logging.getLogger("rq.queue").setLevel(level)
     logging.getLogger("rq.job").setLevel(level)
+
+    # Silenciar arca_arg.webservice: en INFO dumpea el token SSO + sign HMAC
+    # de AFIP en cada llamada SOAP, lo que permitiría reutilizar la credencial
+    # (válida 12hs) si alguien accede a docker logs o al stack de prod.
+    logging.getLogger("arca_arg.webservice").setLevel(logging.WARNING)

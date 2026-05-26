@@ -55,8 +55,23 @@ def client(app):
 
 
 @pytest.fixture()
-def auth_headers():
-    """Headers con JWT de usuario autenticado (rol usuario)."""
+def auth_headers(app):
+    """Headers con JWT de usuario autenticado (rol usuario).
+
+    Also seeds a matching User row (id=999, username='testuser', nombre='Test User')
+    in the DB so endpoints that resolve User.nombre work correctly in tests.
+    """
+    from app.models import User
+
+    user = User()
+    user.id = 999
+    user.username = "testuser"
+    user.nombre = "Test User"
+    user.rol = "usuario"
+    user.set_password("test-password")
+    db.session.add(user)
+    db.session.commit()
+
     token = create_access_token(user_id=999, username="testuser", rol="usuario")
     return {"Authorization": f"Bearer {token}"}
 

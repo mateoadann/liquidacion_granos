@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Client, RunPlaywrightPipelineInput } from "./clients";
+import { DatePicker } from "./components/ui";
 
 interface RunPlaywrightModalProps {
   isOpen: boolean;
@@ -18,9 +19,9 @@ function todayIso(): string {
   return toIsoDate(new Date());
 }
 
-function sixMonthsAgoIso(): string {
+function thirtyDaysAgoIso(): string {
   const date = new Date();
-  date.setMonth(date.getMonth() - 6);
+  date.setDate(date.getDate() - 30);
   return toIsoDate(date);
 }
 
@@ -42,13 +43,13 @@ export default function RunPlaywrightModal({
     [clients]
   );
 
-  const [fechaDesde, setFechaDesde] = useState(sixMonthsAgoIso());
+  const [fechaDesde, setFechaDesde] = useState(thirtyDaysAgoIso());
   const [fechaHasta, setFechaHasta] = useState(todayIso());
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
-    setFechaDesde(sixMonthsAgoIso());
+    setFechaDesde(thirtyDaysAgoIso());
     setFechaHasta(todayIso());
     setSelectedIds(eligibleClients.map((item) => item.id));
   }, [isOpen, eligibleClients]);
@@ -106,24 +107,16 @@ export default function RunPlaywrightModal({
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label className="text-sm text-slate-700">
-            Fecha desde
-            <input
-              type="date"
-              value={fechaDesde}
-              onChange={(event) => setFechaDesde(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-slate-700">
-            Fecha hasta
-            <input
-              type="date"
-              value={fechaHasta}
-              onChange={(event) => setFechaHasta(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-            />
-          </label>
+          <DatePicker
+            label="Fecha desde"
+            value={fechaDesde}
+            onChange={setFechaDesde}
+          />
+          <DatePicker
+            label="Fecha hasta"
+            value={fechaHasta}
+            onChange={setFechaHasta}
+          />
         </div>
 
         <div className="mt-4 rounded-md border border-slate-200">

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Button, Card, CardHeader, Input, Alert, Badge, Spinner } from "../ui";
+import { Link } from "react-router-dom";
+import { Button, Card, CardHeader, DatePicker, Alert, Spinner } from "../ui";
 import { useClientsQuery } from "../../hooks/useClients";
-import { usePlaywrightJobQuery, useRunPlaywrightMutation } from "../../hooks/useClients";
+import { useRunPlaywrightMutation } from "../../hooks/useClients";
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, "0");
@@ -13,22 +14,11 @@ function formatDate(date: Date): string {
 function getDefaultDateRange() {
   const hasta = new Date();
   const desde = new Date();
-  desde.setMonth(desde.getMonth() - 6);
+  desde.setDate(desde.getDate() - 30);
   return {
     desde: desde.toISOString().split("T")[0],
     hasta: hasta.toISOString().split("T")[0],
   };
-}
-
-function JobStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
-    pending: "warning",
-    running: "info",
-    completed: "success",
-    failed: "error",
-    partial: "warning",
-  };
-  return <Badge variant={variants[status] ?? "default"}>{status}</Badge>;
 }
 
 export function PlaywrightPanel() {
@@ -36,14 +26,13 @@ export function PlaywrightPanel() {
   const [fechaDesde, setFechaDesde] = useState(defaults.desde);
   const [fechaHasta, setFechaHasta] = useState(defaults.hasta);
   const [selectedClients, setSelectedClients] = useState<number[]>([]);
-  const [currentJobId, setCurrentJobId] = useState<number | null>(null);
+  const [lastEnqueued, setLastEnqueued] = useState<number | null>(null);
 
   const clientsQuery = useClientsQuery();
   const runMutation = useRunPlaywrightMutation();
-  const jobQuery = usePlaywrightJobQuery(currentJobId);
 
   const activeClients = clientsQuery.data?.filter(
-    (c) => c.activo && c.playwrightEnabled && c.claveFiscalCargada
+    (c) => c.activo && c.playwrightEnabled && c.claveFiscalCargada,
   ) ?? [];
 
   const handleSelectAll = () => {
@@ -56,27 +45,27 @@ export function PlaywrightPanel() {
 
   const handleToggleClient = (id: number) => {
     setSelectedClients((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
   const handleRun = async () => {
     if (selectedClients.length === 0) return;
-
+    setLastEnqueued(null);
     try {
-      const result = await runMutation.mutateAsync({
+      const jobs = await runMutation.mutateAsync({
         fechaDesde: formatDate(new Date(fechaDesde)),
         fechaHasta: formatDate(new Date(fechaHasta)),
         taxpayerIds: selectedClients,
       });
-      setCurrentJobId(result.id);
+      setLastEnqueued(jobs.length);
+      setSelectedClients([]);
     } catch {
       // Error handled by mutation
     }
   };
 
-  const isRunning = jobQuery.data?.status === "pending" || jobQuery.data?.status === "running";
-  const canRun = selectedClients.length > 0 && !runMutation.isPending && !isRunning;
+  const canRun = selectedClients.length > 0 && !runMutation.isPending;
 
   return (
     <Card padding="lg">
@@ -86,37 +75,20 @@ export function PlaywrightPanel() {
       />
 
       <div className="space-y-4">
-        {/* Fechas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="Fecha desde"
-            type="date"
-            value={fechaDesde}
-            onChange={(e) => setFechaDesde(e.target.value)}
-            disabled={isRunning}
-          />
-          <Input
-            label="Fecha hasta"
-            type="date"
-            value={fechaHasta}
-            onChange={(e) => setFechaHasta(e.target.value)}
-            disabled={isRunning}
-          />
+          <DatePicker label="Fecha desde" value={fechaDesde} onChange={setFechaDesde} />
+          <DatePicker label="Fecha hasta" value={fechaHasta} onChange={setFechaHasta} />
         </div>
 
-        {/* Selección de clientes */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-slate-700">
               Empresas ({selectedClients.length} de {activeClients.length} seleccionadas)
             </label>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleSelectAll}
-              disabled={isRunning}
-            >
-              {selectedClients.length === activeClients.length ? "Deseleccionar todos" : "Seleccionar todos"}
+            <Button variant="ghost" size="sm" onClick={handleSelectAll}>
+              {selectedClients.length === activeClients.length
+                ? "Deseleccionar todos"
+                : "Seleccionar todos"}
             </Button>
           </div>
 
@@ -139,7 +111,6 @@ export function PlaywrightPanel() {
                     type="checkbox"
                     checked={selectedClients.includes(client.id)}
                     onChange={() => handleToggleClient(client.id)}
-                    disabled={isRunning}
                     className="h-4 w-4 text-green-600 rounded border-slate-300 focus:ring-green-500"
                   />
                   <span className="ml-3 text-sm text-slate-700">{client.empresa}</span>
@@ -150,7 +121,6 @@ export function PlaywrightPanel() {
           )}
         </div>
 
-        {/* Error */}
         {runMutation.isError ? (
           <Alert variant="error">
             {runMutation.error instanceof Error
@@ -159,7 +129,6 @@ export function PlaywrightPanel() {
           </Alert>
         ) : null}
 
-        {/* Botón de ejecución */}
         <Button
           variant="primary"
           size="lg"
@@ -168,67 +137,17 @@ export function PlaywrightPanel() {
           disabled={!canRun}
           isLoading={runMutation.isPending}
         >
-          {isRunning ? "Consulta en curso..." : "Iniciar consulta"}
+          Iniciar consulta
         </Button>
 
-        {/* Estado del job */}
-        {jobQuery.data ? (
-          <div className="border-t border-slate-200 pt-4 mt-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-slate-700">Estado de la consulta</span>
-              <JobStatusBadge status={jobQuery.data.status} />
-            </div>
-
-            {jobQuery.data.status === "running" && jobQuery.data.progress ? (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>Progreso</span>
-                  <span>
-                    {jobQuery.data.progress.completedClients} / {jobQuery.data.progress.totalClients}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2">
-                  <div
-                    className="bg-green-600 h-2 rounded-full transition-all"
-                    style={{
-                      width: `${
-                        (jobQuery.data.progress.completedClients /
-                          jobQuery.data.progress.totalClients) *
-                        100
-                      }%`,
-                    }}
-                  />
-                </div>
-                <p className="text-sm text-slate-600">
-                  {jobQuery.data.currentMessage ?? "Consulta en curso..."}
-                </p>
-              </div>
-            ) : null}
-
-            {(jobQuery.data.status === "completed" || jobQuery.data.status === "partial") &&
-            jobQuery.data.result ? (
-              <div className="text-sm text-slate-600 space-y-1">
-                {jobQuery.data.status === "partial" ? (
-                  <p className="text-amber-700 font-medium">
-                    Algunas empresas no pudieron consultarse. Revisá el detalle por empresa.
-                  </p>
-                ) : null}
-                <p>Empresas consultadas: {jobQuery.data.result.taxpayersTotal}</p>
-                <p className="text-green-600">Exitosos: {jobQuery.data.result.taxpayersOk}</p>
-                {jobQuery.data.result.taxpayersError > 0 ? (
-                  <p className="text-red-600">Con errores: {jobQuery.data.result.taxpayersError}</p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {jobQuery.data.status === "failed" ? (
-              <Alert variant="error">
-                {jobQuery.data.failureMessageUser ??
-                  jobQuery.data.errorMessage ??
-                  "Hubo un problema con la consulta. Reintentá más tarde."}
-              </Alert>
-            ) : null}
-          </div>
+        {lastEnqueued !== null && lastEnqueued > 0 ? (
+          <Alert variant="success">
+            {lastEnqueued} extracción{lastEnqueued === 1 ? "" : "es"} encolada
+            {lastEnqueued === 1 ? "" : "s"}.{" "}
+            <Link to="/extracciones" className="underline font-medium">
+              Ver detalle en /extracciones →
+            </Link>
+          </Alert>
         ) : null}
       </div>
     </Card>

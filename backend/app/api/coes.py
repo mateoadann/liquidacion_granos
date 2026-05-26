@@ -7,8 +7,9 @@ from datetime import date, datetime
 from flask import Blueprint, jsonify, request, send_file
 
 from ..extensions import db
-from ..models import CoeEstado, LpgDocument, Taxpayer
-from ..middleware import require_auth, require_admin
+from ..models import AuditEvent, CoeEstado, LpgDocument, Taxpayer, User
+from ..middleware import require_auth, require_admin, get_current_user
+from ..time_utils import now_cordoba_naive
 from ..services import (
     PdfFetchError,
     PdfNoCertificatesError,
@@ -17,6 +18,14 @@ from ..services import (
     fecha_liquidacion_as_date,
     fecha_liquidacion_expr,
     get_or_fetch_pdf,
+)
+from ..services.lpg_document_utils import coe_already_exists
+from ..services.lpg_manual_pipeline import (
+    ArcaWsError,
+    CoeAlreadyExistsError,
+    InvalidCoeFormatError,
+    LpgManualWsService,
+    TaxpayerConfigInvalidError,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +68,10 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "raw_data": doc.raw_data,
         "datos_limpios": doc.datos_limpios,
         "coe_estado": coe_estado_info,
+        "controlada": bool(doc.controlada),
+        "controlada_por": doc.controlada_por,
+        "controlada_por_nombre": doc.controlada_por_nombre,
+        "controlada_en": doc.controlada_en.isoformat() if doc.controlada_en else None,
     }
     if include_taxpayer and doc.taxpayer_id:
         taxpayer = db.session.get(Taxpayer, doc.taxpayer_id)
@@ -110,6 +123,12 @@ def list_coes():
     if search:
         query = query.filter(LpgDocument.coe.ilike(f"%{search}%"))
 
+    controlada_raw = (request.args.get("controlada") or "").strip().lower()
+    if controlada_raw == "true":
+        query = query.filter(LpgDocument.controlada.is_(True))
+    elif controlada_raw == "false":
+        query = query.filter(LpgDocument.controlada.is_(False))
+
     total = query.count()
     pages = (total + per_page - 1) // per_page
 
@@ -136,6 +155,68 @@ def get_coe(coe_id: int):
     if not doc:
         return {"error": "COE no encontrado"}, 404
     return _serialize_coe(doc, include_taxpayer=True)
+
+
+@coes_bp.patch("/coes/<int:coe_id>/controlada")
+@require_auth
+def toggle_coe_controlada(coe_id: int):
+    """Toggle the controlada flag on a COE document."""
+    body = request.get_json(silent=True) or {}
+    new_value = body.get("controlada")
+    if not isinstance(new_value, bool):
+        return {"error": "controlada (boolean) requerido"}, 400
+
+    doc = db.session.get(LpgDocument, coe_id)
+    if not doc:
+        return {"error": "COE no encontrado"}, 404
+
+    prev_value = bool(doc.controlada)
+    if prev_value == new_value:
+        # No-op — return current state without emitting an audit event
+        return _serialize_coe(doc, include_taxpayer=True), 200
+
+    current_user = get_current_user() or {}
+    username = current_user.get("username")
+
+    # Resolve nombre from User table (one read per toggle; not on hot path)
+    nombre: str | None = None
+    if username:
+        user_row = db.session.query(User).filter(User.username == username).first()
+        nombre = user_row.nombre if user_row else None
+
+    if new_value:
+        doc.controlada = True
+        doc.controlada_por = username
+        doc.controlada_por_nombre = nombre
+        doc.controlada_en = now_cordoba_naive()
+    else:
+        doc.controlada = False
+        doc.controlada_por = None
+        doc.controlada_por_nombre = None
+        doc.controlada_en = None
+
+    audit = AuditEvent(
+        taxpayer_id=doc.taxpayer_id,
+        operation="coe_controlada_toggle",
+        level="info",
+        metadata_json={
+            "coe_id": doc.id,
+            "coe": doc.coe,
+            "from": prev_value,
+            "to": new_value,
+            "by_username": username,
+            "by_nombre": nombre,
+        },
+    )
+    db.session.add(audit)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("COE_CONTROLADA_TOGGLE_ERROR | coe_id=%s", coe_id)
+        return {"error": "Error interno al actualizar controlada"}, 500
+
+    return _serialize_coe(doc, include_taxpayer=True), 200
 
 
 @coes_bp.get("/coes/<int:doc_id>/pdf")
@@ -225,3 +306,159 @@ def refetch_ajustes():
         "errors": sum(1 for r in results if not r["ok"]),
         "results": results,
     })
+
+
+# ---------------------------------------------------------------------------
+# Manual WS load endpoints
+# ---------------------------------------------------------------------------
+
+
+@coes_bp.post("/coes/consultar")
+@require_auth
+def consultar_coe():
+    """POST /api/coes/consultar — read-only WS fetch. No DB writes."""
+    body = request.get_json(silent=True) or {}
+    coe = (body.get("coe") or "").strip()
+    taxpayer_id = body.get("taxpayer_id")
+
+    if not isinstance(taxpayer_id, int):
+        return {"error": "taxpayer_id requerido"}, 400
+
+    taxpayer = Taxpayer.query.filter_by(id=taxpayer_id, activo=True).first()
+    if not taxpayer:
+        return {"error": "Cliente no encontrado"}, 404
+
+    try:
+        result = LpgManualWsService().fetch_only(taxpayer, coe)
+    except InvalidCoeFormatError as exc:
+        return {"error": str(exc)}, 400
+    except TaxpayerConfigInvalidError as exc:
+        return {"error": str(exc)}, 422
+    except ArcaWsError as exc:
+        return {"error": str(exc)}, 422
+    except Exception:
+        logger.exception("CONSULTAR_COE_UNEXPECTED | taxpayer_id=%s coe=%s", taxpayer_id, coe)
+        return {"error": "Error interno"}, 500
+
+    existing = coe_already_exists(taxpayer_id, coe)
+    return {
+        "preview": result["preview"],
+        "tipo_documento": result["tipo_documento"],
+        "duplicado": existing is not None,
+        "coe_id": existing.id if existing else None,
+    }, 200
+
+
+@coes_bp.post("/coes/consultar/pdf")
+@require_auth
+def consultar_coe_pdf():
+    """POST /api/coes/consultar/pdf — fetch PDF for a COE without persisting.
+
+    Calls ARCA WS with pdf="S" and streams the binary back. No DB writes,
+    no PdfCache entry, no AuditEvent. Used by the manual-load modal to let
+    the user preview/download the PDF before deciding to persist.
+    """
+    body = request.get_json(silent=True) or {}
+    coe = (body.get("coe") or "").strip()
+    taxpayer_id = body.get("taxpayer_id")
+
+    if not isinstance(taxpayer_id, int):
+        return {"error": "taxpayer_id requerido"}, 400
+
+    taxpayer = Taxpayer.query.filter_by(id=taxpayer_id, activo=True).first()
+    if not taxpayer:
+        return {"error": "Cliente no encontrado"}, 404
+
+    if not taxpayer.cert_crt_path or not taxpayer.cert_key_path:
+        return {"error": "Cliente no tiene certificados ARCA configurados"}, 422
+
+    from ..services.lpg_manual_pipeline import COE_PATTERN
+
+    if not COE_PATTERN.match(coe):
+        return {"error": "COE inválido. Debe ser numérico y tener entre 6 y 16 dígitos."}, 400
+
+    import base64
+    from pathlib import Path
+    from ..integrations.arca.client import ArcaWslpgClient, ArcaDiscoveryConfig
+
+    try:
+        config = ArcaDiscoveryConfig.from_env()
+        config.environment = taxpayer.ambiente or config.environment
+        config.cuit_representada = taxpayer.cuit_representado
+        config.cert_path = taxpayer.cert_crt_path
+        config.key_path = taxpayer.cert_key_path
+        ta_base = config.ta_path or "/tmp/ta"
+        config.ta_path = str(Path(ta_base) / f"taxpayer_{taxpayer.id}")
+
+        ws_client = ArcaWslpgClient(config=config)
+        ws_client.connect()
+
+        coe_int = int(coe)
+        # Try LPG first; if WS returns the ajuste marker, retry as ajuste
+        result = ws_client.call_liquidacion_x_coe(coe_int, pdf="S")
+        data = (result or {}).get("data") or {}
+        if isinstance(data, dict) and data.get("ajusteUnificado") is not None:
+            result = ws_client.call_ajuste_x_coe(coe_int, pdf="S")
+            data = (result or {}).get("data") or {}
+
+        from ..services.lpg_manual_pipeline import _extract_arca_error
+
+        arca_error = _extract_arca_error(result)
+        if arca_error:
+            return {"error": arca_error[1]}, 422
+
+        pdf_raw = data.get("pdf") if isinstance(data, dict) else None
+        if not pdf_raw:
+            return {"error": "ARCA no devolvió PDF para este COE"}, 502
+
+        if isinstance(pdf_raw, bytes):
+            pdf_bytes = pdf_raw
+        else:
+            pdf_bytes = base64.b64decode(pdf_raw)
+    except Exception:
+        logger.exception(
+            "CONSULTAR_COE_PDF_UNEXPECTED | taxpayer_id=%s coe=%s",
+            taxpayer_id,
+            coe,
+        )
+        return {"error": "Error al consultar PDF"}, 502
+
+    filename = f"liquidacion_{coe}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@coes_bp.post("/coes/manual")
+@require_auth
+def cargar_coe_manual():
+    """POST /api/coes/manual — persist COE from WS. Writes LpgDocument + AuditEvent."""
+    body = request.get_json(silent=True) or {}
+    coe = (body.get("coe") or "").strip()
+    taxpayer_id = body.get("taxpayer_id")
+
+    if not isinstance(taxpayer_id, int):
+        return {"error": "taxpayer_id requerido"}, 400
+
+    taxpayer = Taxpayer.query.filter_by(id=taxpayer_id, activo=True).first()
+    if not taxpayer:
+        return {"error": "Cliente no encontrado"}, 404
+
+    try:
+        doc = LpgManualWsService().fetch_and_persist(taxpayer, coe)
+    except InvalidCoeFormatError as exc:
+        return {"error": str(exc)}, 400
+    except TaxpayerConfigInvalidError as exc:
+        return {"error": str(exc)}, 422
+    except CoeAlreadyExistsError as exc:
+        return {"error": str(exc), "coe_id": exc.coe_id}, 409
+    except ArcaWsError as exc:
+        return {"error": str(exc)}, 422
+    except Exception:
+        logger.exception("CARGAR_COE_MANUAL_UNEXPECTED | taxpayer_id=%s coe=%s", taxpayer_id, coe)
+        return {"error": "Error interno"}, 500
+
+    return _serialize_coe(doc, include_taxpayer=True), 201

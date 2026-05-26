@@ -1,5 +1,6 @@
 export { Button } from "./Button";
 export { Input } from "./Input";
+export { PasswordInput } from "./PasswordInput";
 export { Alert } from "./Alert";
 export { Spinner } from "./Spinner";
 export { Card, CardHeader } from "./Card";
@@ -12,3 +13,4 @@ export { Modal, ConfirmModal } from "./Modal";
 export { Drawer } from "./Drawer";
 export { Combobox, type ComboboxOption } from "./Combobox";
 export { SearchInput } from "./SearchInput";
+export { DatePicker } from "./DatePicker";

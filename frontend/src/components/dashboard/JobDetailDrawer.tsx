@@ -1,7 +1,8 @@
-import { Alert, Badge, Drawer } from "../ui";
+import { Alert, Badge, Button, Drawer } from "../ui";
 import { formatDateTime } from "../../dateUtils";
 import type { Job } from "../../api/jobs";
 import { JobStatusBadge } from "./JobStatusBadge";
+import { isJobRetryableInUI, useRetryJobMutation } from "../../hooks/useJobs";
 
 interface JobDetailDrawerProps {
   job: Job | null;
@@ -33,6 +34,18 @@ function MetadataRow({ label, value }: { label: string; value: React.ReactNode }
 export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
   const isOpen = job !== null;
   const title = job ? `Extracción #${job.id}` : "Extracción";
+  const retryMutation = useRetryJobMutation();
+  const canRetry = job ? isJobRetryableInUI(job) : false;
+
+  const handleRetry = async () => {
+    if (!job) return;
+    try {
+      await retryMutation.mutateAsync(job.id);
+      onClose();
+    } catch {
+      // Error queda visible en el alert del bloque retry.
+    }
+  };
 
   return (
     <Drawer isOpen={isOpen} onClose={onClose} title={title} width="lg">
@@ -103,6 +116,25 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
                     {job.failure_message_technical}
                   </pre>
                 </details>
+              ) : null}
+
+              {canRetry ? (
+                <div className="mt-3 flex flex-col items-end gap-2">
+                  {retryMutation.isError ? (
+                    <Alert variant="error">
+                      {retryMutation.error instanceof Error
+                        ? retryMutation.error.message
+                        : "No se pudo reintentar el job."}
+                    </Alert>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    onClick={handleRetry}
+                    isLoading={retryMutation.isPending}
+                  >
+                    Reintentar
+                  </Button>
+                </div>
               ) : null}
             </section>
           ) : null}

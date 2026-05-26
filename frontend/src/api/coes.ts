@@ -1,5 +1,39 @@
 import { fetchWithAuth } from "./client";
 
+// ---------------------------------------------------------------------------
+// Manual WS load types
+// ---------------------------------------------------------------------------
+
+export interface ConsultManualCoeRequest {
+  coe: string;
+  taxpayer_id: number;
+}
+
+export interface CoePreview {
+  tipo_documento: string;
+  pto_emision: number | null;
+  nro_orden: number | null;
+  estado: string | null;
+  raw_data: Record<string, unknown> | null;
+  datos_limpios: Record<string, unknown> | null;
+}
+
+export interface ConsultManualCoeResponse {
+  preview: CoePreview;
+  tipo_documento: "LPG" | "AJUSTE";
+  duplicado: boolean;
+  coe_id: number | null;
+}
+
+export interface CreateManualCoeRequest {
+  coe: string;
+  taxpayer_id: number;
+}
+
+// ---------------------------------------------------------------------------
+// Existing types
+// ---------------------------------------------------------------------------
+
 export interface Coe {
   id: number;
   taxpayer_id: number;
@@ -24,6 +58,10 @@ export interface Coe {
     empresa: string;
     cuit: string;
   };
+  controlada: boolean;
+  controlada_por: string | null;
+  controlada_por_nombre: string | null;
+  controlada_en: string | null;
 }
 
 export interface CoesListResponse {
@@ -43,6 +81,7 @@ export interface CoesListParams {
   fecha_desde?: string;
   fecha_hasta?: string;
   search?: string;
+  controlada?: "true" | "false";
 }
 
 export async function listCoes(params?: CoesListParams): Promise<CoesListResponse> {
@@ -55,6 +94,7 @@ export async function listCoes(params?: CoesListParams): Promise<CoesListRespons
   if (params?.fecha_desde) searchParams.set("fecha_desde", params.fecha_desde);
   if (params?.fecha_hasta) searchParams.set("fecha_hasta", params.fecha_hasta);
   if (params?.search) searchParams.set("search", params.search);
+  if (params?.controlada) searchParams.set("controlada", params.controlada);
 
   const query = searchParams.toString();
   const path = query ? `/coes?${query}` : "/coes";
@@ -76,6 +116,17 @@ export async function getCoe(id: number): Promise<Coe> {
   return data;
 }
 
+export async function toggleCoeControlada(id: number, controlada: boolean): Promise<Coe> {
+  const res = await fetchWithAuth(`/coes/${id}/controlada`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ controlada }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error ?? "No se pudo actualizar controlada");
+  return data as Coe;
+}
+
 export async function downloadCoePdf(docId: number): Promise<Blob> {
   const res = await fetchWithAuth(`/coes/${docId}/pdf`, { method: "GET" });
   if (!res.ok) {
@@ -88,4 +139,59 @@ export async function downloadCoePdf(docId: number): Promise<Blob> {
     throw new Error(errorMsg);
   }
   return res.blob();
+}
+
+export async function downloadConsultedCoePdf(
+  payload: ConsultManualCoeRequest
+): Promise<Blob> {
+  const res = await fetchWithAuth("/coes/consultar/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let errorMsg = "No se pudo descargar el PDF";
+    try {
+      const json = JSON.parse(text);
+      if (json.error) errorMsg = json.error;
+    } catch { /* ignore */ }
+    throw new Error(errorMsg);
+  }
+  return res.blob();
+}
+
+export async function consultManualCoe(
+  payload: ConsultManualCoeRequest
+): Promise<ConsultManualCoeResponse> {
+  const res = await fetchWithAuth("/coes/consultar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Error al consultar COE");
+  }
+  return data;
+}
+
+export async function createManualCoe(
+  payload: CreateManualCoeRequest
+): Promise<Coe> {
+  const res = await fetchWithAuth("/coes/manual", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    // 409 Conflict — attach coe_id if present for duplicate handling
+    const err = new Error(data?.error ?? "Error al cargar COE") as Error & { coe_id?: number };
+    if (data?.coe_id !== undefined) {
+      err.coe_id = data.coe_id;
+    }
+    throw err;
+  }
+  return data;
 }

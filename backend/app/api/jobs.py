@@ -56,11 +56,30 @@ def list_jobs():
     if status:
         query = query.filter(ExtractionJob.status == status)
 
-    limit = request.args.get("limit", default=100, type=int)
-    limit = max(1, min(limit, 500))
+    # Backward compatible: if caller passes `limit`, behave like before
+    # (flat array, no pagination). The dashboard's RecentJobsPanel uses this.
+    if "limit" in request.args and "page" not in request.args:
+        limit = max(1, min(request.args.get("limit", type=int) or 100, 500))
+        items = query.limit(limit).all()
+        return jsonify([_serialize_job(item) for item in items])
 
-    items = query.limit(limit).all()
-    return jsonify([_serialize_job(item) for item in items])
+    page = max(1, request.args.get("page", default=1, type=int))
+    per_page = max(1, min(request.args.get("per_page", default=20, type=int), 100))
+
+    total = query.count()
+    pages = (total + per_page - 1) // per_page
+
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify(
+        {
+            "jobs": [_serialize_job(item) for item in items],
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": pages,
+        }
+    )
 
 
 @jobs_bp.post("/jobs")

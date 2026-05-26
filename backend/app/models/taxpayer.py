@@ -6,9 +6,9 @@ class Taxpayer(db.Model):
     __tablename__ = "taxpayer"
 
     id = db.Column(db.Integer, primary_key=True)
-    cuit = db.Column(db.String(11), unique=True, nullable=False)
+    cuit = db.Column(db.String(11), nullable=False)
     empresa = db.Column(db.String(255), nullable=False, default="Sin empresa")
-    cuit_representado = db.Column(db.String(11), nullable=False, default="")
+    cuit_representado = db.Column(db.String(11), unique=True, nullable=False, default="")
     clave_fiscal_encrypted = db.Column(db.Text, nullable=False, default="")
     cert_crt_path = db.Column(db.Text, nullable=True)
     cert_key_path = db.Column(db.Text, nullable=True)

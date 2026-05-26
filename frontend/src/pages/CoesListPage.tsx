@@ -19,9 +19,12 @@ import {
   Input,
   Drawer,
   Combobox,
+  DatePicker,
 } from "../components/ui";
+import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
+import { usePageQueryParam } from "../hooks/usePageQueryParam";
 import { downloadCoePdf, type Coe } from "../api/coes";
 
 function EstadoCicloBadge({ estado }: { estado: string | null | undefined }) {
@@ -55,14 +58,16 @@ function getTipoCte(coe: Coe): "F1" | "F2" | "NL" | "-" {
 
 export function CoesListPage() {
   const navigate = useNavigate();
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePageQueryParam();
   const [search, setSearch] = useState("");
   const [taxpayerId, setTaxpayerId] = useState<number | undefined>();
   const [estadoCiclo, setEstadoCiclo] = useState<string>("");
   const [fechaDesde, setFechaDesde] = useState<string>("");
   const [fechaHasta, setFechaHasta] = useState<string>("");
+  const [controlada, setControlada] = useState<"" | "true" | "false">("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
+  const [isManualLoadOpen, setIsManualLoadOpen] = useState(false);
 
   const clientsQuery = useClientsQuery();
   const coesQuery = useCoesQuery({
@@ -73,12 +78,14 @@ export function CoesListPage() {
     fecha_desde: fechaDesde || undefined,
     fecha_hasta: fechaHasta || undefined,
     search: search || undefined,
+    controlada: controlada || undefined,
   });
 
   const drawerFilterCount =
     (taxpayerId !== undefined ? 1 : 0) +
     (estadoCiclo ? 1 : 0) +
-    (fechaDesde || fechaHasta ? 1 : 0);
+    (fechaDesde || fechaHasta ? 1 : 0) +
+    (controlada ? 1 : 0);
 
   const hasActiveFilters = !!search || drawerFilterCount > 0;
 
@@ -88,6 +95,7 @@ export function CoesListPage() {
     setEstadoCiclo("");
     setFechaDesde("");
     setFechaHasta("");
+    setControlada("");
     setPage(1);
   }
 
@@ -151,6 +159,26 @@ export function CoesListPage() {
         {/* Filtros */}
         <div className="p-4 border-b border-slate-200">
           <div className="flex flex-col md:flex-row gap-3 md:items-center">
+            <Button
+              variant="primary"
+              onClick={() => setIsManualLoadOpen(true)}
+              className="md:w-auto"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              COE
+            </Button>
             <div className="flex-1">
               <SearchInput
                 value={search}
@@ -201,6 +229,16 @@ export function CoesListPage() {
           </div>
         ) : (
           <>
+            {coesQuery.data && coesQuery.data.pages > 1 ? (
+              <Pagination
+                page={coesQuery.data.page}
+                pages={coesQuery.data.pages}
+                total={coesQuery.data.total}
+                perPage={coesQuery.data.per_page}
+                onPageChange={setPage}
+              />
+            ) : null}
+
             <Table>
               <TableHeader>
                 <TableRow>
@@ -210,6 +248,7 @@ export function CoesListPage() {
                   <TableCell header>Cliente</TableCell>
                   <TableCell header>Fecha</TableCell>
                   <TableCell header>Estado Ciclo</TableCell>
+                  <TableCell header className="w-20 text-center">Control</TableCell>
                   <TableCell header className="w-20"></TableCell>
                 </TableRow>
               </TableHeader>
@@ -245,6 +284,15 @@ export function CoesListPage() {
                       </TableCell>
                       <TableCell>
                         <EstadoCicloBadge estado={coe.coe_estado?.estado} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={coe.controlada}
+                          disabled
+                          aria-label="controlada"
+                          className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600"
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -284,6 +332,11 @@ export function CoesListPage() {
           </>
         )}
       </Card>
+
+      <CoeManualLoadModal
+        isOpen={isManualLoadOpen}
+        onClose={() => setIsManualLoadOpen(false)}
+      />
 
       <Drawer
         isOpen={isFilterOpen}
@@ -338,23 +391,39 @@ export function CoesListPage() {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Controlada
+            </label>
+            <Select
+              value={controlada}
+              onChange={(e) => {
+                setControlada(e.target.value as "" | "true" | "false");
+                setPage(1);
+              }}
+              options={[
+                { value: "", label: "Todas" },
+                { value: "true", label: "Sí" },
+                { value: "false", label: "No" },
+              ]}
+            />
+          </div>
+
+          <div>
             <p className="block text-sm font-medium text-slate-700 mb-1.5">
               Fecha de emisión
             </p>
             <div className="space-y-3">
-              <Input
-                type="date"
+              <DatePicker
                 label="Desde"
                 value={fechaDesde}
                 max={fechaHasta || undefined}
-                onChange={(e) => handleFechaDesdeChange(e.target.value)}
+                onChange={handleFechaDesdeChange}
               />
-              <Input
-                type="date"
+              <DatePicker
                 label="Hasta"
                 value={fechaHasta}
                 min={fechaDesde || undefined}
-                onChange={(e) => handleFechaHastaChange(e.target.value)}
+                onChange={handleFechaHastaChange}
               />
             </div>
           </div>

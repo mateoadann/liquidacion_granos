@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/layout";
-import { Card, Button, Input, Select, Alert, Spinner } from "../components/ui";
+import { Card, Button, Input, PasswordInput, Select, Alert, Spinner } from "../components/ui";
 import { useClientQuery } from "../hooks/useClient";
 import { useUpdateClientMutation, useCreateClientMutation } from "../useClients";
 import { useState, useEffect } from "react";
@@ -143,9 +143,8 @@ export function ClientEditPage() {
             ]}
           />
 
-          <Input
+          <PasswordInput
             label={isNew ? "Clave Fiscal" : "Nueva Clave Fiscal (dejar vacío para mantener)"}
-            type="password"
             value={form.claveFiscal}
             onChange={(e) => handleChange("claveFiscal", e.target.value)}
             required={isNew}
