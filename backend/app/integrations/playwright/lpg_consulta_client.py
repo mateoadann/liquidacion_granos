@@ -139,10 +139,12 @@ logger = logging.getLogger(__name__)
 
 class ArcaLpgPlaywrightClient:
     LANDING_URL = "https://www.afip.gob.ar/landing/default.asp"
+    LPG_DIRECT_URL = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
 
     def __init__(self) -> None:
         self._search_dropdown_clicked: bool = False
+        self._service_open_method: str | None = None
         self._on_phase: PhaseCallback | None = None
 
     def _emit_phase(self, phase: ExtractionPhase) -> None:
@@ -293,6 +295,7 @@ class ArcaLpgPlaywrightClient:
         started = now_cordoba_naive()
         self._on_phase = request.on_phase
         self._search_dropdown_clicked = False
+        self._service_open_method = None
         logger.info(
             "PLAYWRIGHT_RUN_START | empresa=%s desde=%s hasta=%s timeout_ms=%s type_delay_ms=%s",
             request.empresa,
