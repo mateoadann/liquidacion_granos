@@ -168,22 +168,15 @@ def test_open_lpg_service_reraises_original_error_when_direct_url_also_fails() -
     client._post_action_pause = MagicMock()
     client._click_dropdown_suggestion = MagicMock(return_value=True)
     client._wait_for_lpg_service_link = MagicMock(side_effect=original)
-
-    direct_page = MagicMock(name="direct_page")
-    direct_page.url = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
-    context = MagicMock(name="context")
-    context.new_page.return_value = direct_page
-
-    login_page = MagicMock(name="login_page")
-    login_page.context = context
-    login_page.get_by_role.return_value = MagicMock(name="search_combobox")
-
-    client._wait_for_service_page_ready = MagicMock(
+    client._open_lpg_service_via_direct_url = MagicMock(
         side_effect=PlaywrightFlowError(
             "direct url failed",
             phase=ExtractionPhase.OPEN_SERVICE,
         )
     )
+
+    login_page = MagicMock(name="login_page")
+    login_page.get_by_role.return_value = MagicMock(name="search_combobox")
 
     with pytest.raises(PlaywrightFlowError) as exc_info:
         client._open_lpg_service(
@@ -198,7 +191,9 @@ def test_open_lpg_service_reraises_original_error_when_direct_url_also_fails() -
     assert raised is original
     assert raised.phase == ExtractionPhase.SEARCH_SERVICE
     assert raised.dropdown_clicked is True
-    direct_page.close.assert_called_once()
+    client._open_lpg_service_via_direct_url.assert_called_once_with(
+        login_page, 10_000, "ACME SRL"
+    )
     assert client._service_open_method is None
 
 
