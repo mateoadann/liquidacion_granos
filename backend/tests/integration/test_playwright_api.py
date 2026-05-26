@@ -41,10 +41,84 @@ def test_run_playwright_validates_taxpayer_ids(client, auth_headers):
     assert "taxpayer_ids" in response.get_json()["error"]
 
 
-def test_run_playwright_enqueues_job(client, monkeypatch, auth_headers):
+def test_run_playwright_creates_one_job_per_taxpayer(client, monkeypatch, auth_headers):
+    """N taxpayers seleccionados ⇒ N ExtractionJobs creados y N enqueues."""
     taxpayer_one = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
     taxpayer_two = _create_taxpayer(cuit="20222222222", empresa="Empresa Dos")
-    captured: dict[str, object] = {}
+    taxpayer_three = _create_taxpayer(cuit="20333333333", empresa="Empresa Tres")
+    captured_calls: list[dict[str, object]] = []
+
+    def dummy_job(*args, **kwargs):
+        return None
+
+    class DummyQueue:
+        name = "playwright"
+
+        def __init__(self):
+            self._counter = 0
+
+        def enqueue(self, func, **kwargs):
+            self._counter += 1
+            captured_calls.append({"func": func, "kwargs": kwargs})
+            return SimpleNamespace(id=f"rq-job-{self._counter}")
+
+    queue_instance = DummyQueue()
+    monkeypatch.setattr("app.api.playwright.get_queue", lambda _name: queue_instance)
+    monkeypatch.setattr(
+        "app.workers.playwright_jobs.run_playwright_pipeline_job",
+        dummy_job,
+    )
+
+    response = client.post(
+        "/api/playwright/lpg/run",
+        json={
+            "fecha_desde": "01/01/2026",
+            "fecha_hasta": "26/02/2026",
+            "taxpayer_ids": [taxpayer_one.id, taxpayer_two.id, taxpayer_three.id],
+            "timeout_ms": 45000,
+            "type_delay_ms": 120,
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 202
+    body = response.get_json()
+    assert "jobs" in body and isinstance(body["jobs"], list)
+    assert len(body["jobs"]) == 3
+
+    # Each job is bound to exactly one taxpayer and has its own rq_job_id
+    job_taxpayer_ids = [j["payload"]["taxpayer_ids"] for j in body["jobs"]]
+    assert job_taxpayer_ids == [
+        [taxpayer_one.id],
+        [taxpayer_two.id],
+        [taxpayer_three.id],
+    ]
+    rq_job_ids = [j["payload"]["rq_job_id"] for j in body["jobs"]]
+    assert rq_job_ids == ["rq-job-1", "rq-job-2", "rq-job-3"]
+
+    # The first job carries the progress-feedback keys (null on pending)
+    for key in (
+        "current_phase",
+        "current_message",
+        "failure_phase",
+        "failure_message_user",
+        "failure_message_technical",
+    ):
+        assert key in body["jobs"][0]
+        assert body["jobs"][0][key] is None
+
+    # Worker was called once per taxpayer with the taxpayer's own id only
+    assert len(captured_calls) == 3
+    assert [c["kwargs"]["taxpayer_ids"] for c in captured_calls] == [
+        [taxpayer_one.id],
+        [taxpayer_two.id],
+        [taxpayer_three.id],
+    ]
+
+
+def test_run_playwright_single_taxpayer_creates_single_job(client, monkeypatch, auth_headers):
+    """Caso límite: 1 solo taxpayer seleccionado debe seguir funcionando."""
+    taxpayer = _create_taxpayer(cuit="20111111111", empresa="Solo Uno")
 
     def dummy_job(*args, **kwargs):
         return None
@@ -53,9 +127,7 @@ def test_run_playwright_enqueues_job(client, monkeypatch, auth_headers):
         name = "playwright"
 
         def enqueue(self, func, **kwargs):
-            captured["func"] = func
-            captured["kwargs"] = kwargs
-            return SimpleNamespace(id="rq-job-123")
+            return SimpleNamespace(id="rq-job-solo")
 
     monkeypatch.setattr("app.api.playwright.get_queue", lambda _name: DummyQueue())
     monkeypatch.setattr(
@@ -68,46 +140,12 @@ def test_run_playwright_enqueues_job(client, monkeypatch, auth_headers):
         json={
             "fecha_desde": "01/01/2026",
             "fecha_hasta": "26/02/2026",
-            "taxpayer_ids": [taxpayer_one.id, taxpayer_two.id],
-            "timeout_ms": 45000,
-            "type_delay_ms": 120,
+            "taxpayer_ids": [taxpayer.id],
         },
         headers=auth_headers,
     )
 
     assert response.status_code == 202
     body = response.get_json()
-    assert body["job"]["status"] == "pending"
-    assert body["job"]["payload"]["taxpayer_ids"] == [taxpayer_one.id, taxpayer_two.id]
-    assert body["job"]["payload"]["rq_job_id"] == "rq-job-123"
-    assert body["job"]["payload"]["queue_name"] == "playwright"
-    # New extraction-progress-feedback fields MUST be present (null on a
-    # fresh pending job, but the keys themselves must exist).
-    for key in (
-        "current_phase",
-        "current_message",
-        "failure_phase",
-        "failure_message_user",
-        "failure_message_technical",
-    ):
-        assert key in body["job"], f"missing key {key} in serialized job"
-        assert body["job"][key] is None
-
-    assert captured["func"] is dummy_job
-    assert captured["kwargs"] == {
-        "extraction_job_id": body["job"]["id"],
-        "fecha_desde": "01/01/2026",
-        "fecha_hasta": "26/02/2026",
-        "taxpayer_ids": [taxpayer_one.id, taxpayer_two.id],
-        "timeout_ms": 45000,
-        "type_delay_ms": 120,
-        "slow_mo_ms": 0,
-        "post_action_delay_ms": 0,
-        "login_max_retries": 2,
-        "humanize_delays": True,
-        "retry_max_attempts": 2,
-        "retry_base_delay_ms": 1000,
-        "job_timeout": 3600,
-        "result_ttl": 86400,
-        "failure_ttl": 86400,
-    }
+    assert len(body["jobs"]) == 1
+    assert body["jobs"][0]["payload"]["taxpayer_ids"] == [taxpayer.id]
