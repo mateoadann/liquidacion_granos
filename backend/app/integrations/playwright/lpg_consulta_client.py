@@ -610,6 +610,43 @@ class ArcaLpgPlaywrightClient:
         self._service_open_method = "search_box"
         return service_page
 
+    def _open_lpg_service_via_direct_url(
+        self, login_page: Page, timeout_ms: int, empresa: str
+    ) -> Page:
+        """Fallback path: open the LPG service in a new tab on the same context.
+
+        Reuses the authenticated cookies of `login_page.context`, so the new tab
+        lands on the LPG service directly. Validates with the same readiness
+        check used by the search-box path.
+        """
+        logger.info(
+            "PLAYWRIGHT_SERVICE_DIRECT_URL_START | empresa=%s url=%s",
+            empresa,
+            self.LPG_DIRECT_URL,
+        )
+        context = login_page.context
+        direct_page = context.new_page()
+        try:
+            direct_page.goto(self.LPG_DIRECT_URL, wait_until="networkidle")
+            self._wait_for_service_page_ready(direct_page, timeout_ms, empresa)
+        except Exception:
+            logger.warning(
+                "PLAYWRIGHT_SERVICE_DIRECT_URL_FAIL | empresa=%s url=%s",
+                empresa,
+                getattr(direct_page, "url", self.LPG_DIRECT_URL),
+            )
+            try:
+                direct_page.close()
+            except Exception:
+                pass
+            raise
+        logger.info(
+            "PLAYWRIGHT_SERVICE_DIRECT_URL_OK | empresa=%s url=%s",
+            empresa,
+            getattr(direct_page, "url", self.LPG_DIRECT_URL),
+        )
+        return direct_page
+
     def _click_dropdown_suggestion(self, login_page: Page, timeout_ms: int, empresa: str) -> bool:
         """Espera el dropdown de sugerencias del buscador AFIP y hace click en la sugerencia LPG.
 

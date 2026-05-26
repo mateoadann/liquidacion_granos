@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 from app.integrations.playwright.lpg_consulta_client import ArcaLpgPlaywrightClient
@@ -59,3 +61,57 @@ def test_open_lpg_service_marks_method_search_box_on_happy_path() -> None:
     assert result is service_page
     assert client._service_open_method == "search_box"
     login_page.context.new_page.assert_not_called()
+
+
+def test_open_lpg_service_via_direct_url_navigates_and_validates() -> None:
+    client = ArcaLpgPlaywrightClient()
+    client._wait_for_service_page_ready = MagicMock()
+
+    direct_page = MagicMock(name="direct_page")
+    direct_page.url = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
+    context = MagicMock(name="context")
+    context.new_page.return_value = direct_page
+    login_page = MagicMock(name="login_page")
+    login_page.context = context
+
+    returned = client._open_lpg_service_via_direct_url(
+        login_page, timeout_ms=10_000, empresa="ACME SRL"
+    )
+
+    assert returned is direct_page
+    context.new_page.assert_called_once_with()
+    direct_page.goto.assert_called_once_with(
+        ArcaLpgPlaywrightClient.LPG_DIRECT_URL,
+        wait_until="networkidle",
+    )
+    client._wait_for_service_page_ready.assert_called_once_with(
+        direct_page, 10_000, "ACME SRL"
+    )
+    direct_page.close.assert_not_called()
+
+
+def test_open_lpg_service_via_direct_url_closes_page_on_failure() -> None:
+    from app.integrations.playwright.lpg_consulta_client import (
+        ExtractionPhase,
+        PlaywrightFlowError,
+    )
+
+    client = ArcaLpgPlaywrightClient()
+    failure = PlaywrightFlowError("not ready", phase=ExtractionPhase.OPEN_SERVICE)
+    client._wait_for_service_page_ready = MagicMock(side_effect=failure)
+
+    direct_page = MagicMock(name="direct_page")
+    direct_page.url = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
+    context = MagicMock(name="context")
+    context.new_page.return_value = direct_page
+    login_page = MagicMock(name="login_page")
+    login_page.context = context
+
+    import pytest as _pytest
+
+    with _pytest.raises(PlaywrightFlowError):
+        client._open_lpg_service_via_direct_url(
+            login_page, timeout_ms=10_000, empresa="ACME SRL"
+        )
+
+    direct_page.close.assert_called_once()
