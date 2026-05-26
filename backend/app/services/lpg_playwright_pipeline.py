@@ -57,6 +57,8 @@ class TaxpayerPipelineResult:
     failure_phase: ExtractionPhase | None = None
     failure_error_type: str | None = None
     failure_dropdown_clicked: bool = False
+    # Which path opened the LPG service for this run: "search_box" | "direct_url"
+    service_open_method: str | None = None
 
 
 def _taxpayer_result_to_dict(item: TaxpayerPipelineResult) -> dict[str, Any]:
