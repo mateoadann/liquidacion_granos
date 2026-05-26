@@ -314,6 +314,7 @@ class LpgPlaywrightPipelineService:
         base.consulta = consulta.to_dict()
         base.total_rows = consulta.total_rows
         base.total_coes_detectados = consulta.total_coes
+        base.service_open_method = client._service_open_method
 
         ws_client = self._build_ws_client_for_taxpayer(taxpayer)
         logger.info(
