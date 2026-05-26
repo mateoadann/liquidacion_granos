@@ -218,12 +218,16 @@ export default function ClientsPage() {
   }) {
     setRunError(null);
     try {
-      const job = await runPlaywrightMutation.mutateAsync(input);
-      setRunJobId(job.id);
+      const jobs = await runPlaywrightMutation.mutateAsync(input);
+      // Legacy page tracks a single job; pick the first one if any was enqueued.
+      setRunJobId(jobs[0]?.id ?? null);
       setRunModalOpen(false);
       setMessage({
         type: "success",
-        text: "Consulta iniciada.",
+        text:
+          jobs.length > 1
+            ? `${jobs.length} extracciones encoladas.`
+            : "Consulta iniciada.",
       });
     } catch (error) {
       setRunError(getErrorMessage(error));

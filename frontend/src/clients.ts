@@ -657,7 +657,7 @@ export async function generateClientCsr(
 
 export async function runPlaywrightPipeline(
   input: RunPlaywrightPipelineInput
-): Promise<PlaywrightPipelineJob> {
+): Promise<PlaywrightPipelineJob[]> {
   const payload = await requestJson<unknown>("/playwright/lpg/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -671,7 +671,8 @@ export async function runPlaywrightPipeline(
   });
 
   const data = isRecord(payload) ? payload : {};
-  return normalizePlaywrightPipelineJob(data.job);
+  const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+  return jobs.map((j) => normalizePlaywrightPipelineJob(j));
 }
 
 export async function getPlaywrightPipelineJob(jobId: number): Promise<PlaywrightPipelineJob> {
