@@ -57,6 +57,9 @@ class TaxpayerPipelineResult:
     failure_phase: ExtractionPhase | None = None
     failure_error_type: str | None = None
     failure_dropdown_clicked: bool = False
+    # Which path opened the LPG service for this run: "search_box" | "direct_url".
+    # None means the extraction failed before reaching the service-open step.
+    service_open_method: str | None = None
 
 
 def _taxpayer_result_to_dict(item: TaxpayerPipelineResult) -> dict[str, Any]:
@@ -312,6 +315,7 @@ class LpgPlaywrightPipelineService:
         base.consulta = consulta.to_dict()
         base.total_rows = consulta.total_rows
         base.total_coes_detectados = consulta.total_coes
+        base.service_open_method = client._service_open_method
 
         ws_client = self._build_ws_client_for_taxpayer(taxpayer)
         logger.info(

@@ -69,6 +69,7 @@ def _build_progress_payload(taxpayers: list[Taxpayer]) -> dict[str, Any]:
                 "failure_phase": None,
                 "failure_message_user": None,
                 "failure_message_technical": None,
+                "service_open_method": None,
             }
             for item in taxpayers
         ],
@@ -83,6 +84,7 @@ def _update_progress_state(
     status: str,
     error: str | None = None,
     metrics: dict[str, Any] | None = None,
+    service_open_method: str | None = None,
 ) -> None:
     progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
     clients = progress.get("clients") if isinstance(progress.get("clients"), list) else []
@@ -108,6 +110,7 @@ def _update_progress_state(
             client["finished_at"] = now_iso
             progress["running_client_id"] = None
             client["error"] = error
+            client["service_open_method"] = service_open_method
             if metrics:
                 client["metrics"] = metrics
         break
@@ -407,6 +410,7 @@ def run_playwright_pipeline_job(
                     "total_procesados_ok": result.total_procesados_ok,
                     "total_procesados_error": result.total_procesados_error,
                 },
+                service_open_method=result.service_open_method,
             )
             if result.outcome != "done":
                 user_es, tech_combined = _persist_taxpayer_failure(
