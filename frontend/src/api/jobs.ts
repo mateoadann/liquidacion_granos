@@ -95,6 +95,17 @@ export async function listJobsPaginated(params: {
   return data as JobsPaginatedResponse;
 }
 
+export async function retryJob(id: number): Promise<Job> {
+  const res = await fetchWithAuth(`/playwright/lpg/jobs/${id}/retry`, {
+    method: "POST",
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Error al reintentar el job");
+  }
+  return data.job as Job;
+}
+
 export async function getJob(id: number): Promise<Job> {
   const res = await fetchWithAuth(`/jobs/${id}`);
   const data = await res.json();

@@ -184,7 +184,7 @@ export function useTestCertificatesMutation(): UseMutationResult<
 }
 
 export function useRunPlaywrightPipelineMutation(): UseMutationResult<
-  PlaywrightPipelineJob,
+  PlaywrightPipelineJob[],
   Error,
   RunPlaywrightPipelineInput
 > {

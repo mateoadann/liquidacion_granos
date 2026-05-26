@@ -6,13 +6,21 @@ from typing import Any
 from .. import create_app
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
+from ..queue import get_queue
 from ..services.extraction_failure_mapper import _truncate, map_failure
 from ..services.extraction_phases import ExtractionPhase
+from ..services.failure_classifier import is_failure_retryable
 from ..services.lpg_playwright_pipeline import (
     LpgPlaywrightPipelineService,
     TaxpayerPipelineResult,
 )
 from ..time_utils import now_cordoba_naive
+
+# Operation used when the worker auto-retries a scheduler job. Keeping the
+# `scheduler_` prefix preserves the SCHEDULER_HOOK behaviour, but the suffix
+# lets us tell a retry apart from the original run in /extracciones.
+SCHEDULER_RETRY_OPERATION = "scheduler_lpg_extract_retry"
+SCHEDULER_AUTO_RETRY_MAX = 1
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +232,104 @@ def _actualizar_scheduler_status(
     )
 
 
+def _auto_retry_scheduler_job_if_eligible(job: ExtractionJob) -> ExtractionJob | None:
+    """If `job` is a failed scheduler-originated job whose error is transient
+    AND its retry budget is not exhausted, enqueue a new job and return it.
+
+    Returns None otherwise (manual jobs, non-failed, non-retryable error,
+    or retry_count >= SCHEDULER_AUTO_RETRY_MAX).
+
+    The new job inherits taxpayer + payload, gets operation
+    SCHEDULER_RETRY_OPERATION, and bumps `payload.retry_count`. It is
+    enqueued at the tail of the playwright queue (RQ default).
+    """
+    if not job or job.status != "failed":
+        return None
+    if not job.operation or not job.operation.startswith(SCHEDULER_OPERATION_PREFIX):
+        return None
+    if not is_failure_retryable(
+        failure_phase=job.failure_phase,
+        failure_error_type=None,
+    ):
+        logger.info(
+            "AUTO_RETRY_SKIPPED_NON_RETRYABLE | job_id=%s phase=%s",
+            job.id,
+            job.failure_phase,
+        )
+        return None
+
+    payload = dict(job.payload or {})
+    retry_count = int(payload.get("retry_count", 0) or 0)
+    if retry_count >= SCHEDULER_AUTO_RETRY_MAX:
+        logger.info(
+            "AUTO_RETRY_SKIPPED_BUDGET | job_id=%s retry_count=%s max=%s",
+            job.id,
+            retry_count,
+            SCHEDULER_AUTO_RETRY_MAX,
+        )
+        return None
+
+    new_job = ExtractionJob()
+    new_job.taxpayer_id = job.taxpayer_id
+    new_job.operation = SCHEDULER_RETRY_OPERATION
+    new_job.status = "pending"
+    # Carry over original parameters; only retry_count and previous_job_id change.
+    new_payload = {k: v for k, v in payload.items() if k not in {"progress", "queue_name", "rq_job_id"}}
+    new_payload["retry_count"] = retry_count + 1
+    new_payload["previous_job_id"] = job.id
+    new_job.payload = new_payload
+    db.session.add(new_job)
+    db.session.commit()
+
+    try:
+        queue = get_queue("playwright")
+        rq_job = queue.enqueue(
+            run_playwright_pipeline_job,
+            extraction_job_id=new_job.id,
+            fecha_desde=new_payload.get("fecha_desde"),
+            fecha_hasta=new_payload.get("fecha_hasta"),
+            taxpayer_ids=new_payload.get("taxpayer_ids"),
+            timeout_ms=new_payload.get("timeout_ms", 30000),
+            type_delay_ms=new_payload.get("type_delay_ms", 80),
+            slow_mo_ms=new_payload.get("slow_mo_ms", 0),
+            post_action_delay_ms=new_payload.get("post_action_delay_ms", 0),
+            login_max_retries=new_payload.get("login_max_retries", 2),
+            humanize_delays=new_payload.get("humanize_delays", True),
+            retry_max_attempts=new_payload.get("retry_max_attempts", 2),
+            retry_base_delay_ms=new_payload.get("retry_base_delay_ms", 1000),
+            job_timeout=max((new_payload.get("timeout_ms", 30000) // 1000) * 10, 3600),
+            result_ttl=86400,
+            failure_ttl=86400,
+        )
+    except Exception as exc:
+        new_job.status = "failed"
+        new_job.error_message = f"No se pudo encolar el auto-retry: {exc}"
+        new_job.finished_at = now_cordoba_naive()
+        db.session.commit()
+        logger.exception(
+            "AUTO_RETRY_ENQUEUE_FAILED | new_job_id=%s previous_job_id=%s error=%s",
+            new_job.id,
+            job.id,
+            exc,
+        )
+        return new_job
+
+    new_job.payload = {
+        **(new_job.payload or {}),
+        "queue_name": queue.name,
+        "rq_job_id": rq_job.id,
+    }
+    db.session.commit()
+    logger.info(
+        "AUTO_RETRY_ENQUEUED | new_job_id=%s previous_job_id=%s taxpayer_id=%s retry_count=%s",
+        new_job.id,
+        job.id,
+        new_job.taxpayer_id,
+        new_payload["retry_count"],
+    )
+    return new_job
+
+
 def run_playwright_pipeline_job(
     *,
     extraction_job_id: int,
@@ -413,6 +519,19 @@ def run_playwright_pipeline_job(
                     extraction_job_id,
                     status,
                 )
+
+            # Auto-retry para jobs del scheduler que terminaron en failed.
+            if status == "failed":
+                try:
+                    refreshed = ExtractionJob.query.get(extraction_job_id)
+                    _auto_retry_scheduler_job_if_eligible(refreshed)
+                except Exception:
+                    db.session.rollback()
+                    logger.exception(
+                        "AUTO_RETRY_HOOK_FAILED | job_id=%s",
+                        extraction_job_id,
+                    )
+
             logger.info(
                 "JOB_FINISHED | job_id=%s status=%s taxpayers_total=%s taxpayers_ok=%s taxpayers_partial=%s taxpayers_error=%s",
                 extraction_job_id,
@@ -449,4 +568,17 @@ def run_playwright_pipeline_job(
                     "SCHEDULER_HOOK_FAILED | job_id=%s status=failed",
                     extraction_job_id,
                 )
+
+            # Auto-retry para jobs del scheduler que terminaron en failed por
+            # excepción no controlada (DOM flake, browser crash, etc.).
+            try:
+                refreshed = ExtractionJob.query.get(extraction_job_id)
+                _auto_retry_scheduler_job_if_eligible(refreshed)
+            except Exception:
+                db.session.rollback()
+                logger.exception(
+                    "AUTO_RETRY_HOOK_FAILED | job_id=%s",
+                    extraction_job_id,
+                )
+
             logger.exception("JOB_FAILED | job_id=%s error=%s", extraction_job_id, exc)

@@ -116,6 +116,87 @@ def _parse_and_validate_run_payload(payload: dict) -> dict:
     }
 
 
+def _create_and_enqueue_job_for_taxpayer(
+    *, taxpayer_id: int, params: dict, run_func, operation: str = PLAYWRIGHT_OPERATION
+) -> ExtractionJob:
+    """Crea 1 ExtractionJob para 1 taxpayer y lo encola en la queue Playwright.
+
+    Raises:
+        Exception: si falla el enqueue (el job queda persistido con status=failed).
+    """
+    item = ExtractionJob()
+    item.taxpayer_id = taxpayer_id
+    item.operation = operation
+    item.status = "pending"
+    item.payload = {
+        "fecha_desde": params["fecha_desde"],
+        "fecha_hasta": params["fecha_hasta"],
+        "taxpayer_ids": [taxpayer_id],
+        "timeout_ms": params["timeout_ms"],
+        "type_delay_ms": params["type_delay_ms"],
+        "slow_mo_ms": params["slow_mo_ms"],
+        "post_action_delay_ms": params["post_action_delay_ms"],
+        "login_max_retries": params["login_max_retries"],
+        "humanize_delays": params["humanize_delays"],
+        "retry_max_attempts": params["retry_max_attempts"],
+        "retry_base_delay_ms": params["retry_base_delay_ms"],
+        "headless": True,
+    }
+    db.session.add(item)
+    db.session.commit()
+
+    try:
+        queue = get_queue("playwright")
+        rq_job = queue.enqueue(
+            run_func,
+            extraction_job_id=item.id,
+            fecha_desde=params["fecha_desde"],
+            fecha_hasta=params["fecha_hasta"],
+            taxpayer_ids=[taxpayer_id],
+            timeout_ms=params["timeout_ms"],
+            type_delay_ms=params["type_delay_ms"],
+            slow_mo_ms=params["slow_mo_ms"],
+            post_action_delay_ms=params["post_action_delay_ms"],
+            login_max_retries=params["login_max_retries"],
+            humanize_delays=params["humanize_delays"],
+            retry_max_attempts=params["retry_max_attempts"],
+            retry_base_delay_ms=params["retry_base_delay_ms"],
+            job_timeout=max((params["timeout_ms"] // 1000) * 10, 3600),
+            result_ttl=86400,
+            failure_ttl=86400,
+        )
+    except Exception as exc:
+        item.status = "failed"
+        item.error_message = f"No se pudo encolar el job Playwright: {exc}"
+        item.finished_at = now_cordoba_naive()
+        db.session.commit()
+        logger.exception(
+            "JOB_ENQUEUE_FAILED | job_id=%s operation=%s taxpayer_id=%s error=%s",
+            item.id,
+            operation,
+            taxpayer_id,
+            exc,
+        )
+        raise
+
+    item.payload = {
+        **(item.payload or {}),
+        "queue_name": queue.name,
+        "rq_job_id": rq_job.id,
+    }
+    db.session.commit()
+
+    logger.info(
+        "JOB_ENQUEUED | job_id=%s operation=%s taxpayer_id=%s queue=%s rq_job_id=%s",
+        item.id,
+        operation,
+        taxpayer_id,
+        queue.name,
+        rq_job.id,
+    )
+    return item
+
+
 @playwright_bp.post("/playwright/lpg/run")
 @require_auth
 def enqueue_lpg_playwright_pipeline():
@@ -125,17 +206,7 @@ def enqueue_lpg_playwright_pipeline():
     except ValueError as exc:
         return _error(str(exc), 400)
 
-    fecha_desde = params["fecha_desde"]
-    fecha_hasta = params["fecha_hasta"]
     taxpayer_ids = params["taxpayer_ids"]
-    timeout_ms = params["timeout_ms"]
-    type_delay_ms = params["type_delay_ms"]
-    slow_mo_ms = params["slow_mo_ms"]
-    post_action_delay_ms = params["post_action_delay_ms"]
-    login_max_retries = params["login_max_retries"]
-    humanize_delays = params["humanize_delays"]
-    retry_max_attempts = params["retry_max_attempts"]
-    retry_base_delay_ms = params["retry_base_delay_ms"]
 
     try:
         from ..workers.playwright_jobs import run_playwright_pipeline_job
@@ -150,22 +221,7 @@ def enqueue_lpg_playwright_pipeline():
             )
         raise
 
-    logger.info(
-        "JOB_RECEIVED | operation=%s desde=%s hasta=%s taxpayers=%s timeout_ms=%s type_delay_ms=%s slow_mo_ms=%s post_action_delay_ms=%s login_max_retries=%s humanize_delays=%s retry_max_attempts=%s retry_base_delay_ms=%s",
-        PLAYWRIGHT_OPERATION,
-        fecha_desde,
-        fecha_hasta,
-        taxpayer_ids or "todos",
-        timeout_ms,
-        type_delay_ms,
-        slow_mo_ms,
-        post_action_delay_ms,
-        login_max_retries,
-        humanize_delays,
-        retry_max_attempts,
-        retry_base_delay_ms,
-    )
-
+    # Resolve target taxpayer ids: explicit list, or all active+playwright_enabled
     if taxpayer_ids:
         existing_ids = {
             item.id
@@ -174,95 +230,49 @@ def enqueue_lpg_playwright_pipeline():
         missing = [item for item in taxpayer_ids if item not in existing_ids]
         if missing:
             return _error(f"taxpayer_ids inexistentes: {missing}", 400)
-        anchor_taxpayer_id = taxpayer_ids[0]
+        target_ids = taxpayer_ids
     else:
-        anchor_taxpayer = (
-            Taxpayer.query.filter(
+        target_ids = [
+            t.id
+            for t in Taxpayer.query.filter(
                 Taxpayer.activo.is_(True), Taxpayer.playwright_enabled.is_(True)
             )
             .order_by(Taxpayer.id.asc())
-            .first()
-        )
-        if not anchor_taxpayer:
+            .with_entities(Taxpayer.id)
+        ]
+        if not target_ids:
             return _error("No hay clientes activos con Playwright habilitado.", 400)
-        anchor_taxpayer_id = anchor_taxpayer.id
-
-    item = ExtractionJob()
-    item.taxpayer_id = anchor_taxpayer_id
-    item.operation = PLAYWRIGHT_OPERATION
-    item.status = "pending"
-    item.payload = {
-        "fecha_desde": fecha_desde,
-        "fecha_hasta": fecha_hasta,
-        "taxpayer_ids": taxpayer_ids,
-        "timeout_ms": timeout_ms,
-        "type_delay_ms": type_delay_ms,
-        "slow_mo_ms": slow_mo_ms,
-        "post_action_delay_ms": post_action_delay_ms,
-        "login_max_retries": login_max_retries,
-        "humanize_delays": humanize_delays,
-        "retry_max_attempts": retry_max_attempts,
-        "retry_base_delay_ms": retry_base_delay_ms,
-        "headless": True,
-    }
-    db.session.add(item)
-    db.session.commit()
-
-    try:
-        queue = get_queue("playwright")
-        rq_job = queue.enqueue(
-            run_playwright_pipeline_job,
-            extraction_job_id=item.id,
-            fecha_desde=fecha_desde,
-            fecha_hasta=fecha_hasta,
-            taxpayer_ids=taxpayer_ids,
-            timeout_ms=timeout_ms,
-            type_delay_ms=type_delay_ms,
-            slow_mo_ms=slow_mo_ms,
-            post_action_delay_ms=post_action_delay_ms,
-            login_max_retries=login_max_retries,
-            humanize_delays=humanize_delays,
-            retry_max_attempts=retry_max_attempts,
-            retry_base_delay_ms=retry_base_delay_ms,
-            job_timeout=max((timeout_ms // 1000) * 10, 3600),
-            result_ttl=86400,
-            failure_ttl=86400,
-        )
-    except Exception as exc:
-        item.status = "failed"
-        item.error_message = f"No se pudo encolar el job Playwright: {exc}"
-        item.finished_at = now_cordoba_naive()
-        db.session.commit()
-        logger.exception(
-            "JOB_ENQUEUE_FAILED | job_id=%s operation=%s error=%s",
-            item.id,
-            PLAYWRIGHT_OPERATION,
-            exc,
-        )
-        return _error(
-            "No se pudo encolar el job Playwright. Verificá Redis/worker e intentá nuevamente.",
-            503,
-        )
-
-    item.payload = {
-        **(item.payload or {}),
-        "queue_name": queue.name,
-        "rq_job_id": rq_job.id,
-    }
-    db.session.commit()
 
     logger.info(
-        "JOB_ENQUEUED | job_id=%s operation=%s queue=%s rq_job_id=%s",
-        item.id,
+        "JOB_RECEIVED | operation=%s desde=%s hasta=%s taxpayers=%s",
         PLAYWRIGHT_OPERATION,
-        queue.name,
-        rq_job.id,
+        params["fecha_desde"],
+        params["fecha_hasta"],
+        target_ids,
     )
+
+    created_jobs: list[ExtractionJob] = []
+    for tp_id in target_ids:
+        try:
+            job = _create_and_enqueue_job_for_taxpayer(
+                taxpayer_id=tp_id, params=params, run_func=run_playwright_pipeline_job
+            )
+            created_jobs.append(job)
+        except Exception:
+            # Already persisted as failed inside the helper; keep going so the
+            # rest of the taxpayers get a chance. The response will surface the
+            # failed job alongside the successful ones.
+            failed = ExtractionJob.query.filter_by(
+                taxpayer_id=tp_id, operation=PLAYWRIGHT_OPERATION, status="failed"
+            ).order_by(ExtractionJob.id.desc()).first()
+            if failed is not None:
+                created_jobs.append(failed)
+
     return (
         jsonify(
             {
-                "message": "Proceso Playwright encolado.",
-                "job": _serialize_job(item),
+                "message": f"{len(created_jobs)} extracción(es) Playwright encolada(s).",
+                "jobs": [_serialize_job(j) for j in created_jobs],
             }
         ),
         202,
@@ -280,3 +290,82 @@ def get_lpg_playwright_job(job_id: int):
         item.error_message = item.error_message or "Estado de job inválido."
         db.session.commit()
     return jsonify(_serialize_job(item))
+
+
+@playwright_bp.post("/playwright/lpg/jobs/<int:job_id>/retry")
+@require_auth
+def retry_lpg_playwright_job(job_id: int):
+    """Reintentar manualmente un job en estado failed.
+
+    Crea un NUEVO ExtractionJob con operation `playwright_lpg_run` (manual),
+    el mismo taxpayer y los mismos parámetros del job original. El nuevo job
+    queda al final de la queue.
+    """
+    original = ExtractionJob.query.get_or_404(job_id)
+
+    if original.status != "failed":
+        return _error(
+            f"Solo se pueden reintentar jobs en estado 'failed'. Estado actual: '{original.status}'.",
+            409,
+        )
+
+    payload = dict(original.payload or {})
+    fecha_desde = payload.get("fecha_desde")
+    fecha_hasta = payload.get("fecha_hasta")
+    if not fecha_desde or not fecha_hasta:
+        return _error(
+            "El job original no tiene fecha_desde/fecha_hasta en su payload — no se puede reintentar.",
+            422,
+        )
+
+    try:
+        from ..workers.playwright_jobs import run_playwright_pipeline_job
+    except ModuleNotFoundError as exc:
+        if exc.name == "playwright":
+            return _error(
+                "Playwright no está instalado en backend.",
+                503,
+            )
+        raise
+
+    # Build params dict reusing the original payload, fall back to safe defaults.
+    params = {
+        "fecha_desde": fecha_desde,
+        "fecha_hasta": fecha_hasta,
+        "timeout_ms": int(payload.get("timeout_ms", 30000)),
+        "type_delay_ms": int(payload.get("type_delay_ms", 80)),
+        "slow_mo_ms": int(payload.get("slow_mo_ms", 0)),
+        "post_action_delay_ms": int(payload.get("post_action_delay_ms", 0)),
+        "login_max_retries": int(payload.get("login_max_retries", 2)),
+        "humanize_delays": bool(payload.get("humanize_delays", True)),
+        "retry_max_attempts": int(payload.get("retry_max_attempts", 2)),
+        "retry_base_delay_ms": int(payload.get("retry_base_delay_ms", 1000)),
+    }
+
+    try:
+        new_job = _create_and_enqueue_job_for_taxpayer(
+            taxpayer_id=original.taxpayer_id,
+            params=params,
+            run_func=run_playwright_pipeline_job,
+        )
+        # Tag the new job's payload so the UI can trace it back to the original.
+        new_job.payload = {
+            **(new_job.payload or {}),
+            "retry_of_job_id": original.id,
+        }
+        db.session.commit()
+    except Exception:
+        return _error(
+            "No se pudo encolar el reintento. Verificá Redis/worker e intentá nuevamente.",
+            503,
+        )
+
+    return (
+        jsonify(
+            {
+                "message": "Reintento encolado.",
+                "job": _serialize_job(new_job),
+            }
+        ),
+        202,
+    )
