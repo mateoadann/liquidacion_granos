@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listJobs,
   listJobsPaginated,
   getJob,
+  retryJob,
   type Job,
   type JobsListResponse,
   type JobsPaginatedResponse,
@@ -57,4 +58,36 @@ export function useJobQuery(id: number | null) {
       return false;
     },
   });
+}
+
+export function useRetryJobMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<Job, Error, number>({
+    mutationFn: (jobId: number) => retryJob(jobId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["jobs-paginated"] });
+    },
+  });
+}
+
+/**
+ * Mirror del classifier del backend (`backend/app/services/failure_classifier.py`).
+ * Si esto se desincroniza, el botón puede mostrarse para un caso que el
+ * backend rechazará con 409 (no es crítico, pero indeseable).
+ */
+const RETRYABLE_ERROR_TYPES = new Set(["timeout", "network", "arca_unavailable", "unknown"]);
+const NON_RETRYABLE_ERROR_TYPES = new Set(["auth_failed"]);
+
+export function isJobRetryableInUI(job: Job): boolean {
+  if (job.status !== "failed") return false;
+  const errorType = (job.payload as Record<string, unknown> | null)?.["failure_error_type"];
+  if (typeof errorType === "string") {
+    if (NON_RETRYABLE_ERROR_TYPES.has(errorType)) return false;
+    if (RETRYABLE_ERROR_TYPES.has(errorType)) return true;
+  }
+  // Sin error_type: si no hay phase tampoco, conservador-permisivo (DOM flake).
+  if (!job.failure_phase) return true;
+  // Phase pero sin error_type conocido → no mostrar el botón.
+  return false;
 }
