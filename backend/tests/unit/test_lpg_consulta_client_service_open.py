@@ -114,3 +114,129 @@ def test_open_lpg_service_via_direct_url_closes_page_on_failure() -> None:
         )
 
     direct_page.close.assert_called_once()
+
+
+def test_open_lpg_service_falls_back_to_direct_url_on_search_service_error() -> None:
+    client = ArcaLpgPlaywrightClient()
+    client._emit_phase = MagicMock()
+    client._post_action_pause = MagicMock()
+    client._click_dropdown_suggestion = MagicMock(return_value=True)
+    client._wait_for_lpg_service_link = MagicMock(
+        side_effect=PlaywrightFlowError(
+            "No se encontró el servicio",
+            phase=ExtractionPhase.SEARCH_SERVICE,
+            dropdown_clicked=True,
+        )
+    )
+
+    direct_page = MagicMock(name="direct_page")
+    direct_page.url = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
+    context = MagicMock(name="context")
+    context.new_page.return_value = direct_page
+
+    login_page = MagicMock(name="login_page")
+    login_page.context = context
+    login_page.get_by_role.return_value = MagicMock(name="search_combobox")
+
+    client._wait_for_service_page_ready = MagicMock()
+
+    result = client._open_lpg_service(
+        login_page=login_page,
+        timeout_ms=10_000,
+        type_delay_ms=10,
+        empresa="ACME SRL",
+        humanize_delays=False,
+    )
+
+    assert result is direct_page
+    assert client._service_open_method == "direct_url"
+    context.new_page.assert_called_once_with()
+    direct_page.goto.assert_called_once_with(
+        ArcaLpgPlaywrightClient.LPG_DIRECT_URL, wait_until="networkidle"
+    )
+
+
+def test_open_lpg_service_reraises_original_error_when_direct_url_also_fails() -> None:
+    original = PlaywrightFlowError(
+        "No se encontró el servicio",
+        phase=ExtractionPhase.SEARCH_SERVICE,
+        dropdown_clicked=True,
+    )
+
+    client = ArcaLpgPlaywrightClient()
+    client._emit_phase = MagicMock()
+    client._post_action_pause = MagicMock()
+    client._click_dropout_suggestion = MagicMock(return_value=True)
+    client._click_dropdown_suggestion = MagicMock(return_value=True)
+    client._wait_for_lpg_service_link = MagicMock(side_effect=original)
+
+    direct_page = MagicMock(name="direct_page")
+    direct_page.url = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
+    context = MagicMock(name="context")
+    context.new_page.return_value = direct_page
+
+    login_page = MagicMock(name="login_page")
+    login_page.context = context
+    login_page.get_by_role.return_value = MagicMock(name="search_combobox")
+
+    client._wait_for_service_page_ready = MagicMock(
+        side_effect=PlaywrightFlowError(
+            "direct url failed",
+            phase=ExtractionPhase.OPEN_SERVICE,
+        )
+    )
+
+    with pytest.raises(PlaywrightFlowError) as exc_info:
+        client._open_lpg_service(
+            login_page=login_page,
+            timeout_ms=10_000,
+            type_delay_ms=10,
+            empresa="ACME SRL",
+            humanize_delays=False,
+        )
+
+    raised = exc_info.value
+    assert raised is original
+    assert raised.phase == ExtractionPhase.SEARCH_SERVICE
+    assert raised.dropdown_clicked is True
+    direct_page.close.assert_called_once()
+    assert client._service_open_method is None
+
+
+def test_open_lpg_service_does_not_fallback_on_open_service_phase() -> None:
+    open_service_error = PlaywrightFlowError(
+        "popup timed out",
+        phase=ExtractionPhase.OPEN_SERVICE,
+    )
+
+    client = ArcaLpgPlaywrightClient()
+    client._emit_phase = MagicMock()
+    client._post_action_pause = MagicMock()
+    client._click_dropdown_suggestion = MagicMock(return_value=True)
+    client._wait_for_lpg_service_link = MagicMock(
+        return_value=(MagicMock(name="service_link"), "Liquidación primaria de granos")
+    )
+    client._open_service_popup = MagicMock(side_effect=open_service_error)
+
+    context = MagicMock(name="context")
+    login_page = MagicMock(name="login_page")
+    login_page.context = context
+    login_page.get_by_role.return_value = MagicMock(name="search_combobox")
+
+    # Also fail the existing retry path so the original OPEN_SERVICE error surfaces.
+    exact_link = MagicMock(name="exact_link")
+    exact_link.count.return_value = 0
+    login_page.locator.return_value = exact_link
+
+    with pytest.raises(PlaywrightFlowError) as exc_info:
+        client._open_lpg_service(
+            login_page=login_page,
+            timeout_ms=10_000,
+            type_delay_ms=10,
+            empresa="ACME SRL",
+            humanize_delays=False,
+        )
+
+    assert exc_info.value.phase == ExtractionPhase.OPEN_SERVICE
+    context.new_page.assert_not_called()
+    assert client._service_open_method is None
