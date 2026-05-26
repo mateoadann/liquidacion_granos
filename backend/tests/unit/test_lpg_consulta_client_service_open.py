@@ -166,7 +166,6 @@ def test_open_lpg_service_reraises_original_error_when_direct_url_also_fails() -
     client = ArcaLpgPlaywrightClient()
     client._emit_phase = MagicMock()
     client._post_action_pause = MagicMock()
-    client._click_dropout_suggestion = MagicMock(return_value=True)
     client._click_dropdown_suggestion = MagicMock(return_value=True)
     client._wait_for_lpg_service_link = MagicMock(side_effect=original)
 
