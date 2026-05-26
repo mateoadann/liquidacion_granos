@@ -579,6 +579,7 @@ class ArcaLpgPlaywrightClient:
 
         try:
             self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
+            self._service_open_method = "search_box"
             return service_page
         except PlaywrightFlowError:
             logger.warning("PLAYWRIGHT_SERVICE_RETRY_OPEN | empresa=%s", empresa)
@@ -606,6 +607,7 @@ class ArcaLpgPlaywrightClient:
         )
         service_page = self._open_service_popup(login_page, exact_link, timeout_ms, empresa)
         self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
+        self._service_open_method = "search_box"
         return service_page
 
     def _click_dropdown_suggestion(self, login_page: Page, timeout_ms: int, empresa: str) -> bool:
