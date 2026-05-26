@@ -25,6 +25,7 @@ import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
 import { useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
 import { usePageQueryParam } from "../hooks/usePageQueryParam";
+import { useCoesFilters } from "../hooks/useCoesFilters";
 import { downloadCoePdf, type Coe } from "../api/coes";
 
 function EstadoCicloBadge({ estado }: { estado: string | null | undefined }) {
@@ -59,12 +60,23 @@ function getTipoCte(coe: Coe): "F1" | "F2" | "NL" | "-" {
 export function CoesListPage() {
   const navigate = useNavigate();
   const [page, setPage] = usePageQueryParam();
-  const [search, setSearch] = useState("");
-  const [taxpayerId, setTaxpayerId] = useState<number | undefined>();
-  const [estadoCiclo, setEstadoCiclo] = useState<string>("");
-  const [fechaDesde, setFechaDesde] = useState<string>("");
-  const [fechaHasta, setFechaHasta] = useState<string>("");
-  const [controlada, setControlada] = useState<"" | "true" | "false">("");
+  const {
+    search,
+    taxpayerId,
+    estadoCiclo,
+    fechaDesde,
+    fechaHasta,
+    controlada,
+    setSearch,
+    setTaxpayerId,
+    setEstadoCiclo,
+    setFechaDesde,
+    setFechaHasta,
+    setControlada,
+    clearAll,
+    hasActiveFilters,
+    drawerFilterCount,
+  } = useCoesFilters();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
   const [isManualLoadOpen, setIsManualLoadOpen] = useState(false);
@@ -81,52 +93,10 @@ export function CoesListPage() {
     controlada: controlada || undefined,
   });
 
-  const drawerFilterCount =
-    (taxpayerId !== undefined ? 1 : 0) +
-    (estadoCiclo ? 1 : 0) +
-    (fechaDesde || fechaHasta ? 1 : 0) +
-    (controlada ? 1 : 0);
-
-  const hasActiveFilters = !!search || drawerFilterCount > 0;
-
-  function handleClearFilters() {
-    setSearch("");
-    setTaxpayerId(undefined);
-    setEstadoCiclo("");
-    setFechaDesde("");
-    setFechaHasta("");
-    setControlada("");
-    setPage(1);
-  }
-
-  function handleFechaDesdeChange(value: string) {
-    setFechaDesde(value);
-    if (fechaHasta && value && value > fechaHasta) {
-      setFechaHasta("");
-    }
-    setPage(1);
-  }
-
-  function handleFechaHastaChange(value: string) {
-    setFechaHasta(value);
-    setPage(1);
-  }
-
   const clients = clientsQuery.data ?? [];
-
-  function handleSearch(value: string) {
-    setSearch(value);
-    setPage(1);
-  }
 
   function handleTaxpayerChange(value: string) {
     setTaxpayerId(value ? Number(value) : undefined);
-    setPage(1);
-  }
-
-  function handleEstadoCicloChange(value: string) {
-    setEstadoCiclo(value);
-    setPage(1);
   }
 
   async function handleDownloadPdf(docId: number, coe: string) {
@@ -182,7 +152,7 @@ export function CoesListPage() {
             <div className="flex-1">
               <SearchInput
                 value={search}
-                onChange={handleSearch}
+                onChange={setSearch}
                 placeholder="Buscar por COE..."
               />
             </div>
@@ -346,7 +316,7 @@ export function CoesListPage() {
           <>
             <Button
               variant="ghost"
-              onClick={handleClearFilters}
+              onClick={clearAll}
               disabled={!hasActiveFilters}
             >
               Limpiar filtros
@@ -379,7 +349,7 @@ export function CoesListPage() {
             </label>
             <Select
               value={estadoCiclo}
-              onChange={(e) => handleEstadoCicloChange(e.target.value)}
+              onChange={(e) => setEstadoCiclo(e.target.value)}
               options={[
                 { value: "", label: "Todos los estados" },
                 { value: "pendiente", label: "Pendiente" },
@@ -396,10 +366,9 @@ export function CoesListPage() {
             </label>
             <Select
               value={controlada}
-              onChange={(e) => {
-                setControlada(e.target.value as "" | "true" | "false");
-                setPage(1);
-              }}
+              onChange={(e) =>
+                setControlada(e.target.value as "" | "true" | "false")
+              }
               options={[
                 { value: "", label: "Todas" },
                 { value: "true", label: "Sí" },
@@ -417,13 +386,13 @@ export function CoesListPage() {
                 label="Desde"
                 value={fechaDesde}
                 max={fechaHasta || undefined}
-                onChange={handleFechaDesdeChange}
+                onChange={setFechaDesde}
               />
               <DatePicker
                 label="Hasta"
                 value={fechaHasta}
                 min={fechaDesde || undefined}
-                onChange={handleFechaHastaChange}
+                onChange={setFechaHasta}
               />
             </div>
           </div>
