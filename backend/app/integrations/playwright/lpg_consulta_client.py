@@ -139,10 +139,12 @@ logger = logging.getLogger(__name__)
 
 class ArcaLpgPlaywrightClient:
     LANDING_URL = "https://www.afip.gob.ar/landing/default.asp"
+    LPG_DIRECT_URL = "https://serviciosjava2.afip.gob.ar/lpg/jsp/index.jsp"
     EMPRESA_FORM_SELECTOR = "form[name='seleccionaEmpresaForm']"
 
     def __init__(self) -> None:
         self._search_dropdown_clicked: bool = False
+        self._service_open_method: str | None = None
         self._on_phase: PhaseCallback | None = None
 
     def _emit_phase(self, phase: ExtractionPhase) -> None:
@@ -293,6 +295,7 @@ class ArcaLpgPlaywrightClient:
         started = now_cordoba_naive()
         self._on_phase = request.on_phase
         self._search_dropdown_clicked = False
+        self._service_open_method = None
         logger.info(
             "PLAYWRIGHT_RUN_START | empresa=%s desde=%s hasta=%s timeout_ms=%s type_delay_ms=%s",
             request.empresa,
@@ -537,73 +540,145 @@ class ArcaLpgPlaywrightClient:
         empresa: str,
         humanize_delays: bool = True,
     ) -> Page:
-        self._emit_phase(ExtractionPhase.SEARCH_SERVICE)
-        logger.info("PLAYWRIGHT_SEARCH_SERVICE_START | empresa=%s", empresa)
-        search = login_page.get_by_role("combobox", name=re.compile(r"Buscador", re.IGNORECASE))
-        search.click()
-        search.fill("")
-        search.type("liquidacion primaria de granos", delay=type_delay_ms)
-        logger.info(
-            "PLAYWRIGHT_SEARCH_SERVICE_TYPED | empresa=%s query=Liquidación primaria de granos",
-            empresa,
-        )
-
-        # AFIP debouncea el input antes de disparar el AJAX del autocomplete.
-        # Sin pausa, Playwright pregunta por sugerencias antes de que existan.
-        self._post_action_pause(
-            login_page, 800, "search_typed", empresa, humanize_delays
-        )
-
-        # El buscador de AFIP muestra un dropdown de sugerencias al tipear.
-        # Hacer click en la primera sugerencia que coincida es más robusto que presionar Enter,
-        # ya que Enter puede disparar una navegación en lugar de seleccionar la sugerencia.
-        clicked = self._click_dropdown_suggestion(login_page, timeout_ms, empresa)
-        if not clicked:
-            logger.warning(
-                "PLAYWRIGHT_SEARCH_DROPDOWN_FALLBACK | empresa=%s action=press_enter",
+        def _open_via_search_box() -> Page:
+            self._emit_phase(ExtractionPhase.SEARCH_SERVICE)
+            logger.info("PLAYWRIGHT_SEARCH_SERVICE_START | empresa=%s", empresa)
+            search = login_page.get_by_role(
+                "combobox", name=re.compile(r"Buscador", re.IGNORECASE)
+            )
+            search.click()
+            search.fill("")
+            search.type("liquidacion primaria de granos", delay=type_delay_ms)
+            logger.info(
+                "PLAYWRIGHT_SEARCH_SERVICE_TYPED | empresa=%s query=Liquidación primaria de granos",
                 empresa,
             )
-            search.press("Enter")
-
-        service_link, link_text = self._wait_for_lpg_service_link(login_page, timeout_ms)
-        logger.info(
-            "PLAYWRIGHT_SERVICE_LINK_CHOSEN | empresa=%s link_text=%s",
-            empresa,
-            link_text,
-        )
-        self._emit_phase(ExtractionPhase.OPEN_SERVICE)
-        service_page = self._open_service_popup(login_page, service_link, timeout_ms, empresa)
-
-        try:
-            self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
-            return service_page
-        except PlaywrightFlowError:
-            logger.warning("PLAYWRIGHT_SERVICE_RETRY_OPEN | empresa=%s", empresa)
-            try:
-                service_page.close()
-            except Exception:
-                pass
-
-        exact_link = login_page.locator(
-            "a",
-            has_text=re.compile(r"^\s*Liquidaci[oó]n\s+primaria\s+de\s+granos\s*$", re.IGNORECASE),
-        ).first
-        if exact_link.count() == 0:
-            raise PlaywrightFlowError(
-                "Se abrió una ventana inválida del servicio y no se encontró el link exacto "
-                "'Liquidación primaria de granos' para reintentar.",
-                phase=ExtractionPhase.OPEN_SERVICE,
+            self._post_action_pause(
+                login_page, 800, "search_typed", empresa, humanize_delays
             )
 
-        exact_text = _normalize_text(exact_link.inner_text())
+            clicked = self._click_dropdown_suggestion(login_page, timeout_ms, empresa)
+            if not clicked:
+                logger.warning(
+                    "PLAYWRIGHT_SEARCH_DROPDOWN_FALLBACK | empresa=%s action=press_enter",
+                    empresa,
+                )
+                search.press("Enter")
+
+            service_link, link_text = self._wait_for_lpg_service_link(
+                login_page, timeout_ms
+            )
+            logger.info(
+                "PLAYWRIGHT_SERVICE_LINK_CHOSEN | empresa=%s link_text=%s",
+                empresa,
+                link_text,
+            )
+            self._emit_phase(ExtractionPhase.OPEN_SERVICE)
+            service_page = self._open_service_popup(
+                login_page, service_link, timeout_ms, empresa
+            )
+
+            try:
+                self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
+                self._service_open_method = "search_box"
+                return service_page
+            except PlaywrightFlowError:
+                logger.warning("PLAYWRIGHT_SERVICE_RETRY_OPEN | empresa=%s", empresa)
+                try:
+                    service_page.close()
+                except Exception:
+                    pass
+
+            exact_link = login_page.locator(
+                "a",
+                has_text=re.compile(
+                    r"^\s*Liquidaci[oó]n\s+primaria\s+de\s+granos\s*$",
+                    re.IGNORECASE,
+                ),
+            ).first
+            if exact_link.count() == 0:
+                raise PlaywrightFlowError(
+                    "Se abrió una ventana inválida del servicio y no se encontró el link exacto "
+                    "'Liquidación primaria de granos' para reintentar.",
+                    phase=ExtractionPhase.OPEN_SERVICE,
+                )
+
+            exact_text = _normalize_text(exact_link.inner_text())
+            logger.info(
+                "PLAYWRIGHT_SERVICE_LINK_CHOSEN | empresa=%s link_text=%s attempt=retry",
+                empresa,
+                exact_text,
+            )
+            service_page = self._open_service_popup(
+                login_page, exact_link, timeout_ms, empresa
+            )
+            self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
+            self._service_open_method = "search_box"
+            return service_page
+
+        try:
+            service_page = _open_via_search_box()
+        except PlaywrightFlowError as exc:
+            if exc.phase is not ExtractionPhase.SEARCH_SERVICE:
+                raise
+            logger.warning(
+                "PLAYWRIGHT_SERVICE_FALLBACK_TO_DIRECT_URL | empresa=%s reason=%s",
+                empresa,
+                exc,
+            )
+            try:
+                service_page = self._open_lpg_service_via_direct_url(
+                    login_page, timeout_ms, empresa
+                )
+            except Exception:
+                # Preserve the ORIGINAL SEARCH_SERVICE diagnostics so the
+                # auto-retry scheduler keeps behaving as today.
+                raise exc from None
+            self._service_open_method = "direct_url"
+
         logger.info(
-            "PLAYWRIGHT_SERVICE_LINK_CHOSEN | empresa=%s link_text=%s attempt=retry",
+            "PLAYWRIGHT_SERVICE_OPEN_METHOD | empresa=%s method=%s",
             empresa,
-            exact_text,
+            self._service_open_method,
         )
-        service_page = self._open_service_popup(login_page, exact_link, timeout_ms, empresa)
-        self._wait_for_service_page_ready(service_page, timeout_ms, empresa)
         return service_page
+
+    def _open_lpg_service_via_direct_url(
+        self, login_page: Page, timeout_ms: int, empresa: str
+    ) -> Page:
+        """Fallback path: open the LPG service in a new tab on the same context.
+
+        Reuses the authenticated cookies of `login_page.context`, so the new tab
+        lands on the LPG service directly. Validates with the same readiness
+        check used by the search-box path.
+        """
+        logger.info(
+            "PLAYWRIGHT_SERVICE_DIRECT_URL_START | empresa=%s url=%s",
+            empresa,
+            self.LPG_DIRECT_URL,
+        )
+        context = login_page.context
+        direct_page = context.new_page()
+        try:
+            direct_page.goto(self.LPG_DIRECT_URL, wait_until="networkidle")
+            self._wait_for_service_page_ready(direct_page, timeout_ms, empresa)
+        except Exception:
+            logger.warning(
+                "PLAYWRIGHT_SERVICE_DIRECT_URL_FAIL | empresa=%s url=%s",
+                empresa,
+                getattr(direct_page, "url", self.LPG_DIRECT_URL),
+            )
+            try:
+                direct_page.close()
+            except Exception:
+                pass
+            raise
+        logger.info(
+            "PLAYWRIGHT_SERVICE_DIRECT_URL_OK | empresa=%s url=%s",
+            empresa,
+            getattr(direct_page, "url", self.LPG_DIRECT_URL),
+        )
+        return direct_page
 
     def _click_dropdown_suggestion(self, login_page: Page, timeout_ms: int, empresa: str) -> bool:
         """Espera el dropdown de sugerencias del buscador AFIP y hace click en la sugerencia LPG.
