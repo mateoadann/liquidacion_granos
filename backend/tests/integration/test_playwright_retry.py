@@ -134,6 +134,42 @@ class TestManualRetryEndpoint:
         # touch scheduler_ultimo_* columns. Different from auto-retry behaviour.
         assert body["job"]["operation"] == "playwright_lpg_run"
 
+    def test_retry_rejects_auth_failed_with_409(self, client, monkeypatch, auth_headers):
+        """auth_failed no se puede reintentar ni siquiera manualmente: la clave
+        sigue mal y reintentar puede lockear la cuenta. El endpoint devuelve 409."""
+        taxpayer = _create_taxpayer()
+        original = _create_failed_job(
+            taxpayer_id=taxpayer.id,
+            failure_phase="LOGIN_START",
+            failure_error_type="auth_failed",
+        )
+        enqueues = _install_dummy_queue(monkeypatch)
+
+        response = client.post(
+            f"/api/playwright/lpg/jobs/{original.id}/retry", headers=auth_headers
+        )
+
+        assert response.status_code == 409
+        assert "reintentar" in response.get_json()["error"].lower()
+        # Crítico: no se debe haber encolado nada.
+        assert enqueues == []
+
+    def test_retry_endpoint_exposes_failure_error_type(self, client, auth_headers):
+        """El job serializado tiene que llevar el nuevo campo para que el
+        frontend pueda decidir si mostrar el botón."""
+        taxpayer = _create_taxpayer()
+        original = _create_failed_job(
+            taxpayer_id=taxpayer.id, failure_error_type="timeout"
+        )
+
+        response = client.get(
+            f"/api/playwright/lpg/jobs/{original.id}", headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["failure_error_type"] == "timeout"
+
 
 class TestAutoRetrySchedulerHelper:
     """Tests del helper _auto_retry_scheduler_job_if_eligible del worker.
