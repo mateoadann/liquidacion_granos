@@ -252,7 +252,7 @@ def _auto_retry_scheduler_job_if_eligible(job: ExtractionJob) -> ExtractionJob |
         return None
     if not is_failure_retryable(
         failure_phase=job.failure_phase,
-        failure_error_type=None,
+        failure_error_type=job.failure_error_type,
     ):
         logger.info(
             "AUTO_RETRY_SKIPPED_NON_RETRYABLE | job_id=%s phase=%s",

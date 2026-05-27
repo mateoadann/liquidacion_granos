@@ -24,6 +24,7 @@ def _create_failed_job(
     taxpayer_id: int,
     operation: str = "playwright_lpg_run",
     failure_phase: str | None = "LISTING_COES",
+    failure_error_type: str | None = None,
     payload: dict | None = None,
 ) -> ExtractionJob:
     job = ExtractionJob()
@@ -31,6 +32,7 @@ def _create_failed_job(
     job.operation = operation
     job.status = "failed"
     job.failure_phase = failure_phase
+    job.failure_error_type = failure_error_type
     job.payload = payload or {
         "fecha_desde": "01/01/2026",
         "fecha_hasta": "26/02/2026",
@@ -219,6 +221,37 @@ class TestAutoRetrySchedulerHelper:
             )
 
             new_job = worker._auto_retry_scheduler_job_if_eligible(already_retried)
+
+            assert new_job is None
+            assert captured == []
+
+    def test_scheduler_auth_failed_does_not_auto_retry(self, app, monkeypatch):
+        """auth_failed nunca se auto-reintenta: la clave fiscal sigue mal y
+        reintentar puede lockear la cuenta de ARCA. Antes del fix de
+        persistencia, el classifier recibía error_type=None y el job se
+        reencolaba."""
+        from app.workers import playwright_jobs as worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker,
+            "get_queue",
+            lambda _n: SimpleNamespace(
+                name="playwright",
+                enqueue=lambda f, **k: captured.append(k) or SimpleNamespace(id="x"),
+            ),
+        )
+
+        with app.app_context():
+            taxpayer = _create_taxpayer()
+            failed = _create_failed_job(
+                taxpayer_id=taxpayer.id,
+                operation="scheduler_lpg_extract",
+                failure_phase="LOGIN_START",
+                failure_error_type="auth_failed",
+            )
+
+            new_job = worker._auto_retry_scheduler_job_if_eligible(failed)
 
             assert new_job is None
             assert captured == []
