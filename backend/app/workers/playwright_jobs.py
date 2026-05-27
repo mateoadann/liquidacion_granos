@@ -375,6 +375,7 @@ def run_playwright_pipeline_job(
             failure_phase=None,
             failure_message_user=None,
             failure_message_technical=None,
+            failure_error_type=None,
         )
 
         job_item = ExtractionJob.query.get(extraction_job_id)
@@ -387,6 +388,7 @@ def run_playwright_pipeline_job(
             "phase": None,
             "user_es": None,
             "tech": None,
+            "error_type": None,
         }
 
         def on_taxpayer_start(taxpayer: Taxpayer) -> None:
@@ -427,12 +429,16 @@ def run_playwright_pipeline_job(
                 )
                 last_taxpayer_failure["user_es"] = user_es
                 last_taxpayer_failure["tech"] = tech_combined
+                last_taxpayer_failure["error_type"] = (
+                    result.failure_error_type or "unknown"
+                )
                 _update_job(
                     extraction_job_id,
                     payload=payload,
                     failure_phase=last_taxpayer_failure["phase"],
                     failure_message_user=user_es,
                     failure_message_technical=tech_combined,
+                    failure_error_type=last_taxpayer_failure["error_type"],
                 )
 
         def on_phase(taxpayer: Taxpayer, phase: ExtractionPhase, message: str) -> None:
@@ -471,6 +477,7 @@ def run_playwright_pipeline_job(
             job_failure_user: str | None = None
             job_failure_tech: str | None = None
             job_failure_phase: str | None = None
+            job_failure_error_type: str | None = None
             if result.taxpayers_total > 0:
                 if (
                     result.taxpayers_ok == 0
@@ -485,6 +492,7 @@ def run_playwright_pipeline_job(
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]
                     job_failure_phase = last_taxpayer_failure["phase"]
+                    job_failure_error_type = last_taxpayer_failure["error_type"]
                 elif result.taxpayers_partial > 0 or (
                     result.taxpayers_ok > 0 and result.taxpayers_error > 0
                 ):
@@ -496,6 +504,7 @@ def run_playwright_pipeline_job(
                     job_failure_user = last_taxpayer_failure["user_es"]
                     job_failure_tech = last_taxpayer_failure["tech"]
                     job_failure_phase = last_taxpayer_failure["phase"]
+                    job_failure_error_type = last_taxpayer_failure["error_type"]
 
             _update_job(
                 extraction_job_id,
@@ -506,6 +515,7 @@ def run_playwright_pipeline_job(
                 failure_phase=job_failure_phase,
                 failure_message_user=job_failure_user,
                 failure_message_technical=job_failure_tech,
+                failure_error_type=job_failure_error_type,
             )
             # Hook scheduler: actualiza Taxpayer.scheduler_ultimo_ok/error
             # solo cuando la operation arranca con "scheduler_".
@@ -557,6 +567,7 @@ def run_playwright_pipeline_job(
                 failure_phase=None,
                 failure_message_user=user_es,
                 failure_message_technical=tech_combined,
+                failure_error_type="unknown",
             )
             # Hook scheduler: registrar la falla en el Taxpayer si corresponde.
             try:
