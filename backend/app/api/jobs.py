@@ -35,6 +35,7 @@ def _serialize_job(item: ExtractionJob) -> dict:
         "failure_phase": item.failure_phase,
         "failure_message_user": item.failure_message_user,
         "failure_message_technical": item.failure_message_technical,
+        "failure_error_type": item.failure_error_type,
         "coe_count": _extract_coe_count(item.result),
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "started_at": item.started_at.isoformat() if item.started_at else None,

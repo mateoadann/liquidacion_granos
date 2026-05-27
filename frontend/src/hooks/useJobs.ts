@@ -71,23 +71,21 @@ export function useRetryJobMutation() {
   });
 }
 
-/**
- * Mirror del classifier del backend (`backend/app/services/failure_classifier.py`).
- * Si esto se desincroniza, el botón puede mostrarse para un caso que el
- * backend rechazará con 409 (no es crítico, pero indeseable).
- */
+// Mirror del classifier del backend (failure_classifier.py).
+// Si esto se desincroniza, el backend tiene la palabra final: el endpoint
+// /jobs/:id/retry devuelve 409 cuando no es retryable.
 const RETRYABLE_ERROR_TYPES = new Set(["timeout", "network", "arca_unavailable", "unknown"]);
 const NON_RETRYABLE_ERROR_TYPES = new Set(["auth_failed"]);
 
 export function isJobRetryableInUI(job: Job): boolean {
   if (job.status !== "failed") return false;
-  const errorType = (job.payload as Record<string, unknown> | null)?.["failure_error_type"];
+  const errorType = job.failure_error_type;
   if (typeof errorType === "string") {
     if (NON_RETRYABLE_ERROR_TYPES.has(errorType)) return false;
     if (RETRYABLE_ERROR_TYPES.has(errorType)) return true;
   }
-  // Sin error_type: si no hay phase tampoco, conservador-permisivo (DOM flake).
-  if (!job.failure_phase) return true;
-  // Phase pero sin error_type conocido → no mostrar el botón.
-  return false;
+  // Default permisivo, igual que el backend: jobs históricos sin error_type
+  // persistido y casos no clasificados muestran el botón. El backend gatea
+  // duro con 409 si la combinación phase/error_type no es retryable.
+  return true;
 }

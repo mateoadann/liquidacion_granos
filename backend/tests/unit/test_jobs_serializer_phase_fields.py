@@ -13,6 +13,7 @@ _PHASE_FIELDS = (
     "failure_phase",
     "failure_message_user",
     "failure_message_technical",
+    "failure_error_type",
 )
 
 
@@ -37,6 +38,7 @@ def _create_job(
     failure_phase: str | None = None,
     failure_message_user: str | None = None,
     failure_message_technical: str | None = None,
+    failure_error_type: str | None = None,
 ) -> ExtractionJob:
     item = ExtractionJob()
     item.taxpayer_id = taxpayer_id
@@ -47,6 +49,7 @@ def _create_job(
     item.failure_phase = failure_phase
     item.failure_message_user = failure_message_user
     item.failure_message_technical = failure_message_technical
+    item.failure_error_type = failure_error_type
     db.session.add(item)
     db.session.commit()
     return item
@@ -70,6 +73,7 @@ def test_serializer_exposes_phase_fields_with_values(app, serializer) -> None:
         failure_phase="LOGIN_START",
         failure_message_user="Clave fiscal vencida.",
         failure_message_technical="AUTH_FAILED at login | Exception(...)",
+        failure_error_type="auth_failed",
     )
 
     payload = serializer(job)
@@ -85,6 +89,7 @@ def test_serializer_exposes_phase_fields_with_values(app, serializer) -> None:
     assert payload["failure_phase"] == "LOGIN_START"
     assert payload["failure_message_user"] == "Clave fiscal vencida."
     assert payload["failure_message_technical"] == "AUTH_FAILED at login | Exception(...)"
+    assert payload["failure_error_type"] == "auth_failed"
 
 
 @pytest.mark.parametrize(
