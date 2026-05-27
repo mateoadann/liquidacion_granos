@@ -111,6 +111,31 @@ def _parse_active_query(value: str | None) -> bool | None:
     raise ValueError("Parametro 'active' invalido. Use true o false.")
 
 
+def _parse_bool_query(value: str | None, field: str) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "si"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    raise ValueError(f"Parametro '{field}' invalido. Use true o false.")
+
+
+ALLOWED_ORDER_BY = {"id", "empresa"}
+
+
+def _parse_order_by(value: str | None) -> str:
+    if value is None or not value.strip():
+        return "id"
+    normalized = value.strip().lower()
+    if normalized not in ALLOWED_ORDER_BY:
+        raise ValueError(
+            f"Parametro 'order_by' invalido. Valores aceptados: {sorted(ALLOWED_ORDER_BY)}."
+        )
+    return normalized
+
+
 def _parse_export_date(value: str | None) -> datetime | None:
     text = (value or "").strip()
     if not text:
@@ -196,6 +221,10 @@ def _sanitize_filename(text: str) -> str:
 def list_clients():
     try:
         active = _parse_active_query(request.args.get("active"))
+        has_certificates = _parse_bool_query(
+            request.args.get("has_certificates"), "has_certificates"
+        )
+        order_by = _parse_order_by(request.args.get("order_by"))
     except ValueError as exc:
         return _error(str(exc), 400)
 
@@ -204,16 +233,33 @@ def list_clients():
     per_page_arg = request.args.get("per_page")
     paginated = page_arg is not None or per_page_arg is not None
 
-    query = Taxpayer.query.order_by(Taxpayer.id.asc())
+    if order_by == "empresa":
+        query = Taxpayer.query.order_by(Taxpayer.empresa.asc(), Taxpayer.id.asc())
+    else:
+        query = Taxpayer.query.order_by(Taxpayer.id.asc())
+
     if active is True:
         query = query.filter(Taxpayer.activo.is_(True))
     elif active is False:
         query = query.filter(Taxpayer.activo.is_(False))
 
+    if has_certificates is True:
+        query = query.filter(
+            Taxpayer.cert_crt_path.isnot(None), Taxpayer.cert_key_path.isnot(None)
+        )
+    elif has_certificates is False:
+        query = query.filter(
+            or_(Taxpayer.cert_crt_path.is_(None), Taxpayer.cert_key_path.is_(None))
+        )
+
     if search:
         like = f"%{search}%"
         query = query.filter(
-            or_(Taxpayer.empresa.ilike(like), Taxpayer.cuit.ilike(like))
+            or_(
+                Taxpayer.empresa.ilike(like),
+                Taxpayer.cuit.ilike(like),
+                Taxpayer.cuit_representado.ilike(like),
+            )
         )
 
     def _coes_counts_for(items: list[Taxpayer]) -> dict[int, int]:
