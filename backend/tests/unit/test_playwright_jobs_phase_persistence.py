@@ -697,6 +697,7 @@ def test_run_playwright_pipeline_job_all_error_sets_status_failed(
     assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
     assert refreshed.failure_message_user is not None
     assert refreshed.failure_message_technical is not None
+    assert refreshed.failure_error_type == "timeout"
 
 
 def test_run_playwright_pipeline_job_mixed_results_sets_status_partial(
@@ -729,6 +730,7 @@ def test_run_playwright_pipeline_job_mixed_results_sets_status_partial(
     assert refreshed.failure_phase == ExtractionPhase.SEARCH_SERVICE.value
     assert refreshed.failure_message_user is not None
     assert refreshed.failure_message_technical is not None
+    assert refreshed.failure_error_type == "timeout"
     assert refreshed.finished_at is not None
 
 
@@ -752,6 +754,7 @@ def test_run_playwright_pipeline_job_zero_taxpayers_stays_completed(
     refreshed = ExtractionJob.query.get(job.id)
     assert refreshed.status == "completed"
     assert refreshed.error_message is None
+    assert refreshed.failure_error_type is None
 
 
 def test_run_playwright_pipeline_job_partial_coe_level_sets_partial_status(
@@ -786,6 +789,7 @@ def test_run_playwright_pipeline_job_partial_coe_level_sets_partial_status(
     assert refreshed.failure_phase == ExtractionPhase.SAVING_TO_WS.value
     assert refreshed.failure_message_user is not None
     assert refreshed.failure_message_technical is not None
+    assert refreshed.failure_error_type == "unknown"
     # Per-client mirror: status="partial" con métricas reales.
     progress = (refreshed.payload or {}).get("progress") or {}
     clients = progress.get("clients") or []
@@ -824,3 +828,48 @@ def test_run_playwright_pipeline_job_one_done_one_partial_sets_partial(
     )
     assert refreshed.failure_phase == ExtractionPhase.SAVING_TO_WS.value
     assert refreshed.failure_message_user is not None
+    assert refreshed.failure_error_type == "unknown"
+
+
+def _auth_failed_result(taxpayer: Taxpayer) -> Any:
+    from app.services import lpg_playwright_pipeline as pipeline_module
+
+    return pipeline_module.TaxpayerPipelineResult(
+        taxpayer_id=taxpayer.id,
+        empresa=taxpayer.empresa,
+        cuit=taxpayer.cuit,
+        cuit_representado=taxpayer.cuit_representado,
+        outcome="error",
+        error="Credenciales inválidas",
+        failure_phase=ExtractionPhase.LOGIN_START,
+        failure_error_type="auth_failed",
+        failure_dropdown_clicked=False,
+    )
+
+
+def test_run_playwright_pipeline_job_persists_auth_failed_error_type(
+    app, monkeypatch
+) -> None:
+    """End-to-end persistencia del error_type clasificado por el pipeline.
+
+    Sin este campo persistido, el classifier (frontend y auto-retry) no
+    puede distinguir un auth_failed real de cualquier otra falla.
+    """
+    t1 = _create_taxpayer(cuit="20111111111", empresa="Empresa Uno")
+    job = _create_job(t1.id)
+
+    _run_pipeline_with_results(
+        app=app,
+        monkeypatch=monkeypatch,
+        job_id=job.id,
+        taxpayer_ids=[t1.id],
+        taxpayers_ok=0,
+        taxpayers_error=1,
+        results=[_auth_failed_result(t1)],
+    )
+
+    db.session.expire_all()
+    refreshed = ExtractionJob.query.get(job.id)
+    assert refreshed.status == "failed"
+    assert refreshed.failure_phase == ExtractionPhase.LOGIN_START.value
+    assert refreshed.failure_error_type == "auth_failed"

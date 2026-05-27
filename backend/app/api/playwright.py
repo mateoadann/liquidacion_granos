@@ -35,6 +35,7 @@ def _serialize_job(item: ExtractionJob) -> dict:
         "failure_phase": item.failure_phase,
         "failure_message_user": item.failure_message_user,
         "failure_message_technical": item.failure_message_technical,
+        "failure_error_type": item.failure_error_type,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "started_at": item.started_at.isoformat() if item.started_at else None,
         "finished_at": item.finished_at.isoformat() if item.finished_at else None,
@@ -306,6 +307,18 @@ def retry_lpg_playwright_job(job_id: int):
     if original.status != "failed":
         return _error(
             f"Solo se pueden reintentar jobs en estado 'failed'. Estado actual: '{original.status}'.",
+            409,
+        )
+
+    from ..services.failure_classifier import is_failure_retryable
+
+    if not is_failure_retryable(
+        failure_phase=original.failure_phase,
+        failure_error_type=original.failure_error_type,
+    ):
+        return _error(
+            "Este tipo de falla no se puede reintentar. "
+            "Revisá la configuración del cliente (por ejemplo, la clave fiscal).",
             409,
         )
 

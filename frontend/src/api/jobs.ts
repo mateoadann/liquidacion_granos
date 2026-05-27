@@ -17,6 +17,7 @@ export interface Job {
   failure_phase: string | null;
   failure_message_user: string | null;
   failure_message_technical: string | null;
+  failure_error_type: string | null;
 }
 
 export interface JobsListResponse {
