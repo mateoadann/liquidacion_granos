@@ -4,11 +4,16 @@ import { Button, Card, CardHeader, DatePicker, Alert, Spinner } from "../ui";
 import { useClientsQuery } from "../../hooks/useClients";
 import { useRunPlaywrightMutation } from "../../hooks/useClients";
 
-function formatDate(date: Date): string {
-  const day = date.getDate().toString().padStart(2, "0");
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const year = date.getFullYear();
+function isoToArgDate(iso: string): string {
+  const [year, month, day] = iso.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function toIsoLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = (date.getMonth() + 1).toString().padStart(2, "0");
+  const d = date.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getDefaultDateRange() {
@@ -16,8 +21,8 @@ function getDefaultDateRange() {
   const desde = new Date();
   desde.setDate(desde.getDate() - 30);
   return {
-    desde: desde.toISOString().split("T")[0],
-    hasta: hasta.toISOString().split("T")[0],
+    desde: toIsoLocal(desde),
+    hasta: toIsoLocal(hasta),
   };
 }
 
@@ -54,8 +59,8 @@ export function PlaywrightPanel() {
     setLastEnqueued(null);
     try {
       const jobs = await runMutation.mutateAsync({
-        fechaDesde: formatDate(new Date(fechaDesde)),
-        fechaHasta: formatDate(new Date(fechaHasta)),
+        fechaDesde: isoToArgDate(fechaDesde),
+        fechaHasta: isoToArgDate(fechaHasta),
         taxpayerIds: selectedClients,
       });
       setLastEnqueued(jobs.length);
