@@ -510,6 +510,8 @@ export interface ListClientsPaginatedParams {
   per_page?: number;
   search?: string;
   active?: boolean;
+  has_certificates?: boolean;
+  order_by?: "empresa" | "id";
 }
 
 export interface ListClientsPaginatedResponse {
@@ -528,6 +530,10 @@ export async function listClientsPaginated(
   search.set("per_page", String(params.per_page ?? 20));
   if (params.search) search.set("search", params.search);
   if (params.active !== undefined) search.set("active", String(params.active));
+  if (params.has_certificates !== undefined) {
+    search.set("has_certificates", String(params.has_certificates));
+  }
+  if (params.order_by) search.set("order_by", params.order_by);
 
   const payload = await requestJson<{
     clients: unknown[];
