@@ -25,8 +25,15 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verifica password contra hash bcrypt."""
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    """Verifica password contra hash bcrypt.
+
+    Devuelve False ante hashes con formato inválido (p. ej. de otro algoritmo)
+    en vez de propagar ValueError, para no convertir un login fallido en un 500.
+    """
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def create_access_token(*, user_id: int, username: str, rol: str) -> str:
