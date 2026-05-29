@@ -35,8 +35,13 @@ export function LoginPage() {
     try {
       const response = await login({ username: username.trim(), password });
       setAuth(response.access_token, response.user);
-      // Guardar refresh token en sessionStorage para uso futuro
-      sessionStorage.setItem("refresh_token", response.refresh_token);
+      // Persistir refresh token; si el storage está bloqueado (Safari privado),
+      // no debe impedir el login: la sesión sigue válida en memoria.
+      try {
+        sessionStorage.setItem("refresh_token", response.refresh_token);
+      } catch {
+        // storage no disponible — se pierde la persistencia entre recargas
+      }
       navigate(from, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión");
