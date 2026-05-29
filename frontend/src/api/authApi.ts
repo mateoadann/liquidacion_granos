@@ -1,5 +1,26 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
+async function readJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function errorMessage(payload: unknown, status: number, fallback: string): string {
+  if (payload && typeof payload === "object") {
+    const body = payload as { error?: string };
+    if (typeof body.error === "string" && body.error.trim()) return body.error;
+  }
+  if (status === 429) {
+    return "Demasiados intentos. Espere un minuto e intente nuevamente.";
+  }
+  return fallback;
+}
+
 export interface LoginRequest {
   username: string;
   password: string;
@@ -27,12 +48,12 @@ export async function login(data: LoginRequest): Promise<LoginResponse> {
     body: JSON.stringify(data),
   });
 
-  const json = await res.json();
+  const json = await readJson(res);
   if (!res.ok) {
-    throw new Error(json?.error ?? "Error al iniciar sesión");
+    throw new Error(errorMessage(json, res.status, "Error al iniciar sesión"));
   }
 
-  return json;
+  return json as LoginResponse;
 }
 
 export async function logout(accessToken: string): Promise<void> {
@@ -54,12 +75,12 @@ export async function refreshToken(refreshTokenValue: string): Promise<RefreshRe
     body: JSON.stringify({ refresh_token: refreshTokenValue }),
   });
 
-  const json = await res.json();
+  const json = await readJson(res);
   if (!res.ok) {
-    throw new Error(json?.error ?? "Error al renovar sesión");
+    throw new Error(errorMessage(json, res.status, "Error al renovar sesión"));
   }
 
-  return json;
+  return json as RefreshResponse;
 }
 
 export async function getMe(accessToken: string): Promise<LoginResponse["user"]> {
@@ -69,10 +90,10 @@ export async function getMe(accessToken: string): Promise<LoginResponse["user"]>
     },
   });
 
-  const json = await res.json();
+  const json = await readJson(res);
   if (!res.ok) {
-    throw new Error(json?.error ?? "Error al obtener usuario");
+    throw new Error(errorMessage(json, res.status, "Error al obtener usuario"));
   }
 
-  return json;
+  return json as LoginResponse["user"];
 }

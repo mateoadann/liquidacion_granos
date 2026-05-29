@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 
 from .config import Config
@@ -26,6 +26,13 @@ def create_app(config_object=Config) -> Flask:
 
     # Registrar modelos para SQLAlchemy/Alembic autogenerate
     from . import models  # noqa: F401
+
+    @app.errorhandler(429)
+    def ratelimit_handler(error):
+        return (
+            jsonify({"error": "Demasiados intentos. Espere un minuto e intente nuevamente."}),
+            429,
+        )
 
     register_blueprints(app)
     register_cli(app)
