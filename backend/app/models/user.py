@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from werkzeug.security import generate_password_hash, check_password_hash
-
 from ..extensions import db
 from ..time_utils import now_cordoba_naive
 
@@ -25,10 +23,16 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password: str) -> None:
-        self.password_hash = generate_password_hash(password)
+        # Import diferido: el paquete app.services importa modelos en su
+        # __init__, así que importarlo a nivel de módulo crearía un ciclo.
+        from ..services.auth_service import hash_password
+
+        self.password_hash = hash_password(password)
 
     def check_password(self, password: str) -> bool:
-        return check_password_hash(self.password_hash, password)
+        from ..services.auth_service import verify_password
+
+        return verify_password(password, self.password_hash)
 
     def to_dict(self) -> dict:
         return {
