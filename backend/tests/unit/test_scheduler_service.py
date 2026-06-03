@@ -67,6 +67,9 @@ def _patch_queue():
         "app.services.scheduler_service.get_queue"
     ) as mock_get_queue:
         fake_queue = MagicMock()
+        # `name` debe ser string para que sea JSON-serializable cuando el
+        # servicio lo persiste en job.payload.
+        fake_queue.name = "playwright"
         fake_queue.enqueue.return_value = MagicMock(id="rq-job-fake")
         mock_get_queue.return_value = fake_queue
         yield mock_get_queue
@@ -204,6 +207,49 @@ def test_disparar_extraccion_encola_en_rq(app, _patch_queue):
             "retry_base_delay_ms",
         ):
             assert key in call_kwargs, f"falta kwarg {key} para el worker"
+
+
+def test_disparar_extraccion_persiste_payload_completo(app, _patch_queue):
+    """El payload del ExtractionJob debe incluir los mismos campos que el
+    payload de `playwright_lpg_run` (issue #101), para que los jobs disparados
+    por scheduler sean igual de descriptivos que los manuales.
+    """
+    with app.app_context():
+        tp = _create_taxpayer()
+        job = _disparar_extraccion(tp)
+
+        persisted = db.session.get(ExtractionJob, job.id)
+        assert persisted is not None
+        payload = persisted.payload or {}
+
+        expected_keys = {
+            "fecha_desde",
+            "fecha_hasta",
+            "taxpayer_ids",
+            "timeout_ms",
+            "type_delay_ms",
+            "slow_mo_ms",
+            "post_action_delay_ms",
+            "login_max_retries",
+            "humanize_delays",
+            "retry_max_attempts",
+            "retry_base_delay_ms",
+            "headless",
+            "queue_name",
+            "rq_job_id",
+        }
+        assert expected_keys.issubset(set(payload.keys())), (
+            f"payload missing keys: {expected_keys - set(payload.keys())}"
+        )
+
+        # Valores derivados
+        assert payload["taxpayer_ids"] == [tp.id]
+        assert payload["headless"] is True
+        assert payload["queue_name"] == "playwright"
+        assert payload["rq_job_id"] == "rq-job-fake"
+        # Fechas en formato DD/MM/YYYY (no None)
+        assert isinstance(payload["fecha_desde"], str) and payload["fecha_desde"]
+        assert isinstance(payload["fecha_hasta"], str) and payload["fecha_hasta"]
 
 
 def test_disparar_extraccion_usa_dias_extraccion_del_taxpayer(app, _patch_queue):

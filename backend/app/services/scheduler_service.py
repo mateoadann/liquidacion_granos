@@ -69,34 +69,48 @@ def tick_scheduler() -> dict:
 def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
     """Crea un ExtractionJob y lo encola en RQ para que el worker lo procese.
 
-    El worker dedicado (PR6) interpretará `operation == SCHEDULER_OPERATION` y
-    derivará los parámetros de extracción desde la config del taxpayer + fecha
-    actual. En este PR solo encolamos el job; el worker hook viene después.
+    El payload persistido refleja los mismos campos que `playwright_lpg_run`
+    (fecha_desde/hasta, taxpayer_ids, parámetros de Playwright, retries,
+    queue_name, rq_job_id) para que los jobs disparados por scheduler sean
+    igual de descriptivos que los manuales.
     """
     from ..workers.playwright_jobs import run_playwright_pipeline_job
     from ..workers.scheduler_defaults import scheduler_enqueue_kwargs
+
+    enqueue_kwargs = scheduler_enqueue_kwargs(
+        taxpayer.id,
+        dias_extraccion=taxpayer.scheduler_dias_extraccion or 90,
+    )
 
     job = ExtractionJob(
         taxpayer_id=taxpayer.id,
         operation=SCHEDULER_OPERATION,
         status="pending",
     )
+    job.payload = {**enqueue_kwargs, "headless": True}
     db.session.add(job)
     db.session.commit()
 
     queue = get_queue(SCHEDULER_QUEUE_NAME)
-    queue.enqueue(
+    rq_job = queue.enqueue(
         run_playwright_pipeline_job,
         extraction_job_id=job.id,
-        **scheduler_enqueue_kwargs(
-            taxpayer.id,
-            dias_extraccion=taxpayer.scheduler_dias_extraccion or 90,
-        ),
+        **enqueue_kwargs,
     )
+
+    job.payload = {
+        **(job.payload or {}),
+        "queue_name": queue.name,
+        "rq_job_id": rq_job.id,
+    }
+    db.session.commit()
+
     logger.info(
-        "SCHEDULER_DISPARO | taxpayer_id=%s job_id=%s operation=%s",
+        "SCHEDULER_DISPARO | taxpayer_id=%s job_id=%s operation=%s queue=%s rq_job_id=%s",
         taxpayer.id,
         job.id,
         SCHEDULER_OPERATION,
+        queue.name,
+        rq_job.id,
     )
     return job
