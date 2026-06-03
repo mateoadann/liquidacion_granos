@@ -6,6 +6,8 @@ from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, send_file
 
+from sqlalchemy import or_
+
 from ..extensions import db
 from ..models import AuditEvent, CoeEstado, LpgDocument, Taxpayer, User
 from ..middleware import require_auth, require_admin, get_current_user
@@ -122,6 +124,19 @@ def list_coes():
 
     if search:
         query = query.filter(LpgDocument.coe.ilike(f"%{search}%"))
+
+    tipo_cte_raw = request.args.get("tipo_cte", type=str)
+    if tipo_cte_raw:
+        tipos = {t.strip().upper() for t in tipo_cte_raw.split(",") if t.strip()}
+        clauses = []
+        if "F1" in tipos:
+            clauses.append(LpgDocument.coe.ilike("3301%"))
+        if "F2" in tipos:
+            clauses.append(LpgDocument.coe.ilike("3302%"))
+        if "NL" in tipos:
+            clauses.append(LpgDocument.tipo_documento == "AJUSTE")
+        if clauses:
+            query = query.filter(or_(*clauses))
 
     controlada_raw = (request.args.get("controlada") or "").strip().lower()
     if controlada_raw == "true":

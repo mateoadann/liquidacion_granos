@@ -67,12 +67,17 @@ export function CoesListPage() {
     fechaDesde,
     fechaHasta,
     controlada,
+    tipoCte,
+    periodoMes,
+    periodoAnio,
     setSearch,
     setTaxpayerId,
     setEstadoCiclo,
     setFechaDesde,
     setFechaHasta,
     setControlada,
+    toggleTipoCte,
+    setPeriodo,
     clearAll,
     hasActiveFilters,
     drawerFilterCount,
@@ -91,6 +96,7 @@ export function CoesListPage() {
     fecha_hasta: fechaHasta || undefined,
     search: search || undefined,
     controlada: controlada || undefined,
+    tipo_cte: tipoCte.length > 0 ? tipoCte : undefined,
   });
 
   const clients = clientsQuery.data ?? [];
@@ -361,6 +367,31 @@ export function CoesListPage() {
           </div>
 
           <div>
+            <p className="block text-sm font-medium text-slate-700 mb-1.5">
+              Tipo Cte
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {(["F1", "F2", "NL"] as const).map((tipo) => {
+                const checked = tipoCte.includes(tipo);
+                return (
+                  <label
+                    key={tipo}
+                    className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                      checked={checked}
+                      onChange={() => toggleTipoCte(tipo)}
+                    />
+                    <span className="font-mono">{tipo}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               Controlada
             </label>
@@ -375,6 +406,50 @@ export function CoesListPage() {
                 { value: "false", label: "No" },
               ]}
             />
+          </div>
+
+          <div>
+            <p className="block text-sm font-medium text-slate-700 mb-1.5">
+              Período
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                value={periodoMes}
+                onChange={(e) => setPeriodo(e.target.value, periodoAnio)}
+                options={[
+                  { value: "", label: "Mes" },
+                  { value: "1", label: "Enero" },
+                  { value: "2", label: "Febrero" },
+                  { value: "3", label: "Marzo" },
+                  { value: "4", label: "Abril" },
+                  { value: "5", label: "Mayo" },
+                  { value: "6", label: "Junio" },
+                  { value: "7", label: "Julio" },
+                  { value: "8", label: "Agosto" },
+                  { value: "9", label: "Septiembre" },
+                  { value: "10", label: "Octubre" },
+                  { value: "11", label: "Noviembre" },
+                  { value: "12", label: "Diciembre" },
+                ]}
+              />
+              <Select
+                value={periodoAnio}
+                onChange={(e) => setPeriodo(periodoMes, e.target.value)}
+                options={(() => {
+                  const currentYear = new Date().getFullYear();
+                  const years: { value: string; label: string }[] = [
+                    { value: "", label: "Año" },
+                  ];
+                  for (let y = currentYear + 1; y >= currentYear - 5; y--) {
+                    years.push({ value: String(y), label: String(y) });
+                  }
+                  return years;
+                })()}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Atajo: setea el rango de fechas al mes completo.
+            </p>
           </div>
 
           <div>

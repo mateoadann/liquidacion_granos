@@ -82,6 +82,7 @@ export interface CoesListParams {
   fecha_hasta?: string;
   search?: string;
   controlada?: "true" | "false";
+  tipo_cte?: string[];
 }
 
 export async function listCoes(params?: CoesListParams): Promise<CoesListResponse> {
@@ -95,6 +96,9 @@ export async function listCoes(params?: CoesListParams): Promise<CoesListRespons
   if (params?.fecha_hasta) searchParams.set("fecha_hasta", params.fecha_hasta);
   if (params?.search) searchParams.set("search", params.search);
   if (params?.controlada) searchParams.set("controlada", params.controlada);
+  if (params?.tipo_cte && params.tipo_cte.length > 0) {
+    searchParams.set("tipo_cte", params.tipo_cte.join(","));
+  }
 
   const query = searchParams.toString();
   const path = query ? `/coes?${query}` : "/coes";
