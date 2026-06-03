@@ -225,13 +225,16 @@ def test_post_run_now_encola_job(client, admin_headers, monkeypatch):
 
     captured: dict[str, object] = {}
 
+    class DummyRqJob:
+        id = "rq-job-fake"
+
     class DummyQueue:
         name = "default"
 
         def enqueue(self, func, **kwargs):
             captured["func"] = func
             captured["kwargs"] = kwargs
-            return object()
+            return DummyRqJob()
 
     monkeypatch.setattr("app.api.scheduler.get_queue", lambda: DummyQueue())
 
@@ -256,6 +259,32 @@ def test_post_run_now_encola_job(client, admin_headers, monkeypatch):
 
     assert "func" in captured, "queue.enqueue debió ser llamado"
     assert captured["kwargs"]["extraction_job_id"] == body["extraction_job_id"]
+
+    # Issue #101: el payload persistido debe incluir los mismos campos
+    # descriptivos que playwright_lpg_run (no solo {trigger, taxpayer_id}).
+    from app.models.extraction_job import ExtractionJob
+    from app.extensions import db
+
+    job = db.session.get(ExtractionJob, body["extraction_job_id"])
+    expected_keys = {
+        "fecha_desde",
+        "fecha_hasta",
+        "taxpayer_ids",
+        "timeout_ms",
+        "type_delay_ms",
+        "slow_mo_ms",
+        "post_action_delay_ms",
+        "login_max_retries",
+        "humanize_delays",
+        "retry_max_attempts",
+        "retry_base_delay_ms",
+        "headless",
+        "queue_name",
+        "rq_job_id",
+    }
+    assert expected_keys.issubset(set((job.payload or {}).keys()))
+    assert job.payload["queue_name"] == "default"
+    assert job.payload["rq_job_id"] == "rq-job-fake"
 
 
 def test_post_run_now_taxpayer_inactivo_409(client, admin_headers):
