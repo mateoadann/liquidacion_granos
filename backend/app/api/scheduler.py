@@ -142,22 +142,10 @@ def run_scheduler_now(taxpayer_id: int):
             detalle={"taxpayer_id": t.id, "scheduler_activo": False},
         )
 
-    job = ExtractionJob()
-    job.taxpayer_id = t.id
-    job.operation = SCHEDULER_RUN_NOW_OPERATION
-    job.status = "pending"
-    job.payload = {"trigger": "run_now", "taxpayer_id": t.id}
-    db.session.add(job)
-    db.session.commit()
-
     try:
         from ..workers.playwright_jobs import run_playwright_pipeline_job
     except ModuleNotFoundError as exc:
         if exc.name == "playwright":
-            job.status = "failed"
-            job.error_message = "Playwright no está instalado en backend."
-            job.finished_at = now_cordoba_naive()
-            db.session.commit()
             return _error(
                 "playwright_no_instalado",
                 "El servicio de consulta no está disponible. Contactá a soporte.",
@@ -165,17 +153,27 @@ def run_scheduler_now(taxpayer_id: int):
             )
         raise
 
-    try:
-        from ..workers.scheduler_defaults import scheduler_enqueue_kwargs
+    from ..workers.scheduler_defaults import scheduler_enqueue_kwargs
 
+    enqueue_kwargs = scheduler_enqueue_kwargs(
+        t.id,
+        dias_extraccion=t.scheduler_dias_extraccion or 90,
+    )
+
+    job = ExtractionJob()
+    job.taxpayer_id = t.id
+    job.operation = SCHEDULER_RUN_NOW_OPERATION
+    job.status = "pending"
+    job.payload = {**enqueue_kwargs, "headless": True, "trigger": "run_now"}
+    db.session.add(job)
+    db.session.commit()
+
+    try:
         queue = get_queue()
-        queue.enqueue(
+        rq_job = queue.enqueue(
             run_playwright_pipeline_job,
             extraction_job_id=job.id,
-            **scheduler_enqueue_kwargs(
-                t.id,
-                dias_extraccion=t.scheduler_dias_extraccion or 90,
-            ),
+            **enqueue_kwargs,
         )
     except Exception as exc:
         job.status = "failed"
@@ -194,10 +192,19 @@ def run_scheduler_now(taxpayer_id: int):
             503,
         )
 
+    job.payload = {
+        **(job.payload or {}),
+        "queue_name": queue.name,
+        "rq_job_id": rq_job.id,
+    }
+    db.session.commit()
+
     logger.info(
-        "SCHEDULER_RUN_NOW_ENQUEUED | taxpayer_id=%s job_id=%s",
+        "SCHEDULER_RUN_NOW_ENQUEUED | taxpayer_id=%s job_id=%s queue=%s rq_job_id=%s",
         t.id,
         job.id,
+        queue.name,
+        rq_job.id,
     )
 
     return (
