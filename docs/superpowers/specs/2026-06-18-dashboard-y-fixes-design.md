@@ -73,9 +73,10 @@ y cuándo.
     `"clave_fiscal_copiada"`, timestamp) ANTES de devolver.
   - devuelve `{ "clave_fiscal": "<valor>" }`. No loguear el valor en logs.
 
-**Frontend** (`frontend/src/ClientTable.tsx`):
-- Botón "Copiar clave" por fila. Al click: fetch al endpoint, `navigator.clipboard.writeText`
-  con el valor, feedback visual ("Copiada al portapapeles") **sin renderizar el valor**.
+**Frontend** (`frontend/src/pages/ClientDetailPage.tsx`, ruta `/clientes/:id`):
+- Botón "Copiar clave" dentro de la vista de detalle del cliente (NO en cada fila de la tabla).
+  Al click: fetch al endpoint, `navigator.clipboard.writeText` con el valor, feedback visual
+  ("Copiada al portapapeles") **sin renderizar el valor**.
 - Manejo de error si no hay clave cargada.
 
 **Seguridad:** el valor viaja solo en la respuesta de ese request puntual y va directo al
