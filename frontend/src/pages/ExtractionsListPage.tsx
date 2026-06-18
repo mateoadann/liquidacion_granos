@@ -19,6 +19,7 @@ import { usePageQueryParam } from "../hooks/usePageQueryParam";
 import { formatDateTime } from "../dateUtils";
 import { JobDetailDrawer } from "../components/dashboard/JobDetailDrawer";
 import { JobStatusBadge } from "../components/dashboard/JobStatusBadge";
+import { operationLabel } from "../api/jobs";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Todos los estados" },
@@ -146,7 +147,7 @@ export function ExtractionsListPage() {
                       <TableCell>#{job.id}</TableCell>
                       <TableCell>{formatDateTime(job.created_at)}</TableCell>
                       <TableCell>{taxpayer?.empresa ?? "—"}</TableCell>
-                      <TableCell>{job.operation}</TableCell>
+                      <TableCell>{operationLabel(job.operation)}</TableCell>
                       <TableCell>
                         <JobStatusBadge status={job.status} />
                       </TableCell>

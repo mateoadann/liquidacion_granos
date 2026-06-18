@@ -11,9 +11,9 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
-from ..models import LpgDocument, Taxpayer
+from ..models import AuditEvent, LpgDocument, Taxpayer
 from ..time_utils import now_cordoba_naive
-from ..middleware import require_auth
+from ..middleware import require_auth, get_current_user
 from ..services import (
     CertificateValidationError,
     decrypt_secret,
@@ -858,3 +858,50 @@ def export_client_coes(client_id: int):
         as_attachment=True,
         download_name=filename,
     )
+
+
+@clients_bp.get("/clients/<int:client_id>/clave-fiscal")
+@require_auth
+def get_clave_fiscal(client_id: int):
+    """Return the decrypted fiscal key for a client WITHOUT logging the value.
+
+    A mandatory AuditEvent is created before the value is returned so that every
+    access is recorded even if the response is never received by the caller.
+    """
+    item = Taxpayer.query.get(client_id)
+    if item is None:
+        return _error("Cliente no encontrado.", 404)
+
+    if not item.clave_fiscal_encrypted or is_placeholder_secret(item.clave_fiscal_encrypted):
+        return _error("Este cliente no tiene clave fiscal cargada.", 409)
+
+    try:
+        plain = decrypt_secret(item.clave_fiscal_encrypted)
+    except ValueError:
+        return _error("No se pudo descifrar la clave fiscal.", 500)
+
+    # Persist audit BEFORE returning the value.
+    current_user = get_current_user() or {}
+    username = current_user.get("username")
+    user_id = current_user.get("id")
+
+    audit = AuditEvent(
+        taxpayer_id=item.id,
+        operation="clave_fiscal_copiada",
+        level="info",
+        metadata_json={
+            "by_user_id": user_id,
+            "by_username": username,
+        },
+    )
+    db.session.add(audit)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            "CLAVE_FISCAL_AUDIT_ERROR | client_id=%s user=%s", client_id, username
+        )
+        return _error("Error interno al registrar el acceso.", 500)
+
+    return jsonify({"clave_fiscal": plain})

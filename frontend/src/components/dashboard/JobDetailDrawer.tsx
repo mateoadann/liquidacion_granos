@@ -1,6 +1,7 @@
 import { Alert, Badge, Button, Drawer } from "../ui";
 import { formatDateTime } from "../../dateUtils";
 import type { Job } from "../../api/jobs";
+import { operationLabel } from "../../api/jobs";
 import { JobStatusBadge } from "./JobStatusBadge";
 import { isJobRetryableInUI, useRetryJobMutation } from "../../hooks/useJobs";
 
@@ -57,7 +58,7 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
               <JobStatusBadge status={job.status} />
             </div>
             <div className="rounded-md border border-slate-200 px-3 py-2">
-              <MetadataRow label="Operación" value={job.operation} />
+              <MetadataRow label="Operación" value={operationLabel(job.operation)} />
               <MetadataRow
                 label="Cliente"
                 value={job.taxpayer_id !== null ? `#${job.taxpayer_id}` : "-"}

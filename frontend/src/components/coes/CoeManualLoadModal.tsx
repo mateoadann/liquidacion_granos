@@ -67,7 +67,7 @@ export function CoeManualLoadModal({ isOpen, onClose }: CoeManualLoadModalProps)
     }
   }
 
-  const clientsQuery = useClientsQuery();
+  const clientsQuery = useClientsQuery({ active: true });
   const clients = clientsQuery.data ?? [];
 
   const consultMutation = useConsultManualCoe();

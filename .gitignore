@@ -47,6 +47,11 @@ ejemplo_playwright.txt
 respuestas_sincronizacion_rpa.md
 scripts/diag_coe_estado.py
 
+# Agent/tooling artifacts — not part of the project
+.atl/
+.playwright-mcp/
+vps-*.png
+
 # Infra runbook (lives only in /opt/apps/granos/ on the VPS and in the
 # operator's local copy — not in the repo, to avoid leaking the VPS layout).
 INFRA.md

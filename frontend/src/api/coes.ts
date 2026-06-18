@@ -62,6 +62,7 @@ export interface Coe {
   controlada_por: string | null;
   controlada_por_nombre: string | null;
   controlada_en: string | null;
+  cod_tipo_operacion: string | number | null;
 }
 
 export interface CoesListResponse {
@@ -83,6 +84,15 @@ export interface CoesListParams {
   search?: string;
   controlada?: "true" | "false";
   tipo_cte?: string[];
+}
+
+export async function fetchAniosDisponibles(): Promise<number[]> {
+  const res = await fetchWithAuth("/coes/anios-disponibles");
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Error al obtener años disponibles");
+  }
+  return (data as { anios: number[] }).anios;
 }
 
 export async function listCoes(params?: CoesListParams): Promise<CoesListResponse> {

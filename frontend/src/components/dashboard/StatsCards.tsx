@@ -1,16 +1,20 @@
+import type { ReactNode } from "react";
 import { Card } from "../ui";
 import { Spinner } from "../ui";
-import type { DashboardStats } from "../../api/stats";
+import type { DashboardStats, MonthlyStats } from "../../api/stats";
 
 interface StatsCardsProps {
   stats: DashboardStats | undefined;
   isLoading: boolean;
+  monthlyStats: MonthlyStats | undefined;
+  isLoadingMonthly: boolean;
+  monthLabel: string;
 }
 
 interface StatCardProps {
   title: string;
   value: number | string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   color?: "green" | "amber" | "red" | "blue" | "slate";
 }
 
@@ -36,8 +40,14 @@ function StatCard({ title, value, subtitle, color = "slate" }: StatCardProps) {
   );
 }
 
-export function StatsCards({ stats, isLoading }: StatsCardsProps) {
-  if (isLoading) {
+export function StatsCards({
+  stats,
+  isLoading,
+  monthlyStats,
+  isLoadingMonthly,
+  monthLabel,
+}: StatsCardsProps) {
+  if (isLoading || isLoadingMonthly) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
@@ -49,6 +59,8 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
     );
   }
 
+  const fallidas = monthlyStats?.extracciones_fallidas ?? 0;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <StatCard
@@ -58,14 +70,23 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
         color="green"
       />
       <StatCard
-        title="COEs Totales"
-        value={stats?.coes_total ?? 0}
+        title="COEs del mes"
+        value={monthlyStats?.coes_nuevos ?? 0}
+        subtitle={
+          <span className="flex items-center gap-1.5">
+            <span>F1: {monthlyStats?.coes_f1 ?? 0}</span>
+            <span className="text-slate-300">/</span>
+            <span>F2: {monthlyStats?.coes_f2 ?? 0}</span>
+            <span className="text-slate-300">/</span>
+            <span>Aj: {monthlyStats?.coes_nl ?? 0}</span>
+          </span>
+        }
         color="blue"
       />
       <StatCard
         title="Extracciones Exitosas"
-        value={stats?.jobs_completed ?? 0}
-        subtitle={`${stats?.jobs_failed ?? 0} fallidas`}
+        value={monthlyStats?.extracciones_exitosas ?? 0}
+        subtitle={`${fallidas} fallidas · ${monthLabel}`}
         color="green"
       />
       <StatCard

@@ -17,7 +17,14 @@ def _extract_coe_count(result: dict | None) -> int:
         return 0
     total = 0
     for r in result.get("results", []):
-        total += r.get("total_coes_detectados", 0)
+        if not isinstance(r, dict):
+            continue
+        # Distinguish "key absent" (old job, use fallback) from "key present with 0"
+        # (new job where all COEs already existed → must show 0, not detectados).
+        if "total_coes_nuevos" in r:
+            total += r["total_coes_nuevos"] or 0
+        else:
+            total += r.get("total_coes_detectados", 0)
     return total
 
 
