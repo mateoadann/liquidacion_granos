@@ -24,6 +24,10 @@ class Config:
     LIQUIDADOR_API_KEY = os.getenv("LIQUIDADOR_API_KEY", "")
     LIQUIDADOR_API_ADMIN_TOKEN = os.getenv("LIQUIDADOR_API_ADMIN_TOKEN", "")
 
+    # Stale job reconciliation — running jobs not updated within this window
+    # are marked failed. Default 30 min; generous to avoid killing long jobs.
+    STALE_JOB_TIMEOUT_SECONDS = int(os.getenv("STALE_JOB_TIMEOUT_SECONDS", "1800"))
+
     # Rate limiting
     RATELIMIT_STORAGE_URI = REDIS_URL
     RATELIMIT_STRATEGY = "fixed-window"

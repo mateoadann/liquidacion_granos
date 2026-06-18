@@ -14,7 +14,7 @@ import os
 import time
 
 from app import create_app
-from app.services.scheduler_service import tick_scheduler
+from app.services.scheduler_service import reconcile_stale_jobs, tick_scheduler
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -38,6 +38,10 @@ def main() -> None:
                     logger.debug("tick vacío (evaluados=%d)", resumen["evaluados"])
             except Exception:
                 logger.exception("scheduler tick falló")
+            try:
+                reconcile_stale_jobs()
+            except Exception:
+                logger.exception("reconcile_stale_jobs falló")
             time.sleep(INTERVAL_SECONDS)
 
 

@@ -7,6 +7,10 @@ Forma parte del PR5 del plan v2 (§5.1). El worker dedicado que invoca
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
+from typing import Optional
+
+from flask import current_app
 
 from ..extensions import db
 from ..models.extraction_job import ExtractionJob
@@ -114,3 +118,81 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
         rq_job.id,
     )
     return job
+
+
+def reconcile_stale_jobs(timeout_seconds: Optional[int] = None) -> int:
+    """Marca como 'failed' los ExtractionJobs que llevan demasiado tiempo en 'running'.
+
+    Usa `updated_at` como indicador de actividad reciente (el worker lo actualiza
+    en cada progreso). Si `updated_at` no existe en el registro, cae a `started_at`
+    y luego a `created_at` como referencias de antigüedad.
+
+    Args:
+        timeout_seconds: Segundos de inactividad antes de considerar un job colgado.
+            Si es None, usa `STALE_JOB_TIMEOUT_SECONDS` de la config de la app
+            (default 1800 = 30 min).
+
+    Returns:
+        Cantidad de jobs reconciliados (marcados como failed).
+    """
+    if timeout_seconds is None:
+        timeout_seconds = current_app.config.get("STALE_JOB_TIMEOUT_SECONDS", 1800)
+
+    now = now_cordoba_naive()
+    threshold = now - timedelta(seconds=timeout_seconds)
+
+    running_jobs: list[ExtractionJob] = ExtractionJob.query.filter_by(
+        status="running"
+    ).all()
+
+    reconciled = 0
+    for job in running_jobs:
+        # Use the best available "last activity" timestamp
+        last_activity = job.updated_at or job.started_at or job.created_at
+        if last_activity is None or last_activity > threshold:
+            continue
+
+        elapsed_seconds = int((now - last_activity).total_seconds())
+        try:
+            job.status = "failed"
+            job.finished_at = now
+            job.failure_error_type = "stale_timeout"
+            job.failure_message_user = (
+                "Proceso interrumpido: la extracción quedó sin actividad "
+                "y se cerró automáticamente."
+            )
+            job.failure_message_technical = (
+                f"Job marcado como stale por el reconciliador. "
+                f"Tiempo sin actividad: {elapsed_seconds}s "
+                f"(umbral: {timeout_seconds}s). "
+                f"Última actividad registrada: {last_activity.isoformat()}."
+            )
+            db.session.commit()
+            reconciled += 1
+            logger.warning(
+                "RECONCILE_STALE_JOB | job_id=%s taxpayer_id=%s elapsed=%ds threshold=%ds",
+                job.id,
+                job.taxpayer_id,
+                elapsed_seconds,
+                timeout_seconds,
+            )
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "RECONCILE_ERROR | job_id=%s — rollback realizado", job.id
+            )
+
+    if reconciled:
+        logger.warning(
+            "RECONCILE_SUMMARY | jobs_reconciliados=%d timeout_s=%d",
+            reconciled,
+            timeout_seconds,
+        )
+    else:
+        logger.debug(
+            "RECONCILE_OK | sin jobs colgados (running evaluados=%d timeout_s=%d)",
+            len(running_jobs),
+            timeout_seconds,
+        )
+
+    return reconciled
