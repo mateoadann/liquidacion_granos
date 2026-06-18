@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   consultManualCoe,
   createManualCoe,
+  fetchAniosDisponibles,
   getCoe,
   listCoes,
   toggleCoeControlada,
@@ -18,6 +19,14 @@ export function useCoesQuery(params?: CoesListParams) {
     queryKey: ["coes", params],
     queryFn: () => listCoes(params),
     staleTime: 30000,
+  });
+}
+
+export function useAniosDisponiblesQuery() {
+  return useQuery<number[], Error>({
+    queryKey: ["coes", "anios-disponibles"],
+    queryFn: fetchAniosDisponibles,
+    staleTime: 60000,
   });
 }
 

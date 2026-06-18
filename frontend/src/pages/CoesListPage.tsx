@@ -22,7 +22,7 @@ import {
   DatePicker,
 } from "../components/ui";
 import { CoeManualLoadModal } from "../components/coes/CoeManualLoadModal";
-import { useCoesQuery } from "../hooks/useCoes";
+import { useAniosDisponiblesQuery, useCoesQuery } from "../hooks/useCoes";
 import { useClientsQuery } from "../useClients";
 import { usePageQueryParam } from "../hooks/usePageQueryParam";
 import { useCoesFilters } from "../hooks/useCoesFilters";
@@ -49,11 +49,11 @@ function EstadoCicloBadge({ estado }: { estado: string | null | undefined }) {
   );
 }
 
-function getTipoCte(coe: Coe): "F1" | "F2" | "NL" | "-" {
+// Mirrors json_v7_exporter._build_comprobante — source of truth for classification.
+function getTipoCte(coe: Coe): "F1" | "F2" | "NL" {
   if (coe.tipo_documento === "AJUSTE") return "NL";
-  if (coe.coe?.startsWith("3301")) return "F1";
-  if (coe.coe?.startsWith("3302")) return "F2";
-  return "-";
+  if (String(coe.cod_tipo_operacion) === "2") return "F2";
+  return "F1";
 }
 
 
@@ -86,7 +86,7 @@ export function CoesListPage() {
   const [downloadingPdfId, setDownloadingPdfId] = useState<number | null>(null);
   const [isManualLoadOpen, setIsManualLoadOpen] = useState(false);
 
-  const clientsQuery = useClientsQuery();
+  const clientsQuery = useClientsQuery({ active: true });
   const coesQuery = useCoesQuery({
     page,
     per_page: 20,
@@ -98,6 +98,9 @@ export function CoesListPage() {
     controlada: controlada || undefined,
     tipo_cte: tipoCte.length > 0 ? tipoCte : undefined,
   });
+
+  const aniosDisponiblesQuery = useAniosDisponiblesQuery();
+  const aniosDisponibles = aniosDisponiblesQuery.data ?? [];
 
   const clients = clientsQuery.data ?? [];
 
@@ -435,16 +438,10 @@ export function CoesListPage() {
               <Select
                 value={periodoAnio}
                 onChange={(e) => setPeriodo(periodoMes, e.target.value)}
-                options={(() => {
-                  const currentYear = new Date().getFullYear();
-                  const years: { value: string; label: string }[] = [
-                    { value: "", label: "Año" },
-                  ];
-                  for (let y = currentYear + 1; y >= currentYear - 5; y--) {
-                    years.push({ value: String(y), label: String(y) });
-                  }
-                  return years;
-                })()}
+                options={[
+                  { value: "", label: "Año" },
+                  ...aniosDisponibles.map((y) => ({ value: String(y), label: String(y) })),
+                ]}
               />
             </div>
             <p className="mt-1 text-xs text-slate-500">

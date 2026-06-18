@@ -41,10 +41,13 @@ export const clientsQueryKeys = {
   detail: (clientId: number) => ["clients", clientId] as const,
 };
 
-export function useClientsQuery() {
-  return useQuery({
-    queryKey: clientsQueryKeys.all,
-    queryFn: listClients,
+export function useClientsQuery(options?: { active?: boolean }) {
+  const active = options?.active;
+  return useQuery<Client[], Error>({
+    queryKey: active !== undefined
+      ? ([...clientsQueryKeys.all, { active }] as const)
+      : clientsQueryKeys.all,
+    queryFn: () => listClients(active !== undefined ? { active } : undefined),
   });
 }
 
