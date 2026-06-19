@@ -89,6 +89,7 @@ def test_open_lpg_service_via_direct_url_navigates_and_validates() -> None:
     direct_page.goto.assert_called_once_with(
         ArcaLpgPlaywrightClient.LPG_DIRECT_URL,
         wait_until="networkidle",
+        timeout=60_000,  # default nav_login_timeout_ms
     )
     client._wait_for_service_page_ready.assert_called_once_with(
         direct_page, 10_000, "ACME SRL"
@@ -152,7 +153,9 @@ def test_open_lpg_service_falls_back_to_direct_url_on_search_service_error() -> 
     assert client._service_open_method == "direct_url"
     context.new_page.assert_called_once_with()
     direct_page.goto.assert_called_once_with(
-        ArcaLpgPlaywrightClient.LPG_DIRECT_URL, wait_until="networkidle"
+        ArcaLpgPlaywrightClient.LPG_DIRECT_URL,
+        wait_until="networkidle",
+        timeout=60_000,  # default nav_login_timeout_ms
     )
 
 
@@ -192,7 +195,7 @@ def test_open_lpg_service_reraises_original_error_when_direct_url_also_fails() -
     assert raised.phase == ExtractionPhase.SEARCH_SERVICE
     assert raised.dropdown_clicked is True
     client._open_lpg_service_via_direct_url.assert_called_once_with(
-        login_page, 10_000, "ACME SRL"
+        login_page, 10_000, "ACME SRL", nav_login_timeout_ms=60_000
     )
     assert client._service_open_method is None
 

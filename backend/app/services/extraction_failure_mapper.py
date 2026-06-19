@@ -5,6 +5,7 @@ from .extraction_phases import ExtractionPhase
 _LOGIN_PHASES = {ExtractionPhase.LOGIN_START, ExtractionPhase.LOGIN_CONFIRMED}
 _CONSULTA_PHASES = {
     ExtractionPhase.OPEN_CONSULTA_RECIBIDAS,
+    ExtractionPhase.SET_FECHAS,
     ExtractionPhase.LISTING_COES,
 }
 _WS_PHASES = {ExtractionPhase.DOWNLOADING_COE, ExtractionPhase.SAVING_TO_WS}

@@ -210,8 +210,12 @@ def test_select_empresa_any_error_returns_empresa_not_found(
 
 @pytest.mark.parametrize(
     "phase",
-    [ExtractionPhase.OPEN_CONSULTA_RECIBIDAS, ExtractionPhase.LISTING_COES],
-    ids=["OPEN_CONSULTA_RECIBIDAS", "LISTING_COES"],
+    [
+        ExtractionPhase.OPEN_CONSULTA_RECIBIDAS,
+        ExtractionPhase.SET_FECHAS,
+        ExtractionPhase.LISTING_COES,
+    ],
+    ids=["OPEN_CONSULTA_RECIBIDAS", "SET_FECHAS", "LISTING_COES"],
 )
 @pytest.mark.parametrize(
     "error_type",
