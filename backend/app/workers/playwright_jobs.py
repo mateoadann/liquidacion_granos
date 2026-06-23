@@ -7,7 +7,11 @@ from .. import create_app
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
 from ..queue import get_queue
-from ..services.extraction_failure_mapper import _truncate, map_failure
+from ..services.extraction_failure_mapper import (
+    _truncate,
+    infer_phase_from_technical,
+    map_failure,
+)
 from ..services.extraction_phases import ExtractionPhase
 from ..services.failure_classifier import is_failure_retryable
 from ..services.lpg_playwright_pipeline import (
@@ -160,7 +164,10 @@ def _persist_taxpayer_failure(
     dropdown_clicked: bool,
     exception_text: str | None,
 ) -> tuple[str, str, str]:
-    user_es, tech_en, code = map_failure(phase, error_type, dropdown_clicked)
+    effective_phase = phase
+    if effective_phase is None and exception_text:
+        effective_phase = infer_phase_from_technical(exception_text)
+    user_es, tech_en, code = map_failure(effective_phase, error_type, dropdown_clicked)
     if exception_text:
         tech_combined = _truncate(f"{tech_en} | {exception_text}")
     else:
@@ -569,7 +576,8 @@ def run_playwright_pipeline_job(
             )
         except Exception as exc:
             db.session.rollback()
-            user_es, tech_en, code = map_failure(None, "unknown", False)
+            inferred_phase = infer_phase_from_technical(str(exc))
+            user_es, tech_en, code = map_failure(inferred_phase, "unknown", False)
             tech_combined = _truncate(f"{tech_en} | {exc}")
             _update_job(
                 extraction_job_id,

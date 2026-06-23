@@ -102,3 +102,31 @@ def _truncate(text: str, limit: int = 1000) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "..."
+
+
+# Marcadores (substring, case-insensitive) → fase probable. Orden: más específico
+# primero. Derivados de los textos técnicos reales de Playwright/ARCA en producción.
+_PHASE_MARKERS: list[tuple[tuple[str, ...], ExtractionPhase]] = [
+    (("tu clave", "clave", "usuario"), ExtractionPhase.LOGIN_START),
+    (("liquidación primaria de granos", "liquidacion primaria de granos", "buscador"),
+     ExtractionPhase.SEARCH_SERVICE),
+    (("consulta liquidaciones recibidas", "consultar por criterio"),
+     ExtractionPhase.OPEN_CONSULTA_RECIBIDAS),
+    (("fecha desde",), ExtractionPhase.SET_FECHAS),
+    (("liquidacionxcoeconsultar",), ExtractionPhase.SAVING_TO_WS),
+]
+
+
+def infer_phase_from_technical(tech: str | None) -> ExtractionPhase | None:
+    """Infiere la fase probable de un fallo a partir del texto técnico crudo.
+
+    Se usa como fallback cuando el flujo no determinó la fase. Devuelve None si el
+    texto es vacío/None o no contiene ningún marcador reconocible (NO inventa).
+    """
+    if not tech:
+        return None
+    low = tech.lower()
+    for markers, phase in _PHASE_MARKERS:
+        if any(m in low for m in markers):
+            return phase
+    return None

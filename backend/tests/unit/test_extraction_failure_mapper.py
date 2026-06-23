@@ -4,6 +4,7 @@ import pytest
 
 from app.services.extraction_failure_mapper import (
     _truncate,
+    infer_phase_from_technical,
     map_failure,
 )
 from app.services.extraction_phases import ExtractionPhase
@@ -397,3 +398,43 @@ def test_map_failure_returns_code_network():
 def test_map_failure_returns_code_unknown_default():
     user, tech, code = map_failure(None, "unknown")
     assert code == "UNKNOWN_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# infer_phase_from_technical
+# ---------------------------------------------------------------------------
+
+def test_infer_login_from_tu_clave():
+    tech = 'Locator.fill: Timeout 30000ms exceeded. waiting for textbox "TU CLAVE"'
+    assert infer_phase_from_technical(tech) == ExtractionPhase.LOGIN_START
+
+
+def test_infer_login_from_clave_word():
+    assert infer_phase_from_technical("waiting for Clave field") == ExtractionPhase.LOGIN_START
+
+
+def test_infer_search_service():
+    tech = 'waiting for button "Liquidación Primaria de Granos"'
+    assert infer_phase_from_technical(tech) == ExtractionPhase.SEARCH_SERVICE
+
+
+def test_infer_set_fechas():
+    assert infer_phase_from_technical("No se encontró input de Fecha Desde.") == ExtractionPhase.SET_FECHAS
+
+
+def test_infer_saving_ws():
+    assert infer_phase_from_technical("Error en liquidacionXCoeConsultar") == ExtractionPhase.SAVING_TO_WS
+
+
+def test_infer_consulta_recibidas():
+    tech = 'waiting for button "Consulta Liquidaciones Recibidas"'
+    assert infer_phase_from_technical(tech) == ExtractionPhase.OPEN_CONSULTA_RECIBIDAS
+
+
+def test_infer_none_when_no_marker():
+    assert infer_phase_from_technical("Timeout 30000ms exceeded") is None
+
+
+def test_infer_none_for_empty():
+    assert infer_phase_from_technical(None) is None
+    assert infer_phase_from_technical("") is None
