@@ -91,7 +91,12 @@ clasificada y ordenada.
 2. `ultima_ok` = `max(finished_at)` de jobs `status='completed'`. `null` → nunca extrajo.
 3. `dias_sin_exito` = días entre `ultima_ok` y hoy (timezone America/Argentina/Cordoba). `null` si nunca.
 4. `estado` (semáforo), derivado del **último job**:
-   - **verde**: último job `completed` y `finished_at` es hoy o ayer.
+   - **verde**: último job `completed` (sin importar la fecha). Decisión: si la
+     última extracción fue exitosa, el cliente está sano. Como el scheduler corre
+     a diario contra cada cliente activo, el último job normalmente es el de hoy;
+     el caso de un éxito "viejo" (el scheduler dejó de correrle) es raro y se
+     acepta conscientemente que se muestre verde — no se penaliza por antigüedad
+     un resultado exitoso.
    - **rojo**: último job fallido con causa **accionable** —
      `failure_code ∈ {AUTH_FAILED, SERVICE_NOT_ADHERED, EMPRESA_NOT_FOUND}`.
    - **amarillo**: último job fallido con causa **transitoria** —
