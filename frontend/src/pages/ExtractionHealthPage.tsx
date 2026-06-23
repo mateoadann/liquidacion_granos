@@ -84,20 +84,25 @@ export function ExtractionHealthPage() {
                 <TableRow>
                   <TableCell header>Estado</TableCell>
                   <TableCell header>Empresa</TableCell>
-                  <TableCell header>Días sin éxito</TableCell>
+                  <TableCell header className="whitespace-nowrap">Días sin éxito</TableCell>
                   <TableCell header>Causa</TableCell>
-                  <TableCell header>Última extracción OK</TableCell>
+                  <TableCell header className="whitespace-nowrap">Última extracción OK</TableCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.clientes.map((c) => (
                   <TableRow key={c.taxpayer_id}>
                     <TableCell>
-                      <Badge variant={ESTADO_BADGE[c.estado]}>
+                      <Badge
+                        variant={ESTADO_BADGE[c.estado]}
+                        className="whitespace-nowrap"
+                      >
                         {ESTADO_LABEL[c.estado]}
                       </Badge>
                     </TableCell>
-                    <TableCell>{c.empresa ?? "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {c.empresa ?? "—"}
+                    </TableCell>
                     <TableCell>
                       {c.dias_sin_exito === null ? "Nunca" : c.dias_sin_exito}
                     </TableCell>
