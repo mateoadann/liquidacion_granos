@@ -521,9 +521,13 @@ class ArcaLpgPlaywrightClient:
         self._post_action_pause(login_page, request.post_action_delay_ms, "cuit_submit", request.empresa, request.humanize_delays)
 
         logger.info("PLAYWRIGHT_FILL_CLAVE | empresa=%s", request.empresa)
-        login_page.get_by_role(
-            "textbox", name=re.compile(r"(TU\s*CLAVE|Clave)", re.IGNORECASE)
-        ).fill(request.credentials.clave_fiscal)
+        try:
+            login_page.get_by_role(
+                "textbox", name=re.compile(r"(TU\s*CLAVE|Clave)", re.IGNORECASE)
+            ).fill(request.credentials.clave_fiscal)
+        except Exception:
+            self._log_login_diagnostics(login_page, request.empresa)
+            raise
         self._post_action_pause(login_page, 300, "clave_fill", request.empresa, request.humanize_delays)
         logger.info("PLAYWRIGHT_SUBMIT_LOGIN | empresa=%s", request.empresa)
         login_page.get_by_role("button", name=re.compile(r"Ingresar", re.IGNORECASE)).click()
@@ -989,6 +993,55 @@ class ArcaLpgPlaywrightClient:
             dropdown_options,
             visible_services[:10],
             current_url,
+            body_excerpt,
+            screenshot_path,
+        )
+
+    def _log_login_diagnostics(self, login_page: Page, empresa: str) -> None:
+        """Captura estado del DOM + screenshot cuando falla la espera del campo de clave.
+
+        El campo "TU CLAVE" no aparece para algunos clientes (p. ej. AFIP exige
+        captcha por cuenta). Sin esta captura el fallo queda como timeout opaco.
+        Path configurable via PLAYWRIGHT_DEBUG_PATH (default /tmp/playwright_debug).
+        """
+        current_url = ""
+        try:
+            current_url = login_page.url
+        except Exception:
+            pass
+
+        body_excerpt = ""
+        try:
+            body_text = login_page.locator("body").inner_text(timeout=2000)
+            body_excerpt = _normalize_text(body_text)[:500]
+        except Exception:
+            body_excerpt = "error_reading_body"
+
+        # Lista de inputs presentes (sin valores): revela captcha, username, etc.
+        input_names: list[str] = []
+        try:
+            input_names = login_page.eval_on_selector_all(
+                "input",
+                "els => els.map(e => `${e.type}:${e.name||e.id||''}`)",
+            )
+        except Exception:
+            input_names = ["error_reading_inputs"]
+
+        screenshot_path = ""
+        try:
+            debug_dir = os.getenv("PLAYWRIGHT_DEBUG_PATH", "/tmp/playwright_debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = now_cordoba_naive().strftime("%Y%m%d_%H%M%S")
+            screenshot_path = os.path.join(debug_dir, f"login_fail_{timestamp}.png")
+            login_page.screenshot(path=screenshot_path, full_page=True)
+        except Exception as exc:
+            screenshot_path = f"screenshot_failed:{exc.__class__.__name__}"
+
+        logger.warning(
+            "PLAYWRIGHT_LOGIN_DIAG | empresa=%s url=%s inputs=%s body_excerpt=%s screenshot=%s",
+            empresa,
+            current_url,
+            input_names,
             body_excerpt,
             screenshot_path,
         )
