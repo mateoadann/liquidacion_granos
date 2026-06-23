@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { PageHeader } from "../components/layout";
 import {
   Card,
@@ -11,6 +12,8 @@ import {
   TableCell,
 } from "../components/ui";
 import { useExtractionHealthQuery } from "../hooks/useExtractionHealth";
+import { useJobQuery } from "../hooks/useJobs";
+import { JobDetailDrawer } from "../components/dashboard/JobDetailDrawer";
 import type { ExtractionHealthEstado } from "../api/extracciones";
 import { formatDateOnly } from "../dateUtils";
 
@@ -47,6 +50,8 @@ const RESUMEN_ORDER: ExtractionHealthEstado[] = [
 
 export function ExtractionHealthPage() {
   const { data, isLoading, error } = useExtractionHealthQuery();
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
+  const selectedJobQuery = useJobQuery(selectedJobId);
 
   return (
     <div>
@@ -92,7 +97,14 @@ export function ExtractionHealthPage() {
               </TableHeader>
               <TableBody>
                 {data.clientes.map((c) => (
-                  <TableRow key={c.taxpayer_id}>
+                  <TableRow
+                    key={c.taxpayer_id}
+                    onClick={
+                      c.last_job_id !== null
+                        ? () => setSelectedJobId(c.last_job_id)
+                        : undefined
+                    }
+                  >
                     <TableCell>
                       <Badge
                         variant={ESTADO_BADGE[c.estado]}
@@ -122,6 +134,11 @@ export function ExtractionHealthPage() {
           </Card>
         </div>
       )}
+
+      <JobDetailDrawer
+        job={selectedJobQuery.data ?? null}
+        onClose={() => setSelectedJobId(null)}
+      />
     </div>
   );
 }
