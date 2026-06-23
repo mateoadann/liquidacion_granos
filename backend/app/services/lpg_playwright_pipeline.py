@@ -105,6 +105,7 @@ class LpgPlaywrightPipelineService:
         taxpayer_ids: list[int] | None = None,
         headless: bool = True,
         timeout_ms: int = 30_000,
+        nav_login_timeout_ms: int = 60_000,
         type_delay_ms: int = 80,
         slow_mo_ms: int = 0,
         post_action_delay_ms: int = 0,
@@ -158,6 +159,7 @@ class LpgPlaywrightPipelineService:
                 fecha_hasta=fecha_hasta,
                 headless=headless,
                 timeout_ms=timeout_ms,
+                nav_login_timeout_ms=nav_login_timeout_ms,
                 type_delay_ms=type_delay_ms,
                 slow_mo_ms=slow_mo_ms,
                 post_action_delay_ms=post_action_delay_ms,
@@ -207,6 +209,7 @@ class LpgPlaywrightPipelineService:
         fecha_hasta: str,
         headless: bool,
         timeout_ms: int,
+        nav_login_timeout_ms: int = 60_000,
         type_delay_ms: int,
         slow_mo_ms: int,
         post_action_delay_ms: int,
@@ -269,6 +272,7 @@ class LpgPlaywrightPipelineService:
                     fecha_hasta=fecha_hasta,
                     headless=headless,
                     timeout_ms=timeout_ms,
+                    nav_login_timeout_ms=nav_login_timeout_ms,
                     type_delay_ms=type_delay_ms,
                     slow_mo_ms=slow_mo_ms,
                     post_action_delay_ms=post_action_delay_ms,
@@ -288,7 +292,10 @@ class LpgPlaywrightPipelineService:
             )
         except PlaywrightFlowError as exc:
             base.error = f"Playwright: {exc}"
-            base.failure_phase = exc.phase
+            # Prefer the explicit phase on the exception; fall back to the last
+            # emitted phase tracked by the client (covers cases where the
+            # exception was raised without a phase attribute).
+            base.failure_phase = exc.phase if exc.phase is not None else client._current_phase
             base.failure_dropdown_clicked = exc.dropdown_clicked
             base.failure_error_type = client._classify_error(exc).error_type
             logger.error(
@@ -296,19 +303,23 @@ class LpgPlaywrightPipelineService:
                 taxpayer.id,
                 taxpayer.empresa,
                 base.error,
-                exc.phase.value if exc.phase else None,
+                base.failure_phase.value if base.failure_phase else None,
                 base.failure_error_type,
             )
             return base
         except Exception as exc:
             base.error = f"Playwright inesperado: {exc}"
-            base.failure_phase = None
+            # Use the last phase the client emitted as the best available
+            # diagnostic when the exception is not a PlaywrightFlowError
+            # (e.g. raw PlaywrightTimeoutError from an unwrapped step).
+            base.failure_phase = client._current_phase
             base.failure_dropdown_clicked = client._search_dropdown_clicked
             base.failure_error_type = client._classify_error(exc).error_type
             logger.exception(
-                "Taxpayer playwright unexpected error | id=%s empresa=%s",
+                "Taxpayer playwright unexpected error | id=%s empresa=%s phase=%s",
                 taxpayer.id,
                 taxpayer.empresa,
+                base.failure_phase.value if base.failure_phase else None,
             )
             return base
 

@@ -293,6 +293,7 @@ def _auto_retry_scheduler_job_if_eligible(job: ExtractionJob) -> ExtractionJob |
             fecha_hasta=new_payload.get("fecha_hasta"),
             taxpayer_ids=new_payload.get("taxpayer_ids"),
             timeout_ms=new_payload.get("timeout_ms", 30000),
+            nav_login_timeout_ms=new_payload.get("nav_login_timeout_ms", 60000),
             type_delay_ms=new_payload.get("type_delay_ms", 80),
             slow_mo_ms=new_payload.get("slow_mo_ms", 0),
             post_action_delay_ms=new_payload.get("post_action_delay_ms", 0),
@@ -347,16 +348,18 @@ def run_playwright_pipeline_job(
     humanize_delays: bool = True,
     retry_max_attempts: int = 2,
     retry_base_delay_ms: int = 1000,
+    nav_login_timeout_ms: int = 60_000,
 ) -> None:
     app = create_app()
     with app.app_context():
         logger.info(
-            "JOB_STARTED | job_id=%s operation=playwright_lpg_run desde=%s hasta=%s taxpayers=%s timeout_ms=%s type_delay_ms=%s slow_mo_ms=%s post_action_delay_ms=%s login_max_retries=%s humanize_delays=%s retry_max_attempts=%s retry_base_delay_ms=%s",
+            "JOB_STARTED | job_id=%s operation=playwright_lpg_run desde=%s hasta=%s taxpayers=%s timeout_ms=%s nav_login_timeout_ms=%s type_delay_ms=%s slow_mo_ms=%s post_action_delay_ms=%s login_max_retries=%s humanize_delays=%s retry_max_attempts=%s retry_base_delay_ms=%s",
             extraction_job_id,
             fecha_desde,
             fecha_hasta,
             taxpayer_ids or "todos",
             timeout_ms,
+            nav_login_timeout_ms,
             type_delay_ms,
             slow_mo_ms,
             post_action_delay_ms,
@@ -457,6 +460,7 @@ def run_playwright_pipeline_job(
                 taxpayer_ids=taxpayer_ids,
                 headless=True,
                 timeout_ms=timeout_ms,
+                nav_login_timeout_ms=nav_login_timeout_ms,
                 type_delay_ms=type_delay_ms,
                 slow_mo_ms=slow_mo_ms,
                 post_action_delay_ms=post_action_delay_ms,

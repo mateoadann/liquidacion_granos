@@ -23,6 +23,7 @@ from ..time_utils import now_cordoba_naive
 
 DEFAULT_VENTANA_DIAS = 90
 DEFAULT_TIMEOUT_MS = 30000
+DEFAULT_NAV_LOGIN_TIMEOUT_MS = 60000
 DEFAULT_TYPE_DELAY_MS = 80
 DEFAULT_SLOW_MO_MS = 0
 DEFAULT_POST_ACTION_DELAY_MS = 0
@@ -61,6 +62,7 @@ def scheduler_enqueue_kwargs(
         "fecha_hasta": fecha_hasta,
         "taxpayer_ids": [taxpayer_id],
         "timeout_ms": DEFAULT_TIMEOUT_MS,
+        "nav_login_timeout_ms": DEFAULT_NAV_LOGIN_TIMEOUT_MS,
         "type_delay_ms": DEFAULT_TYPE_DELAY_MS,
         "slow_mo_ms": DEFAULT_SLOW_MO_MS,
         "post_action_delay_ms": DEFAULT_POST_ACTION_DELAY_MS,

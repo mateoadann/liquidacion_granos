@@ -27,6 +27,7 @@ def test_scheduler_enqueue_kwargs_incluye_todos_los_requeridos():
         "fecha_hasta",
         "taxpayer_ids",
         "timeout_ms",
+        "nav_login_timeout_ms",
         "type_delay_ms",
         "slow_mo_ms",
         "post_action_delay_ms",

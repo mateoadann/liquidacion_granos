@@ -11,6 +11,7 @@ class ExtractionPhase(str, Enum):
     OPEN_SERVICE = "OPEN_SERVICE"
     SELECT_EMPRESA = "SELECT_EMPRESA"
     OPEN_CONSULTA_RECIBIDAS = "OPEN_CONSULTA_RECIBIDAS"
+    SET_FECHAS = "SET_FECHAS"
     LISTING_COES = "LISTING_COES"
     DOWNLOADING_COE = "DOWNLOADING_COE"
     SAVING_TO_WS = "SAVING_TO_WS"
@@ -25,6 +26,7 @@ PHASE_MESSAGES_ES: dict[ExtractionPhase, str] = {
     ExtractionPhase.OPEN_SERVICE: "Abriendo el servicio en ARCA...",
     ExtractionPhase.SELECT_EMPRESA: "Seleccionando empresa representada...",
     ExtractionPhase.OPEN_CONSULTA_RECIBIDAS: "Abriendo consulta de liquidaciones recibidas...",
+    ExtractionPhase.SET_FECHAS: "Configurando período de consulta...",
     ExtractionPhase.LISTING_COES: "Leyendo COEs encontrados en el período...",
     ExtractionPhase.DOWNLOADING_COE: "Descargando COE desde el web service de ARCA...",
     ExtractionPhase.SAVING_TO_WS: "Guardando datos del COE...",
