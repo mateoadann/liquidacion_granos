@@ -1,7 +1,8 @@
+import { useState, useEffect } from "react";
 import { Alert, Badge, Button, Drawer } from "../ui";
 import { formatDateTime } from "../../dateUtils";
 import type { Job } from "../../api/jobs";
-import { operationLabel } from "../../api/jobs";
+import { operationLabel, downloadJobScreenshot } from "../../api/jobs";
 import { JobStatusBadge } from "./JobStatusBadge";
 import { isJobRetryableInUI, useRetryJobMutation } from "../../hooks/useJobs";
 
@@ -37,6 +38,27 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
   const title = job ? `Extracción #${job.id}` : "Extracción";
   const retryMutation = useRetryJobMutation();
   const canRetry = job ? isJobRetryableInUI(job) : false;
+
+  const [shotUrl, setShotUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!job?.tiene_screenshot) {
+      setShotUrl(null);
+      return;
+    }
+    let revoked = false;
+    let url: string | null = null;
+    downloadJobScreenshot(job.id)
+      .then((blob) => {
+        if (revoked) return;
+        url = URL.createObjectURL(blob);
+        setShotUrl(url);
+      })
+      .catch(() => setShotUrl(null));
+    return () => {
+      revoked = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [job?.id, job?.tiene_screenshot]);
 
   const handleRetry = async () => {
     if (!job) return;
@@ -117,6 +139,23 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
                     {job.failure_message_technical}
                   </pre>
                 </details>
+              ) : null}
+
+              {job.tiene_screenshot ? (
+                <section className="mt-3">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-2">
+                    Captura de pantalla
+                  </h3>
+                  {shotUrl ? (
+                    <img
+                      src={shotUrl}
+                      alt="Captura del momento del fallo"
+                      className="w-full rounded-md border border-slate-200"
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-500">Cargando captura…</p>
+                  )}
+                </section>
               ) : null}
 
               {canRetry ? (
