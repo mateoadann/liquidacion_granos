@@ -43,6 +43,16 @@ def test_timeout_does_not_block(app):
         assert t.scheduler_pausado_por_auth is False
 
 
+def test_none_failure_code_does_not_block(app):
+    tid = _mk_taxpayer(app)
+    with app.app_context():
+        job = _mk_job(app, tid, "scheduler_lpg_extract", None)
+        _actualizar_scheduler_status(job, final_status="failed", error_text="desconocido")
+        t = Taxpayer.query.get(tid)
+        assert t.scheduler_activo is True
+        assert t.scheduler_pausado_por_auth is False
+
+
 def test_manual_auth_failed_does_not_block(app):
     tid = _mk_taxpayer(app)
     with app.app_context():
