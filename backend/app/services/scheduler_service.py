@@ -157,6 +157,7 @@ def reconcile_stale_jobs(timeout_seconds: Optional[int] = None) -> int:
             job.status = "failed"
             job.finished_at = now
             job.failure_error_type = "stale_timeout"
+            job.failure_code = "UNKNOWN_ERROR"
             job.failure_message_user = (
                 "Proceso interrumpido: la extracción quedó sin actividad "
                 "y se cerró automáticamente."

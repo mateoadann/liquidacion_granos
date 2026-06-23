@@ -184,7 +184,7 @@ def test_persist_taxpayer_failure_search_service_dropdown_clicked_maps_arca_slow
     job = _create_job(taxpayer.id)
     payload = dict(job.payload or {})
 
-    user_es, tech_combined = _persist_taxpayer_failure(
+    user_es, tech_combined, code = _persist_taxpayer_failure(
         job.id,
         payload,
         taxpayer_id=taxpayer.id,
@@ -197,6 +197,7 @@ def test_persist_taxpayer_failure_search_service_dropdown_clicked_maps_arca_slow
     expected_user = "Arca tardó demasiado en responder. Reintentará automáticamente."
     assert user_es == expected_user
     assert tech_combined.startswith("ARCA_SLOW_AFTER_DROPDOWN | ")
+    assert code == "ARCA_SLOW_AFTER_DROPDOWN"
 
     # Per-client mirror was populated.
     clients = (payload.get("progress") or {}).get("clients") or []
@@ -205,6 +206,7 @@ def test_persist_taxpayer_failure_search_service_dropdown_clicked_maps_arca_slow
     assert clients[0]["failure_message_technical"].startswith(
         "ARCA_SLOW_AFTER_DROPDOWN | "
     )
+    assert clients[0]["failure_code"] == "ARCA_SLOW_AFTER_DROPDOWN"
 
 
 def test_persist_taxpayer_failure_truncates_technical_to_1003_chars(app) -> None:
@@ -214,7 +216,7 @@ def test_persist_taxpayer_failure_truncates_technical_to_1003_chars(app) -> None
 
     huge_exception = "x" * 5000
 
-    _user_es, tech_combined = _persist_taxpayer_failure(
+    _user_es, tech_combined, _code = _persist_taxpayer_failure(
         job.id,
         payload,
         taxpayer_id=taxpayer.id,
@@ -234,7 +236,7 @@ def test_persist_taxpayer_failure_phase_none_passes_through(app) -> None:
     job = _create_job(taxpayer.id)
     payload = dict(job.payload or {})
 
-    user_es, tech_combined = _persist_taxpayer_failure(
+    user_es, tech_combined, code = _persist_taxpayer_failure(
         job.id,
         payload,
         taxpayer_id=taxpayer.id,
@@ -246,6 +248,7 @@ def test_persist_taxpayer_failure_phase_none_passes_through(app) -> None:
 
     # UNKNOWN_ERROR mapping with no exception text → tech is just the code.
     assert tech_combined == "UNKNOWN_ERROR"
+    assert code == "UNKNOWN_ERROR"
     assert "Ocurrió un problema al consultar Arca" in user_es
 
     clients = (payload.get("progress") or {}).get("clients") or []
