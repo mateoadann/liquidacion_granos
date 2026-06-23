@@ -2,6 +2,43 @@ import { useAuthStore } from "../store/useAuthStore";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
+// Coalesced in-flight refresh: all concurrent 401s share a single promise.
+let refreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Attempt to refresh the access token using the stored refresh token.
+ * Returns the new access token on success, or null if the refresh fails
+ * (expired refresh token, revoked session, network error, etc.).
+ *
+ * Multiple concurrent callers share the same promise so only one
+ * /auth/refresh request is ever in flight at a time.
+ */
+function ensureRefresh(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async (): Promise<string | null> => {
+    const stored = sessionStorage.getItem("refresh_token");
+    if (!stored) return null;
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: stored }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { access_token: string };
+      useAuthStore.getState().updateToken(data.access_token);
+      return data.access_token;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 function getAuthHeader(): string | null {
   const token = useAuthStore.getState().accessToken;
   return token ? `Bearer ${token}` : null;
@@ -30,6 +67,9 @@ function buildHeaders(options: RequestInit): Headers {
   return headers;
 }
 
+// Paths that must never trigger a refresh attempt (would cause recursion/loops).
+const SKIP_REFRESH_PATHS = ["/auth/refresh", "/auth/login"];
+
 export async function fetchWithAuth(
   path: string,
   options: RequestInit = {}
@@ -41,13 +81,40 @@ export async function fetchWithAuth(
     headers,
   });
 
-  // Si 401 y no estamos restaurando sesión, limpiar auth y redirigir
-  if (res.status === 401 && !useAuthStore.getState().isRestoring) {
-    useAuthStore.getState().clearAuth();
-    window.location.href = "/login";
+  if (res.status !== 401) return res;
+
+  const { isRestoring, clearAuth } = useAuthStore.getState();
+  const isAuthPath = SKIP_REFRESH_PATHS.some((p) => path.startsWith(p));
+
+  // During initial session restore, restoreSession() owns the refresh/auth
+  // lifecycle. Don't evict a still-recoverable session from a racing request —
+  // just surface the 401 and let the restore flow decide.
+  if (isRestoring) {
+    return res;
   }
 
-  return res;
+  // Auth endpoints themselves must never trigger a refresh (would recurse).
+  if (isAuthPath) {
+    clearAuth();
+    window.location.href = "/login";
+    return res;
+  }
+
+  // Attempt a single refresh (coalesced with any concurrent 401s).
+  const newToken = await ensureRefresh();
+  if (!newToken) {
+    clearAuth();
+    window.location.href = "/login";
+    return res;
+  }
+
+  // Retry the original request once with the refreshed token.
+  const retryHeaders = buildHeaders(options);
+  retryHeaders.set("Authorization", `Bearer ${newToken}`);
+  return fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: retryHeaders,
+  });
 }
 
 export async function getHealth() {

@@ -24,6 +24,18 @@ class Config:
     LIQUIDADOR_API_KEY = os.getenv("LIQUIDADOR_API_KEY", "")
     LIQUIDADOR_API_ADMIN_TOKEN = os.getenv("LIQUIDADOR_API_ADMIN_TOKEN", "")
 
+    # Stale job reconciliation — running jobs not updated within this window
+    # are marked failed. Default 30 min; generous to avoid killing long jobs.
+    STALE_JOB_TIMEOUT_SECONDS = int(os.getenv("STALE_JOB_TIMEOUT_SECONDS", "1800"))
+
+    # Playwright per-action timeout (ms). Controls waits for selectors, clicks,
+    # and table reads. Default 30 s is appropriate for most interactive steps.
+    PLAYWRIGHT_TIMEOUT_MS = int(os.getenv("PLAYWRIGHT_TIMEOUT_MS", "30000"))
+
+    # Playwright navigation + login timeout (ms). Used for page.goto() calls to
+    # AFIP landing and LPG direct URL which can be slow at 3 AM. Default 60 s.
+    PLAYWRIGHT_NAV_LOGIN_TIMEOUT_MS = int(os.getenv("PLAYWRIGHT_NAV_LOGIN_TIMEOUT_MS", "60000"))
+
     # Rate limiting
     RATELIMIT_STORAGE_URI = REDIS_URL
     RATELIMIT_STRATEGY = "fixed-window"

@@ -5,6 +5,7 @@ from .extraction_phases import ExtractionPhase
 _LOGIN_PHASES = {ExtractionPhase.LOGIN_START, ExtractionPhase.LOGIN_CONFIRMED}
 _CONSULTA_PHASES = {
     ExtractionPhase.OPEN_CONSULTA_RECIBIDAS,
+    ExtractionPhase.SET_FECHAS,
     ExtractionPhase.LISTING_COES,
 }
 _WS_PHASES = {ExtractionPhase.DOWNLOADING_COE, ExtractionPhase.SAVING_TO_WS}
@@ -62,41 +63,70 @@ def map_failure(
     phase: ExtractionPhase | None,
     error_type: str,
     dropdown_clicked: bool = False,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     if phase in _LOGIN_PHASES:
         if error_type == "auth_failed":
-            return (_AUTH_FAILED_USER_ES, "AUTH_FAILED at login")
+            return (_AUTH_FAILED_USER_ES, "AUTH_FAILED at login", "AUTH_FAILED")
         if error_type in _TRANSIENT_ERRORS:
-            return (_TRANSIENT_LOGIN_USER_ES, "TRANSIENT_LOGIN")
+            return (_TRANSIENT_LOGIN_USER_ES, "TRANSIENT_LOGIN", "TRANSIENT_LOGIN")
 
     if phase == ExtractionPhase.SEARCH_SERVICE:
         if dropdown_clicked and error_type in _SEARCH_SERVICE_AFTER_DROPDOWN_ERRORS:
             return (
                 _ARCA_SLOW_AFTER_DROPDOWN_USER_ES,
                 "ARCA_SLOW_AFTER_DROPDOWN",
+                "ARCA_SLOW_AFTER_DROPDOWN",
             )
         if not dropdown_clicked and error_type in _SERVICE_NOT_ADHERED_ERRORS:
-            return (_SERVICE_NOT_ADHERED_USER_ES, "SERVICE_NOT_ADHERED")
+            return (_SERVICE_NOT_ADHERED_USER_ES, "SERVICE_NOT_ADHERED", "SERVICE_NOT_ADHERED")
 
     if phase == ExtractionPhase.OPEN_SERVICE and error_type in _ARCA_SLOW_ERRORS:
-        return (_OPEN_SERVICE_TIMEOUT_USER_ES, "OPEN_SERVICE_TIMEOUT")
+        return (_OPEN_SERVICE_TIMEOUT_USER_ES, "OPEN_SERVICE_TIMEOUT", "OPEN_SERVICE_TIMEOUT")
 
     if phase == ExtractionPhase.SELECT_EMPRESA:
-        return (_EMPRESA_NOT_FOUND_USER_ES, "EMPRESA_NOT_FOUND")
+        return (_EMPRESA_NOT_FOUND_USER_ES, "EMPRESA_NOT_FOUND", "EMPRESA_NOT_FOUND")
 
     if phase in _CONSULTA_PHASES and error_type in _TRANSIENT_ERRORS:
-        return (_CONSULTA_FAILURE_USER_ES, "CONSULTA_FAILURE")
+        return (_CONSULTA_FAILURE_USER_ES, "CONSULTA_FAILURE", "CONSULTA_FAILURE")
 
     if phase in _WS_PHASES:
-        return (_WS_COE_ERRORS_USER_ES, "WS_COE_ERRORS")
+        return (_WS_COE_ERRORS_USER_ES, "WS_COE_ERRORS", "WS_COE_ERRORS")
 
     if error_type == "network":
-        return (_NETWORK_ERROR_USER_ES, "NETWORK_ERROR")
+        return (_NETWORK_ERROR_USER_ES, "NETWORK_ERROR", "NETWORK_ERROR")
 
-    return (_UNKNOWN_ERROR_USER_ES, "UNKNOWN_ERROR")
+    return (_UNKNOWN_ERROR_USER_ES, "UNKNOWN_ERROR", "UNKNOWN_ERROR")
 
 
 def _truncate(text: str, limit: int = 1000) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "..."
+
+
+# Marcadores (substring, case-insensitive) → fase probable. Orden: más específico
+# primero. Derivados de los textos técnicos reales de Playwright/ARCA en producción.
+_PHASE_MARKERS: list[tuple[tuple[str, ...], ExtractionPhase]] = [
+    (("tu clave", "clave", "usuario"), ExtractionPhase.LOGIN_START),
+    (("liquidación primaria de granos", "liquidacion primaria de granos", "buscador"),
+     ExtractionPhase.SEARCH_SERVICE),
+    (("consulta liquidaciones recibidas", "consultar por criterio"),
+     ExtractionPhase.OPEN_CONSULTA_RECIBIDAS),
+    (("fecha desde",), ExtractionPhase.SET_FECHAS),
+    (("liquidacionxcoeconsultar",), ExtractionPhase.SAVING_TO_WS),
+]
+
+
+def infer_phase_from_technical(tech: str | None) -> ExtractionPhase | None:
+    """Infiere la fase probable de un fallo a partir del texto técnico crudo.
+
+    Se usa como fallback cuando el flujo no determinó la fase. Devuelve None si el
+    texto es vacío/None o no contiene ningún marcador reconocible (NO inventa).
+    """
+    if not tech:
+        return None
+    low = tech.lower()
+    for markers, phase in _PHASE_MARKERS:
+        if any(m in low for m in markers):
+            return phase
+    return None

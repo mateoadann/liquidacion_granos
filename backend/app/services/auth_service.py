@@ -7,7 +7,7 @@ import bcrypt
 import jwt
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
-ACCESS_TOKEN_EXPIRES_SECONDS = 15 * 60  # 15 minutos
+ACCESS_TOKEN_EXPIRES_SECONDS = 60 * 60  # 60 minutos
 REFRESH_TOKEN_EXPIRES_SECONDS = 7 * 24 * 60 * 60  # 7 días
 
 

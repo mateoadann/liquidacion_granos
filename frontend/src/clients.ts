@@ -496,8 +496,13 @@ function normalizePlaywrightPipelineJob(raw: unknown): PlaywrightPipelineJob {
   };
 }
 
-export async function listClients(): Promise<Client[]> {
-  const payload = await requestJson<unknown>("/clients", { method: "GET" });
+export async function listClients(params?: { active?: boolean }): Promise<Client[]> {
+  const search = new URLSearchParams();
+  if (params?.active !== undefined) search.set("active", String(params.active));
+  const qs = search.toString();
+  const path = qs ? `/clients?${qs}` : "/clients";
+
+  const payload = await requestJson<unknown>(path, { method: "GET" });
   if (!Array.isArray(payload)) {
     return [];
   }
@@ -699,6 +704,14 @@ function resolveDownloadFileName(contentDisposition: string | null, fallback: st
     return asciiMatch[1];
   }
   return fallback;
+}
+
+export async function fetchClaveFiscal(clientId: number): Promise<string> {
+  const payload = await requestJson<{ clave_fiscal: string }>(
+    `/clients/${clientId}/clave-fiscal`,
+    { method: "GET" },
+  );
+  return payload.clave_fiscal;
 }
 
 export async function downloadClientCoesExport(

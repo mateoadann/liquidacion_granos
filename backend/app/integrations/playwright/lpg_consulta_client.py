@@ -70,6 +70,10 @@ class LpgConsultaRequest:
     fecha_hasta: str
     headless: bool = True
     timeout_ms: int = 30_000
+    # Larger timeout used specifically for page.goto() navigation and login popup.
+    # AFIP landing page can be slow at off-peak hours; 60 s is generous enough
+    # to avoid spurious timeouts without blocking indefinitely.
+    nav_login_timeout_ms: int = 60_000
     type_delay_ms: int = 80
     slow_mo_ms: int = 0
     post_action_delay_ms: int = 0
@@ -146,8 +150,14 @@ class ArcaLpgPlaywrightClient:
         self._search_dropdown_clicked: bool = False
         self._service_open_method: str | None = None
         self._on_phase: PhaseCallback | None = None
+        # Tracks the last phase emitted so that generic exception handlers can
+        # fall back to it when a PlaywrightFlowError carries no phase.
+        self._current_phase: ExtractionPhase | None = None
 
     def _emit_phase(self, phase: ExtractionPhase) -> None:
+        # Always record the phase before invoking the callback so that any
+        # exception raised inside the callback does not prevent the update.
+        self._current_phase = phase
         if self._on_phase is None:
             return
         try:
@@ -294,6 +304,7 @@ class ArcaLpgPlaywrightClient:
     def run(self, request: LpgConsultaRequest) -> LpgConsultaResult:
         started = now_cordoba_naive()
         self._on_phase = request.on_phase
+        self._current_phase = None
         self._search_dropdown_clicked = False
         self._service_open_method = None
         logger.info(
@@ -360,20 +371,49 @@ class ArcaLpgPlaywrightClient:
                 request.type_delay_ms,
                 request.empresa,
                 request.humanize_delays,
+                nav_login_timeout_ms=request.nav_login_timeout_ms,
             )
             self._emit_phase(ExtractionPhase.SELECT_EMPRESA)
-            self._select_empresa(service_page, request.empresa, request.timeout_ms)
-            self._emit_phase(ExtractionPhase.OPEN_CONSULTA_RECIBIDAS)
-            self._open_consulta_recibidas(
-                service_page, request.timeout_ms, request.empresa, request.humanize_delays
+            self._with_retry(
+                operation=lambda: self._select_empresa(
+                    service_page, request.empresa, request.timeout_ms
+                ),
+                operation_name="select_empresa",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
             )
-            self._set_fechas(
-                service_page,
-                request.fecha_desde,
-                request.fecha_hasta,
-                request.timeout_ms,
-                request.empresa,
-                request.humanize_delays,
+            self._emit_phase(ExtractionPhase.OPEN_CONSULTA_RECIBIDAS)
+            # Retry idempotency caveat (pendiente de validar contra el DOM real de AFIP):
+            # este paso abre el menú y luego entra a la consulta. Si el menú fuese un
+            # toggle, un reintegro desde cero podría cerrarlo. Validar en producción si
+            # el botón del menú alterna estado; de ser así, hacer el click condicional.
+            self._with_retry(
+                operation=lambda: self._open_consulta_recibidas(
+                    service_page, request.timeout_ms, request.empresa, request.humanize_delays
+                ),
+                operation_name="open_consulta_recibidas",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
+            )
+            self._emit_phase(ExtractionPhase.SET_FECHAS)
+            self._with_retry(
+                operation=lambda: self._set_fechas(
+                    service_page,
+                    request.fecha_desde,
+                    request.fecha_hasta,
+                    request.timeout_ms,
+                    request.empresa,
+                    request.humanize_delays,
+                ),
+                operation_name="set_fechas",
+                max_attempts=request.retry_max_attempts,
+                base_delay_ms=request.retry_base_delay_ms,
+                empresa=request.empresa,
+                page=service_page,
             )
             self._with_retry(
                 operation=lambda: self._submit_consulta(
@@ -451,7 +491,18 @@ class ArcaLpgPlaywrightClient:
 
     def _do_login_attempt(self, landing_page: Page, request: LpgConsultaRequest) -> Page:
         logger.info("PLAYWRIGHT_NAVIGATE_LANDING | empresa=%s", request.empresa)
-        landing_page.goto(self.LANDING_URL, wait_until="networkidle")
+        self._with_retry(
+            operation=lambda: landing_page.goto(
+                self.LANDING_URL,
+                wait_until="networkidle",
+                timeout=request.nav_login_timeout_ms,
+            ),
+            operation_name="goto_landing",
+            max_attempts=request.retry_max_attempts,
+            base_delay_ms=request.retry_base_delay_ms,
+            empresa=request.empresa,
+            page=landing_page,
+        )
 
         with landing_page.expect_popup() as popup_info:
             logger.info("PLAYWRIGHT_CLICK_INICIAR_SESION | empresa=%s", request.empresa)
@@ -539,6 +590,7 @@ class ArcaLpgPlaywrightClient:
         type_delay_ms: int,
         empresa: str,
         humanize_delays: bool = True,
+        nav_login_timeout_ms: int = 60_000,
     ) -> Page:
         def _open_via_search_box() -> Page:
             self._emit_phase(ExtractionPhase.SEARCH_SERVICE)
@@ -628,7 +680,7 @@ class ArcaLpgPlaywrightClient:
             )
             try:
                 service_page = self._open_lpg_service_via_direct_url(
-                    login_page, timeout_ms, empresa
+                    login_page, timeout_ms, empresa, nav_login_timeout_ms=nav_login_timeout_ms
                 )
             except Exception:
                 # Preserve the ORIGINAL SEARCH_SERVICE diagnostics so the
@@ -644,7 +696,11 @@ class ArcaLpgPlaywrightClient:
         return service_page
 
     def _open_lpg_service_via_direct_url(
-        self, login_page: Page, timeout_ms: int, empresa: str
+        self,
+        login_page: Page,
+        timeout_ms: int,
+        empresa: str,
+        nav_login_timeout_ms: int = 60_000,
     ) -> Page:
         """Fallback path: open the LPG service in a new tab on the same context.
 
@@ -660,7 +716,18 @@ class ArcaLpgPlaywrightClient:
         context = login_page.context
         direct_page = context.new_page()
         try:
-            direct_page.goto(self.LPG_DIRECT_URL, wait_until="networkidle")
+            self._with_retry(
+                operation=lambda: direct_page.goto(
+                    self.LPG_DIRECT_URL,
+                    wait_until="networkidle",
+                    timeout=nav_login_timeout_ms,
+                ),
+                operation_name="goto_lpg_direct",
+                max_attempts=2,
+                base_delay_ms=1000,
+                empresa=empresa,
+                page=direct_page,
+            )
             self._wait_for_service_page_ready(direct_page, timeout_ms, empresa)
         except Exception:
             logger.warning(

@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, send_file
 
-from sqlalchemy import or_
+from sqlalchemy import and_, cast, extract, Integer, or_, String
 
 from ..extensions import db
 from ..models import AuditEvent, CoeEstado, LpgDocument, Taxpayer, User
@@ -21,7 +21,7 @@ from ..services import (
     fecha_liquidacion_expr,
     get_or_fetch_pdf,
 )
-from ..services.lpg_document_utils import coe_already_exists
+from ..services.lpg_document_utils import _is_sqlite, coe_already_exists
 from ..services.lpg_manual_pipeline import (
     ArcaWsError,
     CoeAlreadyExistsError,
@@ -74,6 +74,7 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "controlada_por": doc.controlada_por,
         "controlada_por_nombre": doc.controlada_por_nombre,
         "controlada_en": doc.controlada_en.isoformat() if doc.controlada_en else None,
+        "cod_tipo_operacion": (doc.datos_limpios or {}).get("codTipoOperacion"),
     }
     if include_taxpayer and doc.taxpayer_id:
         taxpayer = db.session.get(Taxpayer, doc.taxpayer_id)
@@ -102,6 +103,11 @@ def list_coes():
 
     query = db.session.query(LpgDocument)
 
+    # Always exclude documents belonging to inactive taxpayers.
+    query = query.join(Taxpayer, Taxpayer.id == LpgDocument.taxpayer_id).filter(
+        Taxpayer.activo.is_(True)
+    )
+
     if taxpayer_id:
         query = query.filter(LpgDocument.taxpayer_id == taxpayer_id)
 
@@ -128,13 +134,22 @@ def list_coes():
     tipo_cte_raw = request.args.get("tipo_cte", type=str)
     if tipo_cte_raw:
         tipos = {t.strip().upper() for t in tipo_cte_raw.split(",") if t.strip()}
+        # Classification mirrors json_v7_exporter._build_comprobante — mutually exclusive
+        # and based on tipo_documento + codTipoOperacion, NOT the COE prefix.
+        # cast to String on a JSON path yields "2" when the stored value is the
+        # JSON integer 2, but '"2"' (with surrounding quotes) when it is the JSON
+        # string "2". Both representations mean F2, so we match either form.
+        cod_col = cast(LpgDocument.datos_limpios["codTipoOperacion"], String)
+        is_ajuste = LpgDocument.tipo_documento == "AJUSTE"
+        # Covers JSON int 2 → "2"  AND  JSON string "2" → '"2"'
+        is_cod2 = or_(cod_col == "2", cod_col == '"2"')
         clauses = []
-        if "F1" in tipos:
-            clauses.append(LpgDocument.coe.ilike("3301%"))
-        if "F2" in tipos:
-            clauses.append(LpgDocument.coe.ilike("3302%"))
         if "NL" in tipos:
-            clauses.append(LpgDocument.tipo_documento == "AJUSTE")
+            clauses.append(is_ajuste)
+        if "F2" in tipos:
+            clauses.append(and_(~is_ajuste, is_cod2))
+        if "F1" in tipos:
+            clauses.append(and_(~is_ajuste, or_(cod_col.is_(None), ~is_cod2)))
         if clauses:
             query = query.filter(or_(*clauses))
 
@@ -445,6 +460,44 @@ def consultar_coe_pdf():
         as_attachment=True,
         download_name=filename,
     )
+
+
+@coes_bp.get("/coes/anios-disponibles")
+@require_auth
+def anios_disponibles():
+    """Return the distinct years that have COEs, ordered descending.
+
+    Derives the year from the same ``fecha_liquidacion_expr()`` used by the
+    list endpoint so the values are always consistent.  Only documents
+    belonging to active taxpayers are considered.
+    """
+    from sqlalchemy import func as sa_func, select
+
+    fecha_liq_expr = fecha_liquidacion_expr()
+    fecha_liq_date = fecha_liquidacion_as_date(fecha_liq_expr)
+
+    if _is_sqlite():
+        # SQLite: strftime('%Y', <iso-date-string>) → '2025' → cast to int.
+        year_expr = cast(sa_func.strftime("%Y", fecha_liq_expr), Integer)
+    else:
+        # PostgreSQL: EXTRACT(year FROM CAST(expr AS DATE)) → numeric → cast to int.
+        year_expr = cast(extract("year", fecha_liq_date), Integer)
+
+    lpg_t = LpgDocument.__table__
+    taxpayer_t = Taxpayer.__table__
+
+    stmt = (
+        select(year_expr.label("anio"))
+        .select_from(lpg_t.join(taxpayer_t, taxpayer_t.c.id == lpg_t.c.taxpayer_id))
+        .where(taxpayer_t.c.activo.is_(True))
+        .where(fecha_liq_date.isnot(None))
+        .distinct()
+        .order_by(year_expr.desc())
+    )
+
+    rows = db.session.execute(stmt).all()
+    anios = [row.anio for row in rows if row.anio is not None]
+    return {"anios": anios}
 
 
 @coes_bp.post("/coes/manual")

@@ -19,11 +19,31 @@ export interface DashboardStats {
   } | null;
 }
 
+export interface MonthlyStats {
+  mes: number;
+  anio: number;
+  coes_nuevos: number;
+  coes_f1: number;
+  coes_f2: number;
+  coes_nl: number;
+  extracciones_exitosas: number;
+  extracciones_fallidas: number;
+}
+
 export async function getStats(): Promise<DashboardStats> {
   const res = await fetchWithAuth("/stats");
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data?.error ?? "Error al obtener estadísticas");
+  }
+  return data;
+}
+
+export async function fetchMonthlyStats(mes: number, anio: number): Promise<MonthlyStats> {
+  const res = await fetchWithAuth(`/stats/mensual?mes=${mes}&anio=${anio}`);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Error al obtener estadísticas mensuales");
   }
   return data;
 }

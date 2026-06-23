@@ -11,7 +11,7 @@ import {
 export function useClientsQuery() {
   return useQuery<Client[], Error>({
     queryKey: ["clients"],
-    queryFn: listClients,
+    queryFn: () => listClients(),
   });
 }
 

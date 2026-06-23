@@ -1,5 +1,18 @@
 import { fetchWithAuth } from "./client";
 
+export const OPERATION_LABELS: Record<string, string> = {
+  scheduler_lpg_extract: "Extracción automática",
+  scheduler_lpg_extract_retry: "Reintento automático",
+  scheduler_run_now: "Extracción programada (ejecutada ahora)",
+  playwright_lpg_run: "Extracción manual",
+  coe_carga_manual: "Carga manual de COE",
+};
+
+/** Returns the friendly label for an operation, or the raw string if unknown. */
+export function operationLabel(op: string): string {
+  return OPERATION_LABELS[op] ?? op;
+}
+
 export interface Job {
   id: number;
   taxpayer_id: number | null;

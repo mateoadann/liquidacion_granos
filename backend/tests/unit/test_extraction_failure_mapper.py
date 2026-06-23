@@ -4,6 +4,7 @@ import pytest
 
 from app.services.extraction_failure_mapper import (
     _truncate,
+    infer_phase_from_technical,
     map_failure,
 )
 from app.services.extraction_phases import ExtractionPhase
@@ -55,7 +56,7 @@ _UNKNOWN_ERROR_USER_ES = (
     ids=["LOGIN_START", "LOGIN_CONFIRMED"],
 )
 def test_login_phase_auth_failed_returns_auth_failed_user_es(phase: ExtractionPhase) -> None:
-    user_es, tech_en = map_failure(phase, "auth_failed", False)
+    user_es, tech_en, code = map_failure(phase, "auth_failed", False)
     assert user_es == _AUTH_FAILED_USER_ES
     assert tech_en == "AUTH_FAILED at login"
 
@@ -73,7 +74,7 @@ def test_login_phase_auth_failed_returns_auth_failed_user_es(phase: ExtractionPh
 def test_login_phase_transient_returns_transient_login(
     phase: ExtractionPhase, error_type: str
 ) -> None:
-    user_es, tech_en = map_failure(phase, error_type, False)
+    user_es, tech_en, code = map_failure(phase, error_type, False)
     assert user_es == _TRANSIENT_LOGIN_USER_ES
     assert tech_en == "TRANSIENT_LOGIN"
 
@@ -88,7 +89,7 @@ def test_login_phase_transient_returns_transient_login(
     ids=["timeout", "arca_unavailable", "unknown"],
 )
 def test_search_service_dropdown_clicked_returns_arca_slow(error_type: str) -> None:
-    user_es, tech_en = map_failure(ExtractionPhase.SEARCH_SERVICE, error_type, True)
+    user_es, tech_en, code = map_failure(ExtractionPhase.SEARCH_SERVICE, error_type, True)
     assert user_es == _ARCA_SLOW_AFTER_DROPDOWN_USER_ES
     assert tech_en == "ARCA_SLOW_AFTER_DROPDOWN"
 
@@ -97,7 +98,7 @@ def test_search_service_unknown_dropdown_clicked_treated_as_arca_slow() -> None:
     # Real-world regression: when dropdown_clicked=True we already know ARCA
     # responded and we selected the suggestion. A post-click "unknown" failure
     # must NOT degrade to UNKNOWN_ERROR — it must surface ARCA latency.
-    user_es, tech_en = map_failure(
+    user_es, tech_en, code = map_failure(
         ExtractionPhase.SEARCH_SERVICE, "unknown", True
     )
     assert user_es == _ARCA_SLOW_AFTER_DROPDOWN_USER_ES
@@ -110,7 +111,7 @@ def test_search_service_unknown_dropdown_clicked_treated_as_arca_slow() -> None:
     ids=["timeout", "arca_unavailable", "unknown"],
 )
 def test_search_service_no_dropdown_returns_service_not_adhered(error_type: str) -> None:
-    user_es, tech_en = map_failure(ExtractionPhase.SEARCH_SERVICE, error_type, False)
+    user_es, tech_en, code = map_failure(ExtractionPhase.SEARCH_SERVICE, error_type, False)
     assert user_es == _SERVICE_NOT_ADHERED_USER_ES
     assert tech_en == "SERVICE_NOT_ADHERED"
 
@@ -118,7 +119,7 @@ def test_search_service_no_dropdown_returns_service_not_adhered(error_type: str)
 def test_search_service_network_no_dropdown_falls_through_to_network() -> None:
     # error_type=network is NOT in _SERVICE_NOT_ADHERED_ERRORS, so it falls
     # through to the generic network rule.
-    user_es, tech_en = map_failure(ExtractionPhase.SEARCH_SERVICE, "network", False)
+    user_es, tech_en, code = map_failure(ExtractionPhase.SEARCH_SERVICE, "network", False)
     assert user_es == _NETWORK_ERROR_USER_ES
     assert tech_en == "NETWORK_ERROR"
 
@@ -127,7 +128,7 @@ def test_search_service_network_dropdown_clicked_falls_through_to_network() -> N
     # error_type=network is NOT in _SEARCH_SERVICE_AFTER_DROPDOWN_ERRORS even
     # with dropdown_clicked=True, so it must fall through to the generic
     # network rule (no degradation to ARCA_SLOW_AFTER_DROPDOWN).
-    user_es, tech_en = map_failure(ExtractionPhase.SEARCH_SERVICE, "network", True)
+    user_es, tech_en, code = map_failure(ExtractionPhase.SEARCH_SERVICE, "network", True)
     assert user_es == _NETWORK_ERROR_USER_ES
     assert tech_en == "NETWORK_ERROR"
 
@@ -144,7 +145,7 @@ def test_search_service_network_dropdown_clicked_falls_through_to_network() -> N
 def test_open_service_arca_slow_errors_returns_open_service_timeout(
     error_type: str,
 ) -> None:
-    user_es, tech_en = map_failure(ExtractionPhase.OPEN_SERVICE, error_type, False)
+    user_es, tech_en, code = map_failure(ExtractionPhase.OPEN_SERVICE, error_type, False)
     assert user_es == _OPEN_SERVICE_TIMEOUT_USER_ES
     assert tech_en == "OPEN_SERVICE_TIMEOUT"
 
@@ -157,7 +158,7 @@ def test_open_service_unknown_falls_back_to_unknown_error(
 ) -> None:
     # The dropdown_clicked branch is exclusive to SEARCH_SERVICE; OPEN_SERVICE
     # must NOT treat "unknown" as ARCA latency regardless of the flag.
-    user_es, tech_en = map_failure(
+    user_es, tech_en, code = map_failure(
         ExtractionPhase.OPEN_SERVICE, "unknown", dropdown_clicked
     )
     assert user_es == _UNKNOWN_ERROR_USER_ES
@@ -177,7 +178,7 @@ def test_login_phase_unknown_falls_back_to_unknown_error(
 ) -> None:
     # LOGIN phases must NOT degrade "unknown" to ARCA latency even when the
     # dropdown_clicked flag is set — that branch belongs to SEARCH_SERVICE only.
-    user_es, tech_en = map_failure(phase, "unknown", dropdown_clicked)
+    user_es, tech_en, code = map_failure(phase, "unknown", dropdown_clicked)
     assert user_es == _UNKNOWN_ERROR_USER_ES
     assert tech_en == "UNKNOWN_ERROR"
 
@@ -197,7 +198,7 @@ def test_login_phase_unknown_falls_back_to_unknown_error(
 def test_select_empresa_any_error_returns_empresa_not_found(
     error_type: str, dropdown_clicked: bool
 ) -> None:
-    user_es, tech_en = map_failure(
+    user_es, tech_en, code = map_failure(
         ExtractionPhase.SELECT_EMPRESA, error_type, dropdown_clicked
     )
     assert user_es == _EMPRESA_NOT_FOUND_USER_ES
@@ -210,8 +211,12 @@ def test_select_empresa_any_error_returns_empresa_not_found(
 
 @pytest.mark.parametrize(
     "phase",
-    [ExtractionPhase.OPEN_CONSULTA_RECIBIDAS, ExtractionPhase.LISTING_COES],
-    ids=["OPEN_CONSULTA_RECIBIDAS", "LISTING_COES"],
+    [
+        ExtractionPhase.OPEN_CONSULTA_RECIBIDAS,
+        ExtractionPhase.SET_FECHAS,
+        ExtractionPhase.LISTING_COES,
+    ],
+    ids=["OPEN_CONSULTA_RECIBIDAS", "SET_FECHAS", "LISTING_COES"],
 )
 @pytest.mark.parametrize(
     "error_type",
@@ -221,7 +226,7 @@ def test_select_empresa_any_error_returns_empresa_not_found(
 def test_consulta_phases_transient_returns_consulta_failure(
     phase: ExtractionPhase, error_type: str
 ) -> None:
-    user_es, tech_en = map_failure(phase, error_type, False)
+    user_es, tech_en, code = map_failure(phase, error_type, False)
     assert user_es == _CONSULTA_FAILURE_USER_ES
     assert tech_en == "CONSULTA_FAILURE"
 
@@ -243,7 +248,7 @@ def test_consulta_phases_transient_returns_consulta_failure(
 def test_ws_phases_any_error_returns_ws_coe_errors(
     phase: ExtractionPhase, error_type: str
 ) -> None:
-    user_es, tech_en = map_failure(phase, error_type, False)
+    user_es, tech_en, code = map_failure(phase, error_type, False)
     assert user_es == _WS_COE_ERRORS_USER_ES
     assert tech_en == "WS_COE_ERRORS"
 
@@ -265,7 +270,7 @@ def test_ws_phases_any_error_returns_ws_coe_errors(
 def test_network_error_falls_through_to_network_error(
     phase: ExtractionPhase | None,
 ) -> None:
-    user_es, tech_en = map_failure(phase, "network", False)
+    user_es, tech_en, code = map_failure(phase, "network", False)
     assert user_es == _NETWORK_ERROR_USER_ES
     assert tech_en == "NETWORK_ERROR"
 
@@ -291,7 +296,7 @@ def test_network_error_falls_through_to_network_error(
 def test_unhandled_combinations_fall_back_to_unknown_error(
     phase: ExtractionPhase | None, error_type: str
 ) -> None:
-    user_es, tech_en = map_failure(phase, error_type, False)
+    user_es, tech_en, code = map_failure(phase, error_type, False)
     assert user_es == _UNKNOWN_ERROR_USER_ES
     assert tech_en == "UNKNOWN_ERROR"
 
@@ -318,10 +323,11 @@ def test_mapper_never_returns_empty_or_none(
 ) -> None:
     result = map_failure(phase, error_type, dropdown_clicked)
     assert isinstance(result, tuple)
-    assert len(result) == 2
-    user_es, tech_en = result
+    assert len(result) == 3
+    user_es, tech_en, code = result
     assert isinstance(user_es, str) and user_es != ""
     assert isinstance(tech_en, str) and tech_en != ""
+    assert isinstance(code, str) and code != ""
 
 
 # ---------------------------------------------------------------------------
@@ -362,3 +368,73 @@ def test_truncate_default_limit_is_1000() -> None:
     result = _truncate(text)
     assert result.endswith("...")
     assert len(result) == 1003
+
+
+# ---------------------------------------------------------------------------
+# map_failure returns stable failure code as 3rd element
+# ---------------------------------------------------------------------------
+
+def test_map_failure_returns_code_auth_failed():
+    user, tech, code = map_failure(ExtractionPhase.LOGIN_START, "auth_failed")
+    assert code == "AUTH_FAILED"
+    assert "clave fiscal" in user.lower()
+
+
+def test_map_failure_returns_code_service_not_adhered():
+    user, tech, code = map_failure(ExtractionPhase.SEARCH_SERVICE, "timeout", dropdown_clicked=False)
+    assert code == "SERVICE_NOT_ADHERED"
+
+
+def test_map_failure_returns_code_empresa_not_found():
+    user, tech, code = map_failure(ExtractionPhase.SELECT_EMPRESA, "unknown")
+    assert code == "EMPRESA_NOT_FOUND"
+
+
+def test_map_failure_returns_code_network():
+    user, tech, code = map_failure(None, "network")
+    assert code == "NETWORK_ERROR"
+
+
+def test_map_failure_returns_code_unknown_default():
+    user, tech, code = map_failure(None, "unknown")
+    assert code == "UNKNOWN_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# infer_phase_from_technical
+# ---------------------------------------------------------------------------
+
+def test_infer_login_from_tu_clave():
+    tech = 'Locator.fill: Timeout 30000ms exceeded. waiting for textbox "TU CLAVE"'
+    assert infer_phase_from_technical(tech) == ExtractionPhase.LOGIN_START
+
+
+def test_infer_login_from_clave_word():
+    assert infer_phase_from_technical("waiting for Clave field") == ExtractionPhase.LOGIN_START
+
+
+def test_infer_search_service():
+    tech = 'waiting for button "Liquidación Primaria de Granos"'
+    assert infer_phase_from_technical(tech) == ExtractionPhase.SEARCH_SERVICE
+
+
+def test_infer_set_fechas():
+    assert infer_phase_from_technical("No se encontró input de Fecha Desde.") == ExtractionPhase.SET_FECHAS
+
+
+def test_infer_saving_ws():
+    assert infer_phase_from_technical("Error en liquidacionXCoeConsultar") == ExtractionPhase.SAVING_TO_WS
+
+
+def test_infer_consulta_recibidas():
+    tech = 'waiting for button "Consulta Liquidaciones Recibidas"'
+    assert infer_phase_from_technical(tech) == ExtractionPhase.OPEN_CONSULTA_RECIBIDAS
+
+
+def test_infer_none_when_no_marker():
+    assert infer_phase_from_technical("Timeout 30000ms exceeded") is None
+
+
+def test_infer_none_for_empty():
+    assert infer_phase_from_technical(None) is None
+    assert infer_phase_from_technical("") is None
