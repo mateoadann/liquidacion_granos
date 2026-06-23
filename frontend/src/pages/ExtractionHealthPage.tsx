@@ -12,6 +12,7 @@ import {
 } from "../components/ui";
 import { useExtractionHealthQuery } from "../hooks/useExtractionHealth";
 import type { ExtractionHealthEstado } from "../api/extracciones";
+import { formatDateOnly } from "../dateUtils";
 
 const ESTADO_LABEL: Record<ExtractionHealthEstado, string> = {
   verde: "OK",
@@ -111,7 +112,9 @@ export function ExtractionHealthPage() {
                         ? "—"
                         : c.causa_mensaje ?? "Causa desconocida"}
                     </TableCell>
-                    <TableCell>{c.ultima_ok ?? "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {c.ultima_ok ? formatDateOnly(c.ultima_ok) : "—"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
