@@ -65,6 +65,10 @@ class TaxpayerPipelineResult:
 
 def _taxpayer_result_to_dict(item: TaxpayerPipelineResult) -> dict[str, Any]:
     data = asdict(item)
+    # failure_screenshot_png son bytes crudos: no son JSON-serializables y no
+    # van en el result/payload del job (viajan por el objeto al worker, que los
+    # persiste aparte en job_screenshot). Se excluyen del dict serializable.
+    data.pop("failure_screenshot_png", None)
     # Backward-compat: frontend (PlaywrightTaxpayerRunResult) still consumes "ok"
     # as a boolean for legacy result rendering. Derive it from outcome.
     data["ok"] = item.outcome == "done"
