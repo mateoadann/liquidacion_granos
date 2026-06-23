@@ -40,20 +40,25 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
   const canRetry = job ? isJobRetryableInUI(job) : false;
 
   const [shotUrl, setShotUrl] = useState<string | null>(null);
+  const [shotError, setShotError] = useState(false);
   useEffect(() => {
     if (!job?.tiene_screenshot) {
       setShotUrl(null);
+      setShotError(false);
       return;
     }
     let revoked = false;
     let url: string | null = null;
+    setShotError(false);
     downloadJobScreenshot(job.id)
       .then((blob) => {
         if (revoked) return;
         url = URL.createObjectURL(blob);
         setShotUrl(url);
       })
-      .catch(() => setShotUrl(null));
+      .catch(() => {
+        if (!revoked) setShotError(true);
+      });
     return () => {
       revoked = true;
       if (url) URL.revokeObjectURL(url);
@@ -152,6 +157,10 @@ export function JobDetailDrawer({ job, onClose }: JobDetailDrawerProps) {
                       alt="Captura del momento del fallo"
                       className="w-full rounded-md border border-slate-200"
                     />
+                  ) : shotError ? (
+                    <p className="text-sm text-red-600">
+                      No se pudo cargar la captura.
+                    </p>
                   ) : (
                     <p className="text-sm text-slate-500">Cargando captura…</p>
                   )}
