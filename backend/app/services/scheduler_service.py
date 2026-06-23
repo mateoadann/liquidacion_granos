@@ -26,6 +26,33 @@ SCHEDULER_OPERATION = "scheduler_lpg_extract"
 SCHEDULER_QUEUE_NAME = "playwright"
 
 
+def reactivar_pausados_por_auth() -> int:
+    """Reactiva clientes pausados automáticamente por AUTH_FAILED cuya clave
+    fiscal fue actualizada después del error. Devuelve la cantidad reactivada.
+
+    No toca pausas manuales (scheduler_pausado_por_auth=False).
+    """
+    candidatos = Taxpayer.query.filter_by(
+        scheduler_pausado_por_auth=True, activo=True
+    ).all()
+    reactivados = 0
+    for t in candidatos:
+        if (
+            t.clave_fiscal_actualizada_en is not None
+            and t.scheduler_ultimo_error_en is not None
+            and t.clave_fiscal_actualizada_en > t.scheduler_ultimo_error_en
+        ):
+            t.scheduler_activo = True
+            t.scheduler_pausado_por_auth = False
+            reactivados += 1
+            logger.info(
+                "SCHEDULER_AUTO_REACTIVATED | taxpayer_id=%s", t.id
+            )
+    if reactivados:
+        db.session.commit()
+    return reactivados
+
+
 def tick_scheduler() -> dict:
     """Evalúa qué empresas matchean día/hora actual y encola un job para cada una.
 
@@ -39,6 +66,7 @@ def tick_scheduler() -> dict:
       (evita doble-disparo si el tick corre cada minuto pero la hora_local matchea
       por varios ticks).
     """
+    reactivar_pausados_por_auth()
     now = now_cordoba_naive()
     dia = DIAS_SEMANA[now.weekday()]
     hora = now.strftime("%H:%M")

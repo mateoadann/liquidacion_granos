@@ -233,6 +233,14 @@ def _actualizar_scheduler_status(
         text = (error_text or "").strip() or "Falla desconocida"
         taxpayer.scheduler_ultimo_error = text[:SCHEDULER_ERROR_MAX_LEN]
         taxpayer.scheduler_ultimo_error_en = ahora
+        if job.failure_code == "AUTH_FAILED":
+            taxpayer.scheduler_activo = False
+            taxpayer.scheduler_pausado_por_auth = True
+            logger.warning(
+                "SCHEDULER_AUTO_BLOCKED | taxpayer_id=%s job_id=%s reason=auth_failed",
+                taxpayer.id,
+                job.id,
+            )
 
     db.session.commit()
     logger.info(

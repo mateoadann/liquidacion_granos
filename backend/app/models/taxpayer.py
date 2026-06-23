@@ -28,6 +28,10 @@ class Taxpayer(db.Model):
     scheduler_ultimo_ok = db.Column(db.DateTime, nullable=True)
     scheduler_ultimo_error = db.Column(db.Text, nullable=True)
     scheduler_ultimo_error_en = db.Column(db.DateTime, nullable=True)
+    clave_fiscal_actualizada_en = db.Column(db.DateTime, nullable=True)
+    scheduler_pausado_por_auth = db.Column(
+        db.Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)
     updated_at = db.Column(
         db.DateTime,

@@ -344,6 +344,7 @@ def create_client():
     item.cuit_representado = cuit_representado
     item.ambiente = ambiente
     item.clave_fiscal_encrypted = encrypted_secret
+    item.clave_fiscal_actualizada_en = now_cordoba_naive()
     item.activo = True
     item.playwright_enabled = True
     db.session.add(item)
@@ -422,6 +423,7 @@ def update_client(client_id: int):
             return _error("clave_fiscal no puede estar vacia.", 400)
         try:
             item.clave_fiscal_encrypted = encrypt_secret(clave_fiscal)
+            item.clave_fiscal_actualizada_en = now_cordoba_naive()
         except ValueError as exc:
             return _error(str(exc), 400)
 
