@@ -139,3 +139,21 @@ def test_compute_health_resumen_counts(app):
         out = compute_health()
     assert out["resumen"]["verde"] >= 1
     assert set(out["resumen"].keys()) == {"verde", "amarillo", "rojo", "gris"}
+
+
+def test_compute_health_includes_last_job_id(app):
+    tid = _mk_taxpayer(app, "Cliente ConJob")
+    _mk_job(app, tid, "completed", days_ago=0)
+    with app.app_context():
+        out = compute_health()
+    row = next(c for c in out["clientes"] if c["taxpayer_id"] == tid)
+    assert row["last_job_id"] is not None
+    assert isinstance(row["last_job_id"], int)
+
+
+def test_compute_health_last_job_id_none_without_jobs(app):
+    tid = _mk_taxpayer(app, "Cliente SinJob")
+    with app.app_context():
+        out = compute_health()
+    row = next(c for c in out["clientes"] if c["taxpayer_id"] == tid)
+    assert row["last_job_id"] is None
