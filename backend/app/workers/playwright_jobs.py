@@ -159,8 +159,8 @@ def _persist_taxpayer_failure(
     error_type: str,
     dropdown_clicked: bool,
     exception_text: str | None,
-) -> tuple[str, str]:
-    user_es, tech_en = map_failure(phase, error_type, dropdown_clicked)
+) -> tuple[str, str, str]:
+    user_es, tech_en, code = map_failure(phase, error_type, dropdown_clicked)
     if exception_text:
         tech_combined = _truncate(f"{tech_en} | {exception_text}")
     else:
@@ -174,9 +174,10 @@ def _persist_taxpayer_failure(
             client["failure_phase"] = phase_value
             client["failure_message_user"] = user_es
             client["failure_message_technical"] = tech_combined
+            client["failure_code"] = code
             break
     payload["progress"] = progress
-    return user_es, tech_combined
+    return user_es, tech_combined, code
 
 
 SCHEDULER_OPERATION_PREFIX = "scheduler_"
@@ -392,6 +393,7 @@ def run_playwright_pipeline_job(
             "user_es": None,
             "tech": None,
             "error_type": None,
+            "code": None,
         }
 
         def on_taxpayer_start(taxpayer: Taxpayer) -> None:
@@ -418,7 +420,7 @@ def run_playwright_pipeline_job(
                 service_open_method=result.service_open_method,
             )
             if result.outcome != "done":
-                user_es, tech_combined = _persist_taxpayer_failure(
+                user_es, tech_combined, code = _persist_taxpayer_failure(
                     extraction_job_id,
                     payload,
                     taxpayer_id=result.taxpayer_id,
@@ -435,6 +437,7 @@ def run_playwright_pipeline_job(
                 last_taxpayer_failure["error_type"] = (
                     result.failure_error_type or "unknown"
                 )
+                last_taxpayer_failure["code"] = code
                 _update_job(
                     extraction_job_id,
                     payload=payload,
@@ -442,6 +445,7 @@ def run_playwright_pipeline_job(
                     failure_message_user=user_es,
                     failure_message_technical=tech_combined,
                     failure_error_type=last_taxpayer_failure["error_type"],
+                    failure_code=code,
                 )
 
         def on_phase(taxpayer: Taxpayer, phase: ExtractionPhase, message: str) -> None:
@@ -482,6 +486,7 @@ def run_playwright_pipeline_job(
             job_failure_tech: str | None = None
             job_failure_phase: str | None = None
             job_failure_error_type: str | None = None
+            job_failure_code: str | None = None
             if result.taxpayers_total > 0:
                 if (
                     result.taxpayers_ok == 0
@@ -497,6 +502,7 @@ def run_playwright_pipeline_job(
                     job_failure_tech = last_taxpayer_failure["tech"]
                     job_failure_phase = last_taxpayer_failure["phase"]
                     job_failure_error_type = last_taxpayer_failure["error_type"]
+                    job_failure_code = last_taxpayer_failure["code"]
                 elif result.taxpayers_partial > 0 or (
                     result.taxpayers_ok > 0 and result.taxpayers_error > 0
                 ):
@@ -509,6 +515,7 @@ def run_playwright_pipeline_job(
                     job_failure_tech = last_taxpayer_failure["tech"]
                     job_failure_phase = last_taxpayer_failure["phase"]
                     job_failure_error_type = last_taxpayer_failure["error_type"]
+                    job_failure_code = last_taxpayer_failure["code"]
 
             _update_job(
                 extraction_job_id,
@@ -520,6 +527,7 @@ def run_playwright_pipeline_job(
                 failure_message_user=job_failure_user,
                 failure_message_technical=job_failure_tech,
                 failure_error_type=job_failure_error_type,
+                failure_code=job_failure_code,
             )
             # Hook scheduler: actualiza Taxpayer.scheduler_ultimo_ok/error
             # solo cuando la operation arranca con "scheduler_".
@@ -561,7 +569,7 @@ def run_playwright_pipeline_job(
             )
         except Exception as exc:
             db.session.rollback()
-            user_es, tech_en = map_failure(None, "unknown", False)
+            user_es, tech_en, code = map_failure(None, "unknown", False)
             tech_combined = _truncate(f"{tech_en} | {exc}")
             _update_job(
                 extraction_job_id,
@@ -572,6 +580,7 @@ def run_playwright_pipeline_job(
                 failure_message_user=user_es,
                 failure_message_technical=tech_combined,
                 failure_error_type="unknown",
+                failure_code=code,
             )
             # Hook scheduler: registrar la falla en el Taxpayer si corresponde.
             try:

@@ -14,6 +14,7 @@ from .stats import stats_bp
 from .taxpayers import taxpayers_bp
 from .padron import padron_bp
 from .users import users_bp
+from .extracciones import extracciones_bp
 from .wslpg_mvp import wslpg_mvp_bp
 
 
@@ -33,3 +34,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(users_bp, url_prefix="/api")
     app.register_blueprint(integration_bp, url_prefix="/api")
     app.register_blueprint(scheduler_bp, url_prefix="/api")
+    app.register_blueprint(extracciones_bp, url_prefix="/api")
