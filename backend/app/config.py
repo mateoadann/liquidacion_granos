@@ -28,6 +28,10 @@ class Config:
     # are marked failed. Default 30 min; generous to avoid killing long jobs.
     STALE_JOB_TIMEOUT_SECONDS = int(os.getenv("STALE_JOB_TIMEOUT_SECONDS", "1800"))
 
+    # Screenshot retention — screenshots older than this are deleted on each
+    # scheduler tick. Default 3 days; keeps storage bounded.
+    SCREENSHOT_RETENTION_DAYS = int(os.getenv("SCREENSHOT_RETENTION_DAYS", "3"))
+
     # Playwright per-action timeout (ms). Controls waits for selectors, clicks,
     # and table reads. Default 30 s is appropriate for most interactive steps.
     PLAYWRIGHT_TIMEOUT_MS = int(os.getenv("PLAYWRIGHT_TIMEOUT_MS", "30000"))
