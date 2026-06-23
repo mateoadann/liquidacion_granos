@@ -1,5 +1,9 @@
+from datetime import timedelta
+
 from app.extensions import db
 from app.models import Taxpayer, ExtractionJob
+from app.services.scheduler_service import reactivar_pausados_por_auth
+from app.time_utils import now_cordoba_naive
 from app.workers.playwright_jobs import _actualizar_scheduler_status
 
 
@@ -62,3 +66,51 @@ def test_manual_auth_failed_does_not_block(app):
         # operation no-scheduler: el hook retorna temprano, no toca el scheduler
         assert t.scheduler_activo is True
         assert t.scheduler_pausado_por_auth is False
+
+
+def test_reactivates_when_clave_updated_after_error(app):
+    ahora = now_cordoba_naive()
+    tid = _mk_taxpayer(
+        app,
+        scheduler_activo=False,
+        scheduler_pausado_por_auth=True,
+        scheduler_ultimo_error_en=ahora - timedelta(days=2),
+        clave_fiscal_actualizada_en=ahora,  # clave actualizada DESPUÉS del error
+    )
+    with app.app_context():
+        n = reactivar_pausados_por_auth()
+        t = Taxpayer.query.get(tid)
+        assert n == 1
+        assert t.scheduler_activo is True
+        assert t.scheduler_pausado_por_auth is False
+
+
+def test_no_reactivate_when_clave_not_updated(app):
+    ahora = now_cordoba_naive()
+    tid = _mk_taxpayer(
+        app,
+        scheduler_activo=False,
+        scheduler_pausado_por_auth=True,
+        scheduler_ultimo_error_en=ahora,
+        clave_fiscal_actualizada_en=ahora - timedelta(days=2),  # clave vieja
+    )
+    with app.app_context():
+        reactivar_pausados_por_auth()
+        t = Taxpayer.query.get(tid)
+        assert t.scheduler_activo is False
+        assert t.scheduler_pausado_por_auth is True
+
+
+def test_no_reactivate_manual_pause(app):
+    ahora = now_cordoba_naive()
+    tid = _mk_taxpayer(
+        app,
+        scheduler_activo=False,
+        scheduler_pausado_por_auth=False,  # pausa MANUAL
+        scheduler_ultimo_error_en=ahora - timedelta(days=2),
+        clave_fiscal_actualizada_en=ahora,
+    )
+    with app.app_context():
+        reactivar_pausados_por_auth()
+        t = Taxpayer.query.get(tid)
+        assert t.scheduler_activo is False  # no se toca
