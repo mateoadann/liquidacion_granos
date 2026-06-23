@@ -143,19 +143,20 @@ def test_log_search_service_diagnostics_writes_screenshot_to_configured_path(
 
     login_page.locator.side_effect = locator_side_effect
 
-    def fake_screenshot(path: str, full_page: bool):
-        # Simula que Playwright crea el archivo
-        with open(path, "wb") as fh:
-            fh.write(b"PNG")
+    def fake_screenshot(full_page: bool):
+        # screenshot() sin path devuelve los bytes; el código los escribe a disco.
+        return b"PNG"
 
     login_page.screenshot.side_effect = fake_screenshot
 
-    client._log_search_service_diagnostics(login_page, visible_services=["LPG"])
+    result = client._log_search_service_diagnostics(login_page, visible_services=["LPG"])
 
     files = list(tmp_path.iterdir())
     assert len(files) == 1
     assert files[0].name.startswith("search_service_fail_")
     assert files[0].name.endswith(".png")
+    # El screenshot también se retorna como bytes (para persistirlo en DB).
+    assert result == b"PNG"
 
 
 def test_log_search_service_diagnostics_swallows_screenshot_errors(
