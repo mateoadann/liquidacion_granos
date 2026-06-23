@@ -18,6 +18,7 @@ class ExtractionJob(db.Model):
     failure_message_user = db.Column(db.Text, nullable=True)
     failure_message_technical = db.Column(db.Text, nullable=True)
     failure_error_type = db.Column(db.String(64), nullable=True)
+    failure_code = db.Column(db.String(40), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=now_cordoba_naive)
     started_at = db.Column(db.DateTime, nullable=True)
     finished_at = db.Column(db.DateTime, nullable=True)
