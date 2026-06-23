@@ -195,17 +195,28 @@ def _persist_job_screenshot(
     png_bytes: bytes | None,
     fase: str | None,
 ) -> None:
-    """Crea un JobScreenshot (base64) si hay bytes. No-op si png_bytes es None."""
+    """Crea un JobScreenshot (base64) si hay bytes. No-op si png_bytes es None.
+
+    Best-effort: el screenshot es dato auxiliar. Si falla al guardarse, se loguea
+    y se hace rollback, pero NUNCA propaga la excepción — un problema con la
+    imagen no debe pisar el resultado del job que ya quedó persistido.
+    """
     if not png_bytes:
         return
-    shot = JobScreenshot(
-        extraction_job_id=extraction_job_id,
-        taxpayer_id=taxpayer_id,
-        image_base64=base64.b64encode(png_bytes).decode("ascii"),
-        fase=fase,
-    )
-    db.session.add(shot)
-    db.session.commit()
+    try:
+        shot = JobScreenshot(
+            extraction_job_id=extraction_job_id,
+            taxpayer_id=taxpayer_id,
+            image_base64=base64.b64encode(png_bytes).decode("ascii"),
+            fase=fase,
+        )
+        db.session.add(shot)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception(
+            "JOB_SCREENSHOT_PERSIST_FAILED | job_id=%s", extraction_job_id
+        )
 
 
 SCHEDULER_OPERATION_PREFIX = "scheduler_"
