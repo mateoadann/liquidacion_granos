@@ -64,9 +64,9 @@ from app.models import Taxpayer, ExtractionJob
 from app.time_utils import now_cordoba_naive
 
 
-def _mk_taxpayer(app, razon, activo=True):
+def _mk_taxpayer(app, empresa, activo=True):
     with app.app_context():
-        t = Taxpayer(razon_social=razon, cuit="20111111110", activo=activo)
+        t = Taxpayer(empresa=empresa, cuit="20111111110", activo=activo)
         db.session.add(t)
         db.session.commit()
         return t.id
@@ -96,6 +96,8 @@ def test_compute_health_green_for_recent_success(app):
     row = next(c for c in out["clientes"] if c["taxpayer_id"] == tid)
     assert row["estado"] == "verde"
     assert row["dias_sin_exito"] == 0
+    assert row["empresa"] == "Cliente Verde"
+    assert "cuit" not in row
 
 
 def test_compute_health_red_for_auth_failed(app):

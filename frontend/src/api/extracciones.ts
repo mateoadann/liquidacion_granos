@@ -4,8 +4,7 @@ export type ExtractionHealthEstado = "verde" | "amarillo" | "rojo" | "gris";
 
 export interface ClienteSalud {
   taxpayer_id: number;
-  razon_social: string | null;
-  cuit: string | null;
+  empresa: string | null;
   estado: ExtractionHealthEstado;
   dias_sin_exito: number | null;
   ultima_ok: string | null;

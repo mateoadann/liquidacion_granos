@@ -84,7 +84,6 @@ export function ExtractionHealthPage() {
                 <TableRow>
                   <TableCell header>Estado</TableCell>
                   <TableCell header>Empresa</TableCell>
-                  <TableCell header>CUIT</TableCell>
                   <TableCell header>Días sin éxito</TableCell>
                   <TableCell header>Causa</TableCell>
                   <TableCell header>Última extracción OK</TableCell>
@@ -98,8 +97,7 @@ export function ExtractionHealthPage() {
                         {ESTADO_LABEL[c.estado]}
                       </Badge>
                     </TableCell>
-                    <TableCell>{c.razon_social ?? "—"}</TableCell>
-                    <TableCell>{c.cuit ?? "—"}</TableCell>
+                    <TableCell>{c.empresa ?? "—"}</TableCell>
                     <TableCell>
                       {c.dias_sin_exito === null ? "Nunca" : c.dias_sin_exito}
                     </TableCell>

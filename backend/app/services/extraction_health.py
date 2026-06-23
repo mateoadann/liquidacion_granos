@@ -79,8 +79,7 @@ def compute_health() -> dict:
         clientes.append(
             {
                 "taxpayer_id": t.id,
-                "razon_social": t.razon_social,
-                "cuit": t.cuit,
+                "empresa": t.empresa,
                 "estado": estado,
                 "dias_sin_exito": dias,
                 "ultima_ok": ultima_ok.date().isoformat() if ultima_ok else None,
