@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any
 
 from .. import create_app
 from ..extensions import db
-from ..models import ExtractionJob, Taxpayer
+from ..models import ExtractionJob, JobScreenshot, Taxpayer
 from ..queue import get_queue
 from ..services.extraction_failure_mapper import (
     _truncate,
@@ -185,6 +186,26 @@ def _persist_taxpayer_failure(
             break
     payload["progress"] = progress
     return user_es, tech_combined, code
+
+
+def _persist_job_screenshot(
+    extraction_job_id: int,
+    *,
+    taxpayer_id: int | None,
+    png_bytes: bytes | None,
+    fase: str | None,
+) -> None:
+    """Crea un JobScreenshot (base64) si hay bytes. No-op si png_bytes es None."""
+    if not png_bytes:
+        return
+    shot = JobScreenshot(
+        extraction_job_id=extraction_job_id,
+        taxpayer_id=taxpayer_id,
+        image_base64=base64.b64encode(png_bytes).decode("ascii"),
+        fase=fase,
+    )
+    db.session.add(shot)
+    db.session.commit()
 
 
 SCHEDULER_OPERATION_PREFIX = "scheduler_"
@@ -461,6 +482,12 @@ def run_playwright_pipeline_job(
                     failure_message_technical=tech_combined,
                     failure_error_type=last_taxpayer_failure["error_type"],
                     failure_code=code,
+                )
+                _persist_job_screenshot(
+                    extraction_job_id,
+                    taxpayer_id=result.taxpayer_id,
+                    png_bytes=result.failure_screenshot_png,
+                    fase=result.failure_phase.value if result.failure_phase else None,
                 )
 
         def on_phase(taxpayer: Taxpayer, phase: ExtractionPhase, message: str) -> None:
