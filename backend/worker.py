@@ -22,7 +22,7 @@ def main() -> None:
         queues = [Queue(name, connection=connection) for name in queue_names]
         logger.info("Worker start | queues=%s redis_url=%s", queue_names, redis_url)
         worker = Worker(queues, connection=connection)
-        worker.work(with_scheduler=False)
+        worker.work(with_scheduler=True)
 
 
 if __name__ == "__main__":
