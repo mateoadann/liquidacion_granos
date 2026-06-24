@@ -679,6 +679,8 @@ Estos cambios viven solo en el VPS (`docker-compose.prod.yml` no está versionad
 4. Deploy normal (`deploy.sh`) — rebuildeará la imagen con xvfb/xauth (Task 6) y recreará los containers.
 5. **Verificación post-deploy primera noche:** monitorear `docker stats` durante la ventana 03:00–06:00 (RSS del worker < 800 MB, swap estable) y confirmar en logs `SCHEDULER_DISPARO | ... jitter_delay_s=N` con delays variados.
 
+6. **CRÍTICO — worker singleton (review final):** el modo headed duplica la RAM por job (~715 MB vs 341 MB). El invariante de "1 extracción concurrente" lo garantiza tener **un solo worker** sobre la cola `playwright`. NO levantar un segundo worker sobre esa cola ni usar `--burst` paralelo: 2 browsers headed = ~1.43 GB + overhead, peligrosamente cerca del límite del VPS (3.7 GB con ~600 MB de swap ya en uso). Mantener `worker` como servicio singleton en `docker-compose.prod.yml`.
+
 ## Self-review
 
 - **Spec coverage:** Punto 2 headed → Tasks 1+6+deploy; UA coherente → Task 2; fallback → Task 3; Punto 3 jitter → Task 5; RQ scheduler obligatorio → Task 4; config docs → Task 7; invariante de concurrencia → respetado (worker único, sin paralelización). ✓
