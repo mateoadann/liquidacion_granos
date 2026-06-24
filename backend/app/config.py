@@ -40,6 +40,10 @@ class Config:
     # AFIP landing and LPG direct URL which can be slow at 3 AM. Default 60 s.
     PLAYWRIGHT_NAV_LOGIN_TIMEOUT_MS = int(os.getenv("PLAYWRIGHT_NAV_LOGIN_TIMEOUT_MS", "60000"))
 
+    # Playwright headless mode. Set to false to run browser in headed mode for debugging.
+    # Default true (headless).
+    PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "true").strip().lower() not in ("false", "0", "no")
+
     # Rate limiting
     RATELIMIT_STORAGE_URI = REDIS_URL
     RATELIMIT_STRATEGY = "fixed-window"
