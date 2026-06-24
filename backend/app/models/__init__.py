@@ -6,6 +6,7 @@ from .pdf_cache import PdfCache
 from .user import User
 from .wslpg_parameter import WslpgParameter
 from .coe_estado import CoeEstado
+from .job_screenshot import JobScreenshot
 
 __all__ = [
     "Taxpayer",
@@ -16,4 +17,5 @@ __all__ = [
     "User",
     "WslpgParameter",
     "CoeEstado",
+    "JobScreenshot",
 ]

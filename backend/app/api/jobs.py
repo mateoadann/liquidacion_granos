@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+import io
+import base64
+
+from flask import Blueprint, jsonify, request, send_file
 
 from ..extensions import db
-from ..models import ExtractionJob, Taxpayer
+from ..models import ExtractionJob, JobScreenshot, Taxpayer
 from ..middleware import require_auth
 from ..time_utils import now_cordoba_naive
 
@@ -123,7 +126,27 @@ def create_job():
 @require_auth
 def get_job(job_id: int):
     item = ExtractionJob.query.get_or_404(job_id)
-    return jsonify(_serialize_job(item))
+    data = _serialize_job(item)
+    data["tiene_screenshot"] = (
+        JobScreenshot.query.filter_by(extraction_job_id=item.id).first() is not None
+    )
+    return jsonify(data)
+
+
+@jobs_bp.get("/jobs/<int:job_id>/screenshot")
+@require_auth
+def get_job_screenshot(job_id: int):
+    shot = (
+        JobScreenshot.query.filter_by(extraction_job_id=job_id)
+        .order_by(JobScreenshot.id.desc())
+        .first()
+    )
+    if shot is None:
+        return {"error": "No hay captura para este job."}, 404
+    return send_file(
+        io.BytesIO(base64.b64decode(shot.image_base64)),
+        mimetype="image/png",
+    )
 
 
 @jobs_bp.patch("/jobs/<int:job_id>")

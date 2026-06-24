@@ -21,6 +21,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
     failure_message_user: null,
     failure_message_technical: null,
     failure_error_type: null,
+    tiene_screenshot: false,
     ...overrides,
   };
 }
