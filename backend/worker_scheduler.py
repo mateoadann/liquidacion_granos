@@ -14,6 +14,7 @@ import os
 import time
 
 from app import create_app
+from app.extensions import db
 from app.services.scheduler_service import reconcile_stale_jobs, tick_scheduler
 from app.services.screenshot_service import purge_old_screenshots
 
@@ -38,16 +39,22 @@ def main() -> None:
                 else:
                     logger.debug("tick vacío (evaluados=%d)", resumen["evaluados"])
             except Exception:
+                # Sin rollback, una sesión con transacción abortada (ej: migración
+                # pendiente) envenena TODOS los ticks siguientes con
+                # InFailedSqlTransaction porque el app_context se crea una sola vez.
+                db.session.rollback()
                 logger.exception("scheduler tick falló")
             try:
                 reconcile_stale_jobs()
             except Exception:
+                db.session.rollback()
                 logger.exception("reconcile_stale_jobs falló")
             try:
                 from flask import current_app
                 # ponytail: corre cada tick; el DELETE por fecha es barato (índice en created_at) e idempotente
                 purge_old_screenshots(current_app.config["SCREENSHOT_RETENTION_DAYS"])
             except Exception:
+                db.session.rollback()
                 logger.exception("purge_old_screenshots falló")
             time.sleep(INTERVAL_SECONDS)
 
