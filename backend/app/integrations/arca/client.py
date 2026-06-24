@@ -233,21 +233,18 @@ class ArcaWslpgClient:
         )
 
     def _resolve_ws_class(self) -> type:
-        try:
-            from arca_arg.webservice import ArcaWebService
+        errors: list[str] = []
+        for module_path in ("arca_arg.webservice", "arca_arg"):
+            try:
+                module = __import__(module_path, fromlist=["ArcaWebService"])
+                return module.ArcaWebService
+            except Exception as exc:  # noqa: BLE001 - se reporta la causa real
+                errors.append(f"{module_path}: {type(exc).__name__}: {exc}")
 
-            return ArcaWebService
-        except Exception:
-            pass
-
-        try:
-            from arca_arg import ArcaWebService  # type: ignore
-
-            return ArcaWebService
-        except Exception as exc:
-            raise ArcaIntegrationError(
-                "No se pudo importar ArcaWebService desde arca_arg."
-            ) from exc
+        raise ArcaIntegrationError(
+            "No se pudo importar ArcaWebService desde arca_arg. "
+            + " | ".join(errors)
+        )
 
     def _configure_arca_settings_module(self) -> None:
         """

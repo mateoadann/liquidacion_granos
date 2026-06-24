@@ -10,7 +10,9 @@ rq>=1.16,<2
 cryptography>=42.0,<45
 pytest>=8.0,<9
 pytest-mock>=3.14,<4
-arca-arg
+arca-arg==1.0.1
+zeep>=4.2,<5
+pytz>=2024.1  # dependencia transitiva de arca_arg.auth, no declarada por la librería
 playwright>=1.52,<2
 openpyxl>=3.1,<4
 PyJWT>=2.8,<3
