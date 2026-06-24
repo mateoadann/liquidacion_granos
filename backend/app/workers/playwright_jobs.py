@@ -4,6 +4,8 @@ import base64
 import logging
 from typing import Any
 
+from flask import current_app
+
 from .. import create_app
 from ..extensions import db
 from ..models import ExtractionJob, JobScreenshot, Taxpayer
@@ -515,7 +517,7 @@ def run_playwright_pipeline_job(
                 fecha_desde=fecha_desde,
                 fecha_hasta=fecha_hasta,
                 taxpayer_ids=taxpayer_ids,
-                headless=True,
+                headless=current_app.config["PLAYWRIGHT_HEADLESS"],
                 timeout_ms=timeout_ms,
                 nav_login_timeout_ms=nav_login_timeout_ms,
                 type_delay_ms=type_delay_ms,
