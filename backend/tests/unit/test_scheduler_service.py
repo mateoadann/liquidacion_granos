@@ -70,7 +70,7 @@ def _patch_queue():
         # `name` debe ser string para que sea JSON-serializable cuando el
         # servicio lo persiste en job.payload.
         fake_queue.name = "playwright"
-        fake_queue.enqueue.return_value = MagicMock(id="rq-job-fake")
+        fake_queue.enqueue_in.return_value = MagicMock(id="rq-job-fake")
         mock_get_queue.return_value = fake_queue
         yield mock_get_queue
 
@@ -141,7 +141,7 @@ def test_tick_dispara_si_dia_y_hora_matchean(app, _patch_queue):
             res = tick_scheduler()
         assert res["disparados"] == [tp.id]
         assert res["evaluados"] == 1
-        _patch_queue.return_value.enqueue.assert_called_once()
+        _patch_queue.return_value.enqueue_in.assert_called_once()
 
 
 def test_tick_no_dispara_si_ultimo_ok_fue_hace_menos_de_1h(app, _patch_queue):
@@ -152,7 +152,7 @@ def test_tick_no_dispara_si_ultimo_ok_fue_hace_menos_de_1h(app, _patch_queue):
             res = tick_scheduler()
         assert res["disparados"] == []
         assert res["evaluados"] == 1
-        _patch_queue.return_value.enqueue.assert_not_called()
+        _patch_queue.return_value.enqueue_in.assert_not_called()
 
 
 def test_tick_dispara_si_ultimo_ok_fue_hace_mas_de_1h(app, _patch_queue):
@@ -162,7 +162,7 @@ def test_tick_dispara_si_ultimo_ok_fue_hace_mas_de_1h(app, _patch_queue):
         with _patch_now(FIXED_NOW_LUN_0900):
             res = tick_scheduler()
         assert res["disparados"] == [tp.id]
-        _patch_queue.return_value.enqueue.assert_called_once()
+        _patch_queue.return_value.enqueue_in.assert_called_once()
 
 
 def test_disparar_extraccion_crea_extraction_job_pending(app):
@@ -185,8 +185,8 @@ def test_disparar_extraccion_encola_en_rq(app, _patch_queue):
 
         _patch_queue.assert_called_with(SCHEDULER_QUEUE_NAME)
         fake_queue = _patch_queue.return_value
-        fake_queue.enqueue.assert_called_once()
-        call_kwargs = fake_queue.enqueue.call_args.kwargs
+        fake_queue.enqueue_in.assert_called_once()
+        call_kwargs = fake_queue.enqueue_in.call_args.kwargs
         # extraction_job_id es agregado por el llamador
         assert call_kwargs["extraction_job_id"] == job.id
         # scheduler_enqueue_kwargs() inyecta todos los kwargs requeridos por
@@ -237,6 +237,7 @@ def test_disparar_extraccion_persiste_payload_completo(app, _patch_queue):
             "headless",
             "queue_name",
             "rq_job_id",
+            "jitter_delay_seconds",
         }
         assert expected_keys.issubset(set(payload.keys())), (
             f"payload missing keys: {expected_keys - set(payload.keys())}"
@@ -263,7 +264,7 @@ def test_disparar_extraccion_usa_dias_extraccion_del_taxpayer(app, _patch_queue)
         _disparar_extraccion(tp)
 
         fake_queue = _patch_queue.return_value
-        call_kwargs = fake_queue.enqueue.call_args.kwargs
+        call_kwargs = fake_queue.enqueue_in.call_args.kwargs
         fmt = "%d/%m/%Y"
         desde = datetime.strptime(call_kwargs["fecha_desde"], fmt).date()
         hasta = datetime.strptime(call_kwargs["fecha_hasta"], fmt).date()
@@ -285,4 +286,4 @@ def test_tick_dispara_uno_por_taxpayer_matcheante(app, _patch_queue):
         assert sorted(res["disparados"]) == sorted([tp1.id, tp2.id])
         # evaluados cuenta solo los con scheduler_activo=True AND activo=True (3)
         assert res["evaluados"] == 3
-        assert _patch_queue.return_value.enqueue.call_count == 2
+        assert _patch_queue.return_value.enqueue_in.call_count == 2

@@ -44,6 +44,10 @@ class Config:
     # Default true (headless).
     PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "true").strip().lower() not in ("false", "0", "no")
 
+    # Scheduler jitter window — extractions are spread across this many seconds
+    # starting at the scheduled hour (03:00). Default 3h = 10800s.
+    SCHEDULER_JITTER_WINDOW_SECONDS = int(os.getenv("SCHEDULER_JITTER_WINDOW_SECONDS", "10800"))
+
     # Rate limiting
     RATELIMIT_STORAGE_URI = REDIS_URL
     RATELIMIT_STRATEGY = "fixed-window"

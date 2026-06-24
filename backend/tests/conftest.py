@@ -30,6 +30,7 @@ class TestConfig:
     CORS_ORIGINS = ["http://localhost:5173"]
     LIQUIDADOR_API_KEY = "test-integration-key"
     LIQUIDADOR_API_ADMIN_TOKEN = "test-admin-token"
+    SCHEDULER_JITTER_WINDOW_SECONDS = 10800
     # No incluir REDIS_URL - se usará fallback en memoria
 
 

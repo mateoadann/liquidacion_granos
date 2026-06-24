@@ -7,6 +7,7 @@ Forma parte del PR5 del plan v2 (§5.1). El worker dedicado que invoca
 from __future__ import annotations
 
 import logging
+import random
 from datetime import timedelta
 from typing import Optional
 
@@ -124,7 +125,10 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
     db.session.commit()
 
     queue = get_queue(SCHEDULER_QUEUE_NAME)
-    rq_job = queue.enqueue(
+    jitter_window = current_app.config["SCHEDULER_JITTER_WINDOW_SECONDS"]
+    delay_segundos = random.randint(0, jitter_window)
+    rq_job = queue.enqueue_in(
+        timedelta(seconds=delay_segundos),
         run_playwright_pipeline_job,
         extraction_job_id=job.id,
         **enqueue_kwargs,
@@ -134,16 +138,18 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
         **(job.payload or {}),
         "queue_name": queue.name,
         "rq_job_id": rq_job.id,
+        "jitter_delay_seconds": delay_segundos,
     }
     db.session.commit()
 
     logger.info(
-        "SCHEDULER_DISPARO | taxpayer_id=%s job_id=%s operation=%s queue=%s rq_job_id=%s",
+        "SCHEDULER_DISPARO | taxpayer_id=%s job_id=%s operation=%s queue=%s rq_job_id=%s jitter_delay_s=%s",
         taxpayer.id,
         job.id,
         SCHEDULER_OPERATION,
         queue.name,
         rq_job.id,
+        delay_segundos,
     )
     return job
 
