@@ -240,6 +240,24 @@ class ArcaLpgPlaywrightClient:
             f"(KHTML, like Gecko) Chrome/{browser_version} Safari/537.36"
         )
 
+    def _launch_browser_with_fallback(self, chromium, *, headless: bool, slow_mo_ms: int):
+        """Lanza el browser. Si headed falla (ej. Xvfb ausente), degrada a
+        headless con warning — headed es mejora de anonimato, no requisito."""
+        try:
+            return chromium.launch(
+                headless=headless, slow_mo=slow_mo_ms, args=self.BROWSER_ARGS
+            )
+        except Exception:
+            if headless:
+                raise
+            logger.warning(
+                "PLAYWRIGHT_HEADED_FALLBACK | headed falló, reintentando headless",
+                exc_info=True,
+            )
+            return chromium.launch(
+                headless=True, slow_mo=slow_mo_ms, args=self.BROWSER_ARGS
+            )
+
     def _with_retry(
         self,
         operation: Callable[[], T],
@@ -352,10 +370,10 @@ class ArcaLpgPlaywrightClient:
             "PLAYWRIGHT_BROWSER_LAUNCH | empresa=%s headless=%s slow_mo_ms=%s",
             request.empresa, request.headless, request.slow_mo_ms,
         )
-        browser = playwright.chromium.launch(
+        browser = self._launch_browser_with_fallback(
+            playwright.chromium,
             headless=request.headless,
-            slow_mo=request.slow_mo_ms,
-            args=self.BROWSER_ARGS,
+            slow_mo_ms=request.slow_mo_ms,
         )
         user_agent = self._build_user_agent(browser.version)
         context = browser.new_context(
