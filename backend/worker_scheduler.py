@@ -15,6 +15,7 @@ import time
 
 from app import create_app
 from app.services.scheduler_service import reconcile_stale_jobs, tick_scheduler
+from app.services.screenshot_service import purge_old_screenshots
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -42,6 +43,12 @@ def main() -> None:
                 reconcile_stale_jobs()
             except Exception:
                 logger.exception("reconcile_stale_jobs falló")
+            try:
+                from flask import current_app
+                # ponytail: corre cada tick; el DELETE por fecha es barato (índice en created_at) e idempotente
+                purge_old_screenshots(current_app.config["SCREENSHOT_RETENTION_DAYS"])
+            except Exception:
+                logger.exception("purge_old_screenshots falló")
             time.sleep(INTERVAL_SECONDS)
 
 

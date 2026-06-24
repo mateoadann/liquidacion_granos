@@ -153,6 +153,7 @@ class ArcaLpgPlaywrightClient:
         # Tracks the last phase emitted so that generic exception handlers can
         # fall back to it when a PlaywrightFlowError carries no phase.
         self._current_phase: ExtractionPhase | None = None
+        self._last_failure_screenshot: bytes | None = None
 
     def _emit_phase(self, phase: ExtractionPhase) -> None:
         # Always record the phase before invoking the callback so that any
@@ -914,7 +915,7 @@ class ArcaLpgPlaywrightClient:
 
     def _log_search_service_diagnostics(
         self, login_page: Page, visible_services: list[str]
-    ) -> None:
+    ) -> bytes | None:
         """Captura estado del DOM + screenshot cuando falla SEARCH_SERVICE.
 
         Sin screenshot, los fallos quedan como timing transitorio inexplicable.
@@ -972,6 +973,7 @@ class ArcaLpgPlaywrightClient:
         except Exception:
             body_excerpt = "error_reading_body"
 
+        screenshot_bytes: bytes | None = None
         screenshot_path = ""
         try:
             debug_dir = os.getenv("PLAYWRIGHT_DEBUG_PATH", "/tmp/playwright_debug")
@@ -980,7 +982,9 @@ class ArcaLpgPlaywrightClient:
             screenshot_path = os.path.join(
                 debug_dir, f"search_service_fail_{timestamp}.png"
             )
-            login_page.screenshot(path=screenshot_path, full_page=True)
+            screenshot_bytes = login_page.screenshot(full_page=True)
+            with open(screenshot_path, "wb") as fh:
+                fh.write(screenshot_bytes)
         except Exception as exc:
             screenshot_path = f"screenshot_failed:{exc.__class__.__name__}"
 
@@ -996,8 +1000,10 @@ class ArcaLpgPlaywrightClient:
             body_excerpt,
             screenshot_path,
         )
+        self._last_failure_screenshot = screenshot_bytes
+        return screenshot_bytes
 
-    def _log_login_diagnostics(self, login_page: Page, empresa: str) -> None:
+    def _log_login_diagnostics(self, login_page: Page, empresa: str) -> bytes | None:
         """Captura estado del DOM + screenshot cuando falla la espera del campo de clave.
 
         El campo "TU CLAVE" no aparece para algunos clientes (p. ej. AFIP exige
@@ -1027,13 +1033,16 @@ class ArcaLpgPlaywrightClient:
         except Exception:
             input_names = ["error_reading_inputs"]
 
+        screenshot_bytes: bytes | None = None
         screenshot_path = ""
         try:
             debug_dir = os.getenv("PLAYWRIGHT_DEBUG_PATH", "/tmp/playwright_debug")
             os.makedirs(debug_dir, exist_ok=True)
             timestamp = now_cordoba_naive().strftime("%Y%m%d_%H%M%S")
             screenshot_path = os.path.join(debug_dir, f"login_fail_{timestamp}.png")
-            login_page.screenshot(path=screenshot_path, full_page=True)
+            screenshot_bytes = login_page.screenshot(full_page=True)
+            with open(screenshot_path, "wb") as fh:
+                fh.write(screenshot_bytes)
         except Exception as exc:
             screenshot_path = f"screenshot_failed:{exc.__class__.__name__}"
 
@@ -1045,6 +1054,8 @@ class ArcaLpgPlaywrightClient:
             body_excerpt,
             screenshot_path,
         )
+        self._last_failure_screenshot = screenshot_bytes
+        return screenshot_bytes
 
     def _select_empresa(self, service_page: Page, empresa_input: str, timeout_ms: int) -> None:
         logger.info("PLAYWRIGHT_SELECT_EMPRESA_START | empresa=%s", empresa_input)

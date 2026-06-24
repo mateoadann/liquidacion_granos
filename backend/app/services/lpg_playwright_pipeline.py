@@ -57,6 +57,7 @@ class TaxpayerPipelineResult:
     failure_phase: ExtractionPhase | None = None
     failure_error_type: str | None = None
     failure_dropdown_clicked: bool = False
+    failure_screenshot_png: bytes | None = None
     # Which path opened the LPG service for this run: "search_box" | "direct_url".
     # None means the extraction failed before reaching the service-open step.
     service_open_method: str | None = None
@@ -64,6 +65,10 @@ class TaxpayerPipelineResult:
 
 def _taxpayer_result_to_dict(item: TaxpayerPipelineResult) -> dict[str, Any]:
     data = asdict(item)
+    # failure_screenshot_png son bytes crudos: no son JSON-serializables y no
+    # van en el result/payload del job (viajan por el objeto al worker, que los
+    # persiste aparte en job_screenshot). Se excluyen del dict serializable.
+    data.pop("failure_screenshot_png", None)
     # Backward-compat: frontend (PlaywrightTaxpayerRunResult) still consumes "ok"
     # as a boolean for legacy result rendering. Derive it from outcome.
     data["ok"] = item.outcome == "done"
@@ -298,6 +303,7 @@ class LpgPlaywrightPipelineService:
             base.failure_phase = exc.phase if exc.phase is not None else client._current_phase
             base.failure_dropdown_clicked = exc.dropdown_clicked
             base.failure_error_type = client._classify_error(exc).error_type
+            base.failure_screenshot_png = getattr(client, "_last_failure_screenshot", None)
             logger.error(
                 "Taxpayer playwright error | id=%s empresa=%s error=%s phase=%s error_type=%s",
                 taxpayer.id,
@@ -315,6 +321,7 @@ class LpgPlaywrightPipelineService:
             base.failure_phase = client._current_phase
             base.failure_dropdown_clicked = client._search_dropdown_clicked
             base.failure_error_type = client._classify_error(exc).error_type
+            base.failure_screenshot_png = getattr(client, "_last_failure_screenshot", None)
             logger.exception(
                 "Taxpayer playwright unexpected error | id=%s empresa=%s phase=%s",
                 taxpayer.id,

@@ -31,6 +31,7 @@ export interface Job {
   failure_message_user: string | null;
   failure_message_technical: string | null;
   failure_error_type: string | null;
+  tiene_screenshot: boolean;
 }
 
 export interface JobsListResponse {
@@ -127,4 +128,12 @@ export async function getJob(id: number): Promise<Job> {
     throw new Error(data?.error ?? "Error al obtener job");
   }
   return data;
+}
+
+export async function downloadJobScreenshot(id: number): Promise<Blob> {
+  const res = await fetchWithAuth(`/jobs/${id}/screenshot`, { method: "GET" });
+  if (!res.ok) {
+    throw new Error("No se pudo obtener la captura.");
+  }
+  return res.blob();
 }
