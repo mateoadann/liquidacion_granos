@@ -173,10 +173,6 @@ class ArcaLpgPlaywrightClient:
         "--no-default-browser-check",
         "--disable-infobars",
     ]
-    DEFAULT_USER_AGENT = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
     DEFAULT_VIEWPORT = {"width": 1366, "height": 768}
     WEBDRIVER_HIDE_SCRIPT = """
         Object.defineProperty(navigator, 'webdriver', {
@@ -233,6 +229,15 @@ class ArcaLpgPlaywrightClient:
         # Error desconocido - no reintentar por seguridad
         return ErrorClassification(
             is_transient=False, error_type="unknown", message=str(error)
+        )
+
+    def _build_user_agent(self, browser_version: str) -> str:
+        """Construye un UA coherente con el SO real (Linux) y la versión
+        real de Chromium en runtime, para evitar la contradicción
+        SO-declarado vs SO-real que delata al robot."""
+        return (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{browser_version} Safari/537.36"
         )
 
     def _with_retry(
@@ -352,8 +357,9 @@ class ArcaLpgPlaywrightClient:
             slow_mo=request.slow_mo_ms,
             args=self.BROWSER_ARGS,
         )
+        user_agent = self._build_user_agent(browser.version)
         context = browser.new_context(
-            user_agent=self.DEFAULT_USER_AGENT,
+            user_agent=user_agent,
             viewport=self.DEFAULT_VIEWPORT,
             locale="es-AR",
             timezone_id="America/Argentina/Buenos_Aires",
