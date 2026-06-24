@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from ..extensions import db
 from ..models import ExtractionJob, Taxpayer
@@ -141,7 +141,7 @@ def _create_and_enqueue_job_for_taxpayer(
         "humanize_delays": params["humanize_delays"],
         "retry_max_attempts": params["retry_max_attempts"],
         "retry_base_delay_ms": params["retry_base_delay_ms"],
-        "headless": True,
+        "headless": current_app.config["PLAYWRIGHT_HEADLESS"],
     }
     db.session.add(item)
     db.session.commit()

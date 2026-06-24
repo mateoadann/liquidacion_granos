@@ -120,7 +120,7 @@ def _disparar_extraccion(taxpayer: Taxpayer) -> ExtractionJob:
         operation=SCHEDULER_OPERATION,
         status="pending",
     )
-    job.payload = {**enqueue_kwargs, "headless": True}
+    job.payload = {**enqueue_kwargs, "headless": current_app.config["PLAYWRIGHT_HEADLESS"]}
     db.session.add(job)
     db.session.commit()
 
