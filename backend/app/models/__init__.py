@@ -7,6 +7,7 @@ from .user import User
 from .wslpg_parameter import WslpgParameter
 from .coe_estado import CoeEstado
 from .job_screenshot import JobScreenshot
+from .gestion import Gestion
 
 __all__ = [
     "Taxpayer",
@@ -18,4 +19,5 @@ __all__ = [
     "WslpgParameter",
     "CoeEstado",
     "JobScreenshot",
+    "Gestion",
 ]

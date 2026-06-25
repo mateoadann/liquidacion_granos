@@ -1,0 +1,34 @@
+[
+  {
+    "input": {
+      "tipo": "alta_cliente",
+      "cuit_empresa": "30711165378",
+      "identificador": "30708729929"
+    },
+    "gestion_id_esperado": "g_5abe62578f9e401d"
+  },
+  {
+    "input": {
+      "tipo": "mapeo_grano",
+      "cuit_empresa": "30-71116537-8",
+      "identificador": "23"
+    },
+    "gestion_id_esperado": "g_1887e1a81e674712"
+  },
+  {
+    "input": {
+      "tipo": "alta_cuenta",
+      "cuit_empresa": "30711165378",
+      "identificador": "riva"
+    },
+    "gestion_id_esperado": "g_acad26162898090b"
+  },
+  {
+    "input": {
+      "tipo": "alta_proveedor",
+      "cuit_empresa": "30711165378",
+      "identificador": "  20111111112  "
+    },
+    "gestion_id_esperado": "g_0db96da131d580e0"
+  }
+]

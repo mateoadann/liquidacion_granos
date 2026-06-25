@@ -70,6 +70,23 @@ def require_api_key(f: Callable) -> Callable:
     return decorated
 
 
+def require_auth_or_api_key(f: Callable) -> Callable:
+    """Acepta JWT (personal del estudio) O X-API-Key (rpa-holistor).
+
+    Para endpoints read-only que sirven a ambos consumidores. Si viene
+    Authorization: Bearer valida JWT; si no, valida X-API-Key. Cualquiera de
+    las dos alcanza. (SPEC §8.4 + UI §8.6 comparten el listado de gestiones.)
+    """
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if _extract_token_from_header():
+            return require_auth(f)(*args, **kwargs)
+        return require_api_key(f)(*args, **kwargs)
+
+    return decorated
+
+
 def require_admin_token(f: Callable) -> Callable:
     """Decorator que requiere X-Admin-Token valida (timing-safe)."""
 
