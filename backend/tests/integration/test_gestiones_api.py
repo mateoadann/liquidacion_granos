@@ -205,6 +205,49 @@ def test_verificacion_gestion_inexistente_404(client, api_headers):
     assert resp.get_json()["error"] == "gestion_no_encontrada"
 
 
+def test_verificacion_reconfirm_verificada_idempotente_200(client, api_headers):
+    """Re-confirm sobre una gestión ya verificada → 200 no-op, no 409.
+
+    Cubre el re-confirm pass del RPA tras lost-ack (review cross-repo PR #131).
+    """
+    g = _gestion()
+    _post_batch(client, api_headers, [g])
+    from app.services import gestiones_service
+    gestiones_service.marcar_realizada(g["gestion_id"])
+    # Primer confirm: realizada → verificada
+    r1 = client.post(f"{URL}/{g['gestion_id']}/verificacion", json={"resultado": "verificada"}, headers=api_headers)
+    assert r1.status_code == 200
+    # Re-confirm (ACK perdido): ya está verificada → no-op 200
+    r2 = client.post(f"{URL}/{g['gestion_id']}/verificacion", json={"resultado": "verificada"}, headers=api_headers)
+    assert r2.status_code == 200
+    assert r2.get_json() == {"gestion_id": g["gestion_id"], "estado": "verificada"}
+
+
+def test_verificacion_reconfirm_fallida_idempotente_200(client, api_headers):
+    g = _gestion()
+    _post_batch(client, api_headers, [g])
+    from app.services import gestiones_service
+    gestiones_service.marcar_realizada(g["gestion_id"])
+    client.post(f"{URL}/{g['gestion_id']}/verificacion", json={"resultado": "verificacion_fallida"}, headers=api_headers)
+    # Re-confirm fallida: ya está fallida → no-op 200
+    r = client.post(f"{URL}/{g['gestion_id']}/verificacion", json={"resultado": "verificacion_fallida"}, headers=api_headers)
+    assert r.status_code == 200
+    assert r.get_json()["estado"] == "verificacion_fallida"
+
+
+def test_verificacion_verificada_a_fallida_sigue_409(client, api_headers):
+    """El fix idempotente NO debe abrir verificada→fallida (verificada es terminal, §4)."""
+    g = _gestion()
+    _post_batch(client, api_headers, [g])
+    from app.services import gestiones_service
+    gestiones_service.marcar_realizada(g["gestion_id"])
+    client.post(f"{URL}/{g['gestion_id']}/verificacion", json={"resultado": "verificada"}, headers=api_headers)
+    # Intentar moverla a fallida → 409 (terminal)
+    r = client.post(f"{URL}/{g['gestion_id']}/verificacion", json={"resultado": "verificacion_fallida"}, headers=api_headers)
+    assert r.status_code == 409
+    assert r.get_json()["detalle"]["estado_actual"] == "verificada"
+
+
 # ---------------------------------------------------------------------------
 # Re-marca desde fallida (SPEC §4)
 # ---------------------------------------------------------------------------

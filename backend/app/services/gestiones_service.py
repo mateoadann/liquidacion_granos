@@ -158,7 +158,11 @@ def listar(estados: list[str] | None = None, cuits_empresa: list[str] | None = N
 def confirmar_verificacion(gestion_id: str, resultado: str, detalle: str | None = None, verificado_en: str | None = None) -> dict:
     """realizada → verificada | verificacion_fallida (SPEC §8.5).
 
-    Solo válido desde 'realizada'. Otro estado → TransicionInvalidaError.
+    Válido desde 'realizada'. Idempotente: si la gestión ya está en el estado
+    pedido, devuelve 200 no-op (no 409) — cubre el re-confirm pass del RPA
+    cuando el ACK de un confirm previo se perdió por corte de red y reintenta
+    sobre una gestión ya verificada/fallida del lado granos.
+    Desde cualquier otro estado → TransicionInvalidaError.
     """
     if resultado not in ("verificada", "verificacion_fallida"):
         raise ValidacionError("resultado debe ser 'verificada' o 'verificacion_fallida'.")
@@ -166,6 +170,10 @@ def confirmar_verificacion(gestion_id: str, resultado: str, detalle: str | None 
     g = db.session.get(Gestion, gestion_id)
     if g is None:
         raise GestionNoEncontradaError(gestion_id)
+
+    # Idempotencia del re-confirm: mismo estado pedido → no-op.
+    if g.estado == resultado:
+        return {"gestion_id": g.gestion_id, "estado": g.estado}
 
     if g.estado != "realizada":
         raise TransicionInvalidaError(gestion_id, g.estado, resultado)
