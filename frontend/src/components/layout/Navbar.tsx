@@ -52,6 +52,9 @@ export function Navbar() {
             <NavLink to="/coes" className={navLinkClass}>
               COEs
             </NavLink>
+            <NavLink to="/gestiones" className={navLinkClass}>
+              Gestiones
+            </NavLink>
             <NavLink to="/extracciones/salud" className={navLinkClass}>
               Extracciones
             </NavLink>

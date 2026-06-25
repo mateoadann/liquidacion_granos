@@ -5,7 +5,13 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from ..extensions import db
-from ..middleware import require_api_key, require_admin_token
+from ..middleware import (
+    require_api_key,
+    require_admin_token,
+    require_auth,
+    require_auth_or_api_key,
+    get_current_user,
+)
 from ..models import LpgDocument, Taxpayer
 from ..services.coe_estado_service import (
     reportar_cargado,
@@ -19,6 +25,7 @@ from ..services.lpg_document_utils import (
     fecha_liquidacion_as_date,
     fecha_liquidacion_expr,
 )
+from ..services import gestiones_service
 from ..time_utils import now_cordoba_naive
 
 integration_bp = Blueprint("integration", __name__)
@@ -354,3 +361,100 @@ def get_v2_empresas():
             for t in taxpayers
         ],
     }), 200
+
+
+# -----------------------------------------------------------------------
+# Gestiones de datos faltantes (SPEC §8.3-8.5)
+# -----------------------------------------------------------------------
+
+
+@integration_bp.post("/v1/gestiones")
+@require_api_key
+def post_gestiones():
+    """Crear/refrescar gestiones en batch (idempotente). SPEC §8.3."""
+    body = request.get_json(silent=True) or {}
+    gestiones = body.get("gestiones")
+    if not isinstance(gestiones, list):
+        return jsonify({
+            "error": "validacion_fallida",
+            "mensaje": "Campo 'gestiones' debe ser una lista.",
+        }), 422
+
+    try:
+        result = gestiones_service.crear_o_refrescar_batch(gestiones)
+        return jsonify(result), 200
+    except gestiones_service.ValidacionError as e:
+        db.session.rollback()
+        return jsonify({"error": "validacion_fallida", "mensaje": str(e)}), 422
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "interno", "mensaje": str(e)}), 500
+
+
+@integration_bp.get("/v1/gestiones")
+@require_auth_or_api_key
+def get_gestiones():
+    """Listar gestiones con filtros opcionales. SPEC §8.4 (RPA) + UI personal §8.6.
+
+    Read-only: acepta X-API-Key (rpa-holistor) o JWT (personal del estudio).
+    """
+    estados = request.args.getlist("estado") or None
+    cuits = request.args.getlist("cuit_empresa") or None
+    desde = request.args.get("desde")
+    result = gestiones_service.listar(estados=estados, cuits_empresa=cuits, desde=desde)
+    return jsonify(result), 200
+
+
+@integration_bp.post("/v1/gestiones/<gestion_id>/verificacion")
+@require_api_key
+def post_gestion_verificacion(gestion_id):
+    """RPA confirma el resultado de la verificación. SPEC §8.5."""
+    body = request.get_json(silent=True) or {}
+    resultado = body.get("resultado")
+
+    try:
+        result = gestiones_service.confirmar_verificacion(
+            gestion_id,
+            resultado=resultado,
+            detalle=body.get("detalle"),
+            verificado_en=body.get("verificado_en"),
+        )
+        return jsonify(result), 200
+    except gestiones_service.ValidacionError as e:
+        return jsonify({"error": "validacion_fallida", "mensaje": str(e)}), 422
+    except gestiones_service.GestionNoEncontradaError as e:
+        return jsonify({"error": "gestion_no_encontrada", "mensaje": str(e)}), 404
+    except gestiones_service.TransicionInvalidaError as e:
+        return jsonify({
+            "error": "transicion_invalida",
+            "mensaje": str(e),
+            "detalle": {"estado_actual": e.estado_actual},
+        }), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "interno", "mensaje": str(e)}), 500
+
+
+@integration_bp.post("/v1/gestiones/<gestion_id>/realizada")
+@require_auth
+def post_gestion_realizada(gestion_id):
+    """El personal del estudio marca una gestión como hecha (SPEC §8.6).
+
+    pendiente | verificacion_fallida → realizada. Usa la sesión JWT (no API-Key):
+    es la UI del personal, no el contrato con rpa-holistor.
+    """
+    usuario = (get_current_user() or {}).get("username")
+    try:
+        result = gestiones_service.marcar_realizada(gestion_id, usuario=usuario)
+        return jsonify(result), 200
+    except gestiones_service.GestionNoEncontradaError as e:
+        return jsonify({"error": "gestion_no_encontrada", "mensaje": str(e)}), 404
+    except gestiones_service.TransicionInvalidaError as e:
+        return jsonify({
+            "error": "transicion_invalida",
+            "mensaje": str(e),
+            "detalle": {"estado_actual": e.estado_actual},
+        }), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "interno", "mensaje": str(e)}), 500
