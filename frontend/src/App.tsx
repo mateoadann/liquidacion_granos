@@ -9,6 +9,7 @@ import { ClientEditPage } from "./pages/ClientEditPage";
 import { ClientCertificatesPage } from "./pages/ClientCertificatesPage";
 import { CoesListPage } from "./pages/CoesListPage";
 import { CoeDetailPage } from "./pages/CoeDetailPage";
+import { GestionesListPage } from "./pages/GestionesListPage";
 import { ExtractionsListPage } from "./pages/ExtractionsListPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { UsersListPage } from "./pages/UsersListPage";
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/clientes/:id/certificados" element={<Layout><ClientCertificatesPage /></Layout>} />
             <Route path="/coes" element={<Layout><CoesListPage /></Layout>} />
             <Route path="/coes/:id" element={<Layout><CoeDetailPage /></Layout>} />
+            <Route path="/gestiones" element={<Layout><GestionesListPage /></Layout>} />
             <Route path="/extracciones" element={<Layout><ExtractionsListPage /></Layout>} />
             <Route path="/extracciones/salud" element={<Layout><ExtractionHealthPage /></Layout>} />
           </Route>
