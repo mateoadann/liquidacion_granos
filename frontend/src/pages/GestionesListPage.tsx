@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { PageHeader } from "../components/layout";
 import {
@@ -42,6 +43,27 @@ function EstadoBadge({ estado }: { estado: GestionEstado }) {
     <Badge variant={meta.variant} className="whitespace-nowrap">
       {meta.label}
     </Badge>
+  );
+}
+
+// Cada COE (14 díg.) linkea a la lista de COEs filtrada por ese número.
+// No usamos /coes/<coe> porque esa ruta resuelve por id interno, no por número de COE.
+function CoesCell({ coes }: { coes: string[] }) {
+  if (coes.length === 0) {
+    return <span className="text-gray-400">—</span>;
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      {coes.map((coe) => (
+        <Link
+          key={coe}
+          to={`/coes?search=${coe}`}
+          className="font-mono text-sm text-emerald-700 hover:underline"
+        >
+          {coe}
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -201,7 +223,9 @@ export function GestionesListPage() {
                           ) : null}
                         </TableCell>
                         <TableCell>{formatDateTime(g.detectado_en)}</TableCell>
-                        <TableCell>{g.coes_afectados.length}</TableCell>
+                        <TableCell>
+                          <CoesCell coes={g.coes_afectados} />
+                        </TableCell>
                         <TableCell>
                           <EstadoBadge estado={g.estado} />
                         </TableCell>
