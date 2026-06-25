@@ -22,6 +22,10 @@ frontend/dist/
 backend/.env
 frontend/.env
 
+# Production infra config — lives only on the VPS, never in this public repo
+docker-compose.prod.yml
+docker-compose.prod.yml.*
+
 # IDE
 .idea/
 .vscode/
