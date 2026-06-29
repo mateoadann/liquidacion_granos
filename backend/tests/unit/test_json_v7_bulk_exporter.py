@@ -84,13 +84,15 @@ def test_total_neto_a_pagar_ausente_cuando_lpg_no_lo_trae(app):
 
 
 def test_total_neto_a_pagar_excluido_del_hash(app):
-    base = transform_single(_make_doc(), _make_taxpayer(), 12, 2025)
+    # Mismo id_liquidacion fijo en ambos para aislar el efecto del campo nuevo:
+    # la única diferencia entre los dicts es totalNetoAPagar.
     con_neto = transform_single(
         _make_doc(datos={**SAMPLE_DATOS, "totalNetoAPagar": 1803708.31}),
-        _make_taxpayer(), 12, 2025,
+        _make_taxpayer(), 12, 2025, id_liquidacion="liq_fijo",
     )
-    # id_liquidacion también se excluye, así que ambos hashes deben coincidir.
-    assert calcular_hash(base) == calcular_hash(con_neto)
+    sin_neto = {k: v for k, v in con_neto.items() if k != "totalNetoAPagar"}
+    assert "totalNetoAPagar" in con_neto and "totalNetoAPagar" not in sin_neto
+    assert calcular_hash(con_neto) == calcular_hash(sin_neto)
 
 
 def test_build_bulk_returns_schema_v7_1(app):
