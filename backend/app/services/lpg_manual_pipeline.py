@@ -87,6 +87,20 @@ def _extract_arca_error(ws_result: dict[str, Any]) -> tuple[str, str] | None:
     return code, desc
 
 
+def _is_ajuste_error(ws_result: dict[str, Any]) -> bool:
+    """True si la respuesta WSLPG trae error 1861 (el COE es un ajuste)."""
+    if not isinstance(ws_result, dict):
+        return False
+    data = ws_result.get("data") if isinstance(ws_result.get("data"), dict) else ws_result
+    errores = data.get("errores") if isinstance(data, dict) else None
+    error_list = errores.get("error") if isinstance(errores, dict) else None
+    if isinstance(error_list, dict):
+        error_list = [error_list]
+    if not isinstance(error_list, list):
+        return False
+    return any(str(e.get("codigo")) == "1861" for e in error_list if isinstance(e, dict))
+
+
 # ---------------------------------------------------------------------------
 # Pure helper: build preview dict from WS result (no DB access)
 # ---------------------------------------------------------------------------
@@ -221,6 +235,19 @@ class LpgManualWsService:
                 raise ArcaWsError(
                     f"Error al consultar ARCA: {fallback_exc}"
                 ) from fallback_exc
+
+        # ARCA devuelve 200 OK con error 1861 cuando el COE es en realidad un
+        # ajuste; no es una excepción, así que el fallback de arriba no se
+        # dispara. Reintentamos con la consulta de ajuste, igual que el endpoint
+        # de PDF (coes.py). ponytail: solo cubre el caso 1861, no todo ajuste.
+        if tipo_documento == "LPG" and _is_ajuste_error(ws_result):
+            logger.info(
+                "MANUAL_WS_IS_AJUSTE | taxpayer_id=%s coe=%s retry ajusteXCoeConsultar (1861)",
+                taxpayer.id,
+                coe_stripped,
+            )
+            ws_result = ws_client.call_ajuste_x_coe(coe_int, pdf="N")
+            tipo_documento = "AJUSTE"
 
         # Check for application-level ARCA errors embedded in 200 OK responses
         arca_error = _extract_arca_error(ws_result)

@@ -196,8 +196,8 @@ export function CoeDetailPage() {
                 <dd className="mt-1 text-slate-900">{coe.taxpayer.empresa}</dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-slate-500">CUIT</dt>
-                <dd className="mt-1 font-mono text-slate-900">{coe.taxpayer.cuit}</dd>
+                <dt className="text-sm font-medium text-slate-500">CUIT Representado</dt>
+                <dd className="mt-1 font-mono text-slate-900">{coe.taxpayer.cuit_representado}</dd>
               </div>
               <div className="pt-4 border-t border-slate-200">
                 <Button
