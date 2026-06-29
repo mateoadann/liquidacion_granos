@@ -4,7 +4,9 @@ export type GestionTipo =
   | "alta_cliente"
   | "alta_proveedor"
   | "mapeo_grano"
-  | "alta_cuenta";
+  | "alta_cuenta"
+  | "cuenta_venta_grano"
+  | "carga_inconsistente";
 
 export type GestionEstado =
   | "pendiente"
