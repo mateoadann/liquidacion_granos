@@ -155,6 +155,27 @@ class TestFetchOnlyHappyPath:
             assert result["ws_result"] == MINIMAL_AJUSTE_WS_RESULT
             mock_ws.call_ajuste_x_coe.assert_called_once_with(330130301001, pdf="N")
 
+    def test_ajuste_via_1861_embedded_200_ok(self, app):
+        """1861 embedded in a 200 OK (no exception) must retry as ajuste, not surface as error."""
+        ws_1861 = {"data": {"errores": {"error": [{"codigo": "1861", "descripcion": "Esta liquidacion es un ajuste."}]}}}
+        with app.app_context():
+            svc = LpgManualWsService()
+            with patch(
+                "app.services.lpg_manual_pipeline.validate_taxpayer_ws_config"
+            ), patch(
+                "app.services.lpg_manual_pipeline.build_ws_client_for_taxpayer"
+            ) as mock_build:
+                mock_ws = MagicMock()
+                mock_ws.call_liquidacion_x_coe.return_value = ws_1861
+                mock_ws.call_ajuste_x_coe.return_value = MINIMAL_AJUSTE_WS_RESULT
+                mock_build.return_value = mock_ws
+
+                result = svc.fetch_only(_TAXPAYER, "330231563502")
+
+            assert result["tipo_documento"] == "AJUSTE"
+            assert result["ws_result"] == MINIMAL_AJUSTE_WS_RESULT
+            mock_ws.call_ajuste_x_coe.assert_called_once_with(330231563502, pdf="N")
+
     def test_parser_fallback(self, app):
         """fetch_only falls back to call_ajuste_x_coe when primary call raises a generic parser exception."""
         with app.app_context():
