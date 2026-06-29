@@ -35,7 +35,13 @@ const TIPO_LABEL: Record<GestionTipo, string> = {
   alta_proveedor: "Alta proveedor",
   mapeo_grano: "Mapeo grano",
   alta_cuenta: "Alta cuenta",
+  cuenta_venta_grano: "Cuenta venta grano",
+  carga_inconsistente: "Carga inconsistente",
 };
+
+// Tipos post-carga (no bloqueantes): se cargaron OK pero algo no reconcilia.
+// Se diferencian visualmente de las gestiones pre-carga bloqueantes.
+const TIPOS_POST_CARGA: ReadonlySet<GestionTipo> = new Set(["carga_inconsistente"]);
 
 function EstadoBadge({ estado }: { estado: GestionEstado }) {
   const meta = ESTADO_META[estado];
@@ -204,9 +210,16 @@ export function GestionesListPage() {
                     return (
                       <TableRow key={g.gestion_id}>
                         <TableCell>
-                          <Badge variant="default" className="whitespace-nowrap">
-                            {TIPO_LABEL[g.tipo]}
-                          </Badge>
+                          <div className="flex flex-col items-start gap-1">
+                            <Badge variant="default" className="whitespace-nowrap">
+                              {TIPO_LABEL[g.tipo]}
+                            </Badge>
+                            {TIPOS_POST_CARGA.has(g.tipo) ? (
+                              <Badge variant="warning" className="whitespace-nowrap">
+                                Post-carga
+                              </Badge>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="text-gray-900">{g.descripcion}</div>

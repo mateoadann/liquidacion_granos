@@ -12,7 +12,7 @@ class Gestion(db.Model):
     __tablename__ = "gestiones"
 
     gestion_id = db.Column(db.Text, primary_key=True)  # 'g_' + 16 hex (§3)
-    tipo = db.Column(db.Text, nullable=False)  # alta_cliente | alta_proveedor | mapeo_grano | alta_cuenta
+    tipo = db.Column(db.Text, nullable=False)  # ver TIPOS_GESTION en services/gestion_id.py
     cuit_empresa = db.Column(db.Text, nullable=False)  # solo dígitos
     razon_social = db.Column(db.Text, nullable=True)
     identificador = db.Column(db.Text, nullable=False)  # CUIT | cod_grano | alias
