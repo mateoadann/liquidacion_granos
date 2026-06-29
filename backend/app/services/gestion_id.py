@@ -3,7 +3,16 @@ from __future__ import annotations
 import hashlib
 
 # Catálogo cerrado de tipos de gestión (SPEC §2). Compartido rpa-holistor ↔ granos.
-TIPOS_GESTION = ("alta_cliente", "alta_proveedor", "mapeo_grano", "alta_cuenta")
+# cuenta_venta_grano: pre-carga, bloqueante (falta cuenta de venta del grano en STOCAGRO).
+# carga_inconsistente: post-carga, NO bloqueante (la carga no reconcilia con Arca).
+TIPOS_GESTION = (
+    "alta_cliente",
+    "alta_proveedor",
+    "mapeo_grano",
+    "alta_cuenta",
+    "cuenta_venta_grano",
+    "carga_inconsistente",
+)
 
 
 def calcular_gestion_id(tipo: str, cuit_empresa: str, identificador: str) -> str:

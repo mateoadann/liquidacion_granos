@@ -116,6 +116,24 @@ def test_post_gestiones_tipo_invalido_422(client, api_headers):
     assert resp.get_json()["error"] == "validacion_fallida"
 
 
+@pytest.mark.parametrize(
+    "tipo,identificador",
+    [
+        ("cuenta_venta_grano", "22"),       # #142 pre-carga, bloqueante
+        ("carga_inconsistente", "33023150836200"),  # #143 post-carga, no bloqueante
+    ],
+)
+def test_post_gestiones_acepta_tipos_nuevos(client, api_headers, tipo, identificador):
+    g = _gestion(tipo=tipo, identificador=identificador, descripcion=f"gestion {tipo}")
+    resp = _post_batch(client, api_headers, [g])
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["creadas"] == 1
+
+    fila = client.get(URL, headers=api_headers).get_json()["gestiones"][0]
+    assert fila["tipo"] == tipo
+    assert fila["estado"] == "pendiente"
+
+
 # ---------------------------------------------------------------------------
 # GET listado
 # ---------------------------------------------------------------------------
