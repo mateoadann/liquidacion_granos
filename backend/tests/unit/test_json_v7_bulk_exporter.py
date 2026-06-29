@@ -7,7 +7,8 @@ import pytest
 
 from app.extensions import db
 from app.models.coe_estado import CoeEstado
-from app.services.json_v7_exporter import build_json_v7_bulk
+from app.services.coe_estado_service import calcular_hash
+from app.services.json_v7_exporter import build_json_v7_bulk, transform_single
 
 
 SAMPLE_DATOS = {
@@ -68,6 +69,30 @@ def _make_coe_estado(
 
 
 # ─── schema básico ─────────────────────────────────────────────────────
+
+
+def test_total_neto_a_pagar_emitido_cuando_lpg_lo_trae(app):
+    datos = {**SAMPLE_DATOS, "totalNetoAPagar": 1803708.31}
+    liq = transform_single(_make_doc(datos=datos), _make_taxpayer(), 12, 2025)
+    assert liq["totalNetoAPagar"] == 1803708.31
+    assert isinstance(liq["totalNetoAPagar"], float)
+
+
+def test_total_neto_a_pagar_ausente_cuando_lpg_no_lo_trae(app):
+    liq = transform_single(_make_doc(), _make_taxpayer(), 12, 2025)
+    assert "totalNetoAPagar" not in liq
+
+
+def test_total_neto_a_pagar_excluido_del_hash(app):
+    # Mismo id_liquidacion fijo en ambos para aislar el efecto del campo nuevo:
+    # la única diferencia entre los dicts es totalNetoAPagar.
+    con_neto = transform_single(
+        _make_doc(datos={**SAMPLE_DATOS, "totalNetoAPagar": 1803708.31}),
+        _make_taxpayer(), 12, 2025, id_liquidacion="liq_fijo",
+    )
+    sin_neto = {k: v for k, v in con_neto.items() if k != "totalNetoAPagar"}
+    assert "totalNetoAPagar" in con_neto and "totalNetoAPagar" not in sin_neto
+    assert calcular_hash(con_neto) == calcular_hash(sin_neto)
 
 
 def test_build_bulk_returns_schema_v7_1(app):
