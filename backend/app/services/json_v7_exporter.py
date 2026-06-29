@@ -201,6 +201,10 @@ def transform_single(
         liquidacion["retenciones"] = retenciones
         liquidacion["deducciones"] = deducciones
 
+    total_neto = datos.get("totalNetoAPagar")
+    if total_neto is not None:
+        liquidacion["totalNetoAPagar"] = float(total_neto)
+
     return liquidacion
 
 
