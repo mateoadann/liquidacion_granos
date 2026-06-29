@@ -83,6 +83,7 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
                 "id": taxpayer.id,
                 "empresa": taxpayer.empresa,
                 "cuit": taxpayer.cuit,
+                "cuit_representado": taxpayer.cuit_representado,
             }
     return result
 

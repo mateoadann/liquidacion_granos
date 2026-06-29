@@ -57,6 +57,7 @@ export interface Coe {
     id: number;
     empresa: string;
     cuit: string;
+    cuit_representado: string;
   };
   controlada: boolean;
   controlada_por: string | null;
