@@ -52,7 +52,7 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 # Hash
 # ---------------------------------------------------------------------------
 
-CAMPOS_EXCLUIDOS_HASH = {"estado_origen", "id_liquidacion", "_hash_payload"}
+CAMPOS_EXCLUIDOS_HASH = {"estado_origen", "id_liquidacion", "_hash_payload", "totalNetoAPagar"}
 
 
 def calcular_hash(liquidacion: dict) -> str:
