@@ -12,39 +12,42 @@ export function ControlIndicator({ coe }: { coe: Coe }) {
   const rpa = coe.control_rpa_estado;
 
   if (rpa === "ok") {
-    return <Mark color="text-green-600 border-green-600" title="Control OK (RPA)" />;
+    return (
+      <span
+        title="Control OK (RPA)"
+        aria-label="Control OK (RPA)"
+        className="inline-flex h-4 w-4 items-center justify-center rounded bg-green-600 text-xs font-bold text-white"
+      >
+        ✓
+      </span>
+    );
   }
   if (rpa === "inconsistente") {
     return (
-      <Mark
-        color="text-red-600 border-red-600"
+      <span
         title="Control fallido (RPA) — hay diferencias. Ver gestión de carga inconsistente."
-      />
+        aria-label="Control fallido (RPA)"
+        className="inline-flex h-4 w-4 items-center justify-center rounded bg-red-600 text-xs font-bold text-white"
+      >
+        ✓
+      </span>
     );
   }
-  if (coe.controlada) {
-    return <Mark color="text-slate-700 border-slate-400" title="Controlado manualmente" />;
-  }
+  // Manual control (or none) — native checkbox, neutral color, same as before.
   return (
     <input
       type="checkbox"
-      checked={false}
+      checked={coe.controlada}
       disabled
-      aria-label="sin controlar"
-      title={rpa === "no_encontrado" ? "RPA: COE no encontrado en Holistor" : "Sin controlar"}
+      aria-label={coe.controlada ? "Controlado manualmente" : "sin controlar"}
+      title={
+        coe.controlada
+          ? "Controlado manualmente"
+          : rpa === "no_encontrado"
+            ? "RPA: COE no encontrado en Holistor"
+            : "Sin controlar"
+      }
       className="form-checkbox h-4 w-4 rounded border-slate-300"
     />
-  );
-}
-
-function Mark({ color, title }: { color: string; title: string }) {
-  return (
-    <span
-      title={title}
-      aria-label={title}
-      className={`inline-flex h-4 w-4 items-center justify-center rounded border-2 text-xs font-bold ${color}`}
-    >
-      ✓
-    </span>
   );
 }
