@@ -87,6 +87,67 @@ def post_coe_cargado():
         return jsonify({"error": "interno", "mensaje": str(e)}), 500
 
 
+@integration_bp.post("/v1/coes/control")
+@require_api_key
+def post_coe_control():
+    """Reporte del control de reconciliación del RPA contra Holistor.
+
+    Payload::
+
+        {
+            "coe": "...",
+            "estado": "ok" | "inconsistente" | "no_encontrado",
+            "controlado_en": "2026-06-30T10:41:37-03:00"
+        }
+
+    El detalle de las dimensiones que difieren (cuando estado='inconsistente')
+    vive en la gestion `carga_inconsistente` que el RPA ya reporta aparte; acá
+    solo persistimos el veredicto para el indicador visual de la lista.
+    """
+    body = request.get_json(silent=True) or {}
+
+    coe = body.get("coe")
+    if not coe:
+        return jsonify({"error": "validacion_fallida", "mensaje": "Campo 'coe' requerido."}), 422
+
+    estado = body.get("estado")
+    if estado not in ("ok", "inconsistente", "no_encontrado"):
+        return jsonify({
+            "error": "validacion_fallida",
+            "mensaje": "Campo 'estado' debe ser 'ok', 'inconsistente' o 'no_encontrado'.",
+        }), 422
+
+    doc = LpgDocument.query.filter_by(coe=coe).first()
+    if doc is None:
+        return jsonify({"error": "coe_no_encontrado", "mensaje": f"COE {coe} no existe en la base."}), 404
+
+    controlado_en = now_cordoba_naive()
+    controlado_en_str = body.get("controlado_en")
+    if controlado_en_str:
+        try:
+            controlado_en = datetime.fromisoformat(controlado_en_str).replace(tzinfo=None)
+        except ValueError:
+            return jsonify({
+                "error": "validacion_fallida",
+                "mensaje": "'controlado_en' debe ser una fecha ISO 8601 válida.",
+            }), 422
+
+    doc.control_rpa_estado = estado
+    doc.control_rpa_en = controlado_en
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "interno", "mensaje": str(e)}), 500
+
+    return jsonify({
+        "coe": coe,
+        "control_rpa_estado": estado,
+        "control_rpa_en": controlado_en.isoformat(),
+    }), 200
+
+
 @integration_bp.get("/v1/coes/<coe>")
 @require_api_key
 def get_coe_estado(coe):
