@@ -84,10 +84,11 @@ def _build_grano(datos: dict) -> dict:
 
 
 def _build_retenciones(datos: dict) -> list[dict]:
-    """Map retenciones from datos_limpios to v7 format.
+    """Map retenciones from datos_limpios to v7 format, one item per retencion.
 
-    Unifies IB (Ingresos Brutos) and OG (Otras Retenciones) into a single
-    IB entry, summing importes and alicuotas.
+    No unifies/collapses any code: OG and IB (and every other code) travel as
+    separate items with their codigo_arca as-is from Arca. Items with
+    importe <= 0 are emitted too — rpa-holistor filters them downstream.
     """
     raw_retenciones = datos.get("retenciones", [])
     if not isinstance(raw_retenciones, list):
@@ -95,43 +96,14 @@ def _build_retenciones(datos: dict) -> list[dict]:
 
     cuit_proveedor = _format_cuit(datos.get("cuitComprador"))
 
-    ib_items: list[dict] = []
-    og_items: list[dict] = []
-    others: list[dict] = []
-
-    for ret in raw_retenciones:
-        codigo = ret.get("codigoConcepto", "")
-        importe = ret.get("importeRetencion", 0) or 0
-        if importe <= 0:
-            continue
-        if codigo == "IB":
-            ib_items.append(ret)
-        elif codigo == "OG":
-            og_items.append(ret)
-        else:
-            others.append(ret)
-
     result: list[dict] = []
-
-    # Unify IB + OG into single IB entry
-    if ib_items or og_items:
-        combined = ib_items + og_items
-        total_importe = sum((r.get("importeRetencion", 0) or 0) for r in combined)
-        total_alicuota = sum((r.get("alicuota", 0) or 0) for r in combined)
-        result.append({
-            "codigo_arca": "IB",
-            "importe": _safe_round(total_importe),
-            "alicuota": _safe_round(total_alicuota),
-            "cuit_proveedor": cuit_proveedor,
-        })
-
-    # Add remaining retenciones as-is
-    for ret in others:
+    for ret in raw_retenciones:
         result.append({
             "codigo_arca": ret.get("codigoConcepto", ""),
             "importe": _safe_round(ret.get("importeRetencion", 0)),
             "alicuota": _safe_round(ret.get("alicuota", 0)),
             "cuit_proveedor": cuit_proveedor,
+            "detalle": ret.get("detalleAclaratorio") or ret.get("descConcepto", ""),
         })
 
     return result
