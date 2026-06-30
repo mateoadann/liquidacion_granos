@@ -176,6 +176,19 @@ export function CoeDetailPage() {
                   </span>
                 )}
               </dd>
+              {coe.control_rpa_estado && (
+                <dd className="mt-1 text-sm">
+                  {coe.control_rpa_estado === "ok" && (
+                    <span className="text-green-700">{`Control OK (RPA) el ${formatDateTime(coe.control_rpa_en)}`}</span>
+                  )}
+                  {coe.control_rpa_estado === "inconsistente" && (
+                    <span className="text-red-700">{`Control fallido (RPA) el ${formatDateTime(coe.control_rpa_en)} — ver gestión de carga inconsistente`}</span>
+                  )}
+                  {coe.control_rpa_estado === "no_encontrado" && (
+                    <span className="text-slate-500">{`RPA: COE no encontrado en Holistor (${formatDateTime(coe.control_rpa_en)})`}</span>
+                  )}
+                </dd>
+              )}
               {toggleMutation.isError && (
                 <Alert variant="error" className="mt-2">
                   {toggleMutation.error instanceof Error

@@ -63,6 +63,8 @@ export interface Coe {
   controlada_por: string | null;
   controlada_por_nombre: string | null;
   controlada_en: string | null;
+  control_rpa_estado: "ok" | "inconsistente" | "no_encontrado" | null;
+  control_rpa_en: string | null;
   cod_tipo_operacion: string | number | null;
 }
 
