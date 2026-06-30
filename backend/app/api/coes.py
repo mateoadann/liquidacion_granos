@@ -74,6 +74,8 @@ def _serialize_coe(doc: LpgDocument, include_taxpayer: bool = False) -> dict:
         "controlada_por": doc.controlada_por,
         "controlada_por_nombre": doc.controlada_por_nombre,
         "controlada_en": doc.controlada_en.isoformat() if doc.controlada_en else None,
+        "control_rpa_estado": doc.control_rpa_estado,
+        "control_rpa_en": doc.control_rpa_en.isoformat() if doc.control_rpa_en else None,
         "cod_tipo_operacion": (doc.datos_limpios or {}).get("codTipoOperacion"),
     }
     if include_taxpayer and doc.taxpayer_id:

@@ -27,6 +27,7 @@ import { useClientsQuery } from "../useClients";
 import { usePageQueryParam } from "../hooks/usePageQueryParam";
 import { useCoesFilters } from "../hooks/useCoesFilters";
 import { downloadCoePdf, type Coe } from "../api/coes";
+import { ControlIndicator } from "../components/ControlIndicator";
 
 function EstadoCicloBadge({ estado }: { estado: string | null | undefined }) {
   const variants: Record<string, "success" | "warning" | "error" | "default"> = {
@@ -265,13 +266,7 @@ export function CoesListPage() {
                         <EstadoCicloBadge estado={coe.coe_estado?.estado} />
                       </TableCell>
                       <TableCell className="text-center">
-                        <input
-                          type="checkbox"
-                          checked={coe.controlada}
-                          disabled
-                          aria-label="controlada"
-                          className="form-checkbox h-4 w-4 rounded border-slate-300 text-green-600"
-                        />
+                        <ControlIndicator coe={coe} />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">

@@ -26,3 +26,10 @@ class LpgDocument(db.Model):
     controlada_por = db.Column(db.String(80), nullable=True)
     controlada_por_nombre = db.Column(db.String(255), nullable=True)
     controlada_en = db.Column(db.DateTime, nullable=True)
+
+    # Control RPA — reconciliation verdict reported by rpa-holistor.
+    # null = no RPA check; "ok" = reconciled; "inconsistente" = mismatch
+    # (detail lives in the carga_inconsistente gestion); "no_encontrado" = COE
+    # not found in Holistor. Independent from the manual `controlada` flag.
+    control_rpa_estado = db.Column(db.String(20), nullable=True)
+    control_rpa_en = db.Column(db.DateTime, nullable=True)
