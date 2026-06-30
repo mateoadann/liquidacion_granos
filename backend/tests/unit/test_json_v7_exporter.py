@@ -201,7 +201,8 @@ class TestBuildRetenciones:
         assert result[0]["alicuota"] == 10.5
         assert result[0]["cuit_proveedor"] == "30500120882"
 
-    def test_build_retenciones_iibb_unification(self):
+    def test_build_retenciones_iibb_not_unified(self):
+        """IB y OG viajan como dos items separados, nunca sumados ni mergeados."""
         datos = {
             "cuitComprador": 30500120882,
             "cuitVendedor": 30711165378,
@@ -210,19 +211,24 @@ class TestBuildRetenciones:
                     "codigoConcepto": "IB",
                     "importeRetencion": 200000,
                     "alicuota": 4.0,
+                    "detalleAclaratorio": "RETENCION IIBB ORIGEN",
                 },
                 {
                     "codigoConcepto": "OG",
                     "importeRetencion": 127489.77,
                     "alicuota": 4.0,
+                    "detalleAclaratorio": "RETENCION IIBB BUENOS AIRES",
                 },
             ],
         }
         result = _build_retenciones(datos)
-        ib_items = [r for r in result if r["codigo_arca"] == "IB"]
-        assert len(ib_items) == 1
-        assert ib_items[0]["importe"] == pytest.approx(327489.77)
-        assert ib_items[0]["alicuota"] == pytest.approx(8.0)
+        assert len(result) == 2
+        ib = next(r for r in result if r["codigo_arca"] == "IB")
+        og = next(r for r in result if r["codigo_arca"] == "OG")
+        assert ib["importe"] == 200000
+        assert ib["detalle"] == "RETENCION IIBB ORIGEN"
+        assert og["importe"] == pytest.approx(127489.77)
+        assert og["detalle"] == "RETENCION IIBB BUENOS AIRES"
 
     def test_build_retenciones_only_ib_no_og(self):
         datos = {
@@ -241,7 +247,8 @@ class TestBuildRetenciones:
         assert result[0]["codigo_arca"] == "IB"
         assert result[0]["importe"] == 200000
 
-    def test_build_retenciones_only_og_no_ib(self):
+    def test_build_retenciones_og_stays_og(self):
+        """Un OG solo se emite como OG, no se renombra a IB."""
         datos = {
             "cuitComprador": 30500120882,
             "cuitVendedor": 30711165378,
@@ -255,35 +262,34 @@ class TestBuildRetenciones:
         }
         result = _build_retenciones(datos)
         assert len(result) == 1
-        assert result[0]["codigo_arca"] == "IB"
-        assert result[0]["importe"] == 127489.77
+        assert result[0]["codigo_arca"] == "OG"
+        assert result[0]["importe"] == pytest.approx(127489.77)
 
-    def test_build_retenciones_no_og_in_output(self):
+    def test_build_retenciones_detalle_fallback_desc(self):
+        """detalle cae a descConcepto cuando no hay detalleAclaratorio."""
+        datos = {
+            "cuitComprador": 30500120882,
+            "retenciones": [
+                {"codigoConcepto": "RI", "importeRetencion": 100, "alicuota": 5.0, "descConcepto": "RETENCION I.V.A."},
+            ],
+        }
+        result = _build_retenciones(datos)
+        assert result[0]["detalle"] == "RETENCION I.V.A."
+
+    def test_build_retenciones_does_not_filter_zero_importe(self):
+        """importe <= 0 se emite igual — rpa-holistor filtra aguas abajo."""
         datos = {
             "cuitComprador": 30500120882,
             "cuitVendedor": 30711165378,
             "retenciones": [
-                {"codigoConcepto": "IB", "importeRetencion": 100, "alicuota": 2.0},
-                {"codigoConcepto": "OG", "importeRetencion": 50, "alicuota": 1.0},
-                {"codigoConcepto": "RG", "importeRetencion": 300, "alicuota": 5.0},
+                {"codigoConcepto": "RG", "importeRetencion": 0, "alicuota": 0, "detalleAclaratorio": "RETENCION GANANCIAS"},
+                {"codigoConcepto": "RI", "importeRetencion": 500, "alicuota": 5.0},
             ],
         }
         result = _build_retenciones(datos)
+        assert len(result) == 2
         codigos = [r["codigo_arca"] for r in result]
-        assert "OG" not in codigos
-
-    def test_build_retenciones_filters_zero_importe(self):
-        datos = {
-            "cuitComprador": 30500120882,
-            "cuitVendedor": 30711165378,
-            "retenciones": [
-                {"codigoConcepto": "RI", "importeRetencion": 0, "alicuota": 10.5},
-                {"codigoConcepto": "RG", "importeRetencion": 500, "alicuota": 5.0},
-            ],
-        }
-        result = _build_retenciones(datos)
-        assert len(result) == 1
-        assert result[0]["codigo_arca"] == "RG"
+        assert codigos == ["RG", "RI"]
 
 
 # ─── _build_deducciones ────────────────────────────────────────────────
@@ -427,7 +433,7 @@ class TestBuildJsonV7:
         assert isinstance(result["liquidaciones"], list)
         assert len(result["liquidaciones"]) == 1
 
-    def test_build_json_v7_no_og_in_any_output(self, app):
+    def test_build_json_v7_og_travels_separate(self, app):
         datos_with_og = {
             **SAMPLE_DATOS,
             "retenciones": [
@@ -443,5 +449,5 @@ class TestBuildJsonV7:
 
         for liq in result["liquidaciones"]:
             if "retenciones" in liq:
-                for ret in liq["retenciones"]:
-                    assert ret["codigo_arca"] != "OG", "OG must not appear in output"
+                codigos = [ret["codigo_arca"] for ret in liq["retenciones"]]
+                assert codigos == ["IB", "OG", "RG"], "cada retencion viaja por separado, OG incluido"
