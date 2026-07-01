@@ -335,6 +335,93 @@ def test_get_gestiones_acepta_jwt(client, api_headers, auth_headers):
 
 
 # ---------------------------------------------------------------------------
+# Verificar carga_inconsistente limpia control_rpa_estado de los COEs afectados
+# ---------------------------------------------------------------------------
+
+
+def _crear_coe_inconsistente(app, coe: str):
+    """Crea un LpgDocument con control_rpa_estado='inconsistente'."""
+    from app.extensions import db
+    from app.models.lpg_document import LpgDocument
+    from app.models.taxpayer import Taxpayer
+
+    with app.app_context():
+        tp = Taxpayer()
+        tp.cuit = "30611958249"
+        tp.empresa = "SAN FRANCISCO S.R.L."
+        tp.cuit_representado = "30611958249"
+        tp.cert_crt_path = "/tmp/test.crt"
+        tp.cert_key_path = "/tmp/test.key"
+        tp.clave_fiscal_encrypted = "x"
+        tp.activo = True
+        db.session.add(tp)
+        db.session.commit()
+
+        doc = LpgDocument()
+        doc.taxpayer_id = tp.id
+        doc.coe = coe
+        doc.tipo_documento = "LPG"
+        doc.raw_data = {}
+        doc.control_rpa_estado = "inconsistente"
+        db.session.add(doc)
+        db.session.commit()
+
+
+def test_verificar_carga_inconsistente_limpia_control_rpa(client, api_headers, app):
+    from app.extensions import db
+    from app.models.lpg_document import LpgDocument
+    from app.services import gestiones_service
+
+    coe = "33013150703900"
+    _crear_coe_inconsistente(app, coe)
+
+    g = _gestion(tipo="carga_inconsistente", coes_afectados=[coe])
+    _post_batch(client, api_headers, [g])
+    gestiones_service.marcar_realizada(g["gestion_id"])
+    gestiones_service.confirmar_verificacion(g["gestion_id"], resultado="verificada")
+
+    with app.app_context():
+        doc = LpgDocument.query.filter_by(coe=coe).first()
+        assert doc.control_rpa_estado == "ok"
+
+
+def test_verificacion_fallida_no_limpia_control_rpa(client, api_headers, app):
+    """Solo 'verificada' limpia el control; 'verificacion_fallida' lo deja en rojo."""
+    from app.models.lpg_document import LpgDocument
+    from app.services import gestiones_service
+
+    coe = "33013150703800"
+    _crear_coe_inconsistente(app, coe)
+
+    g = _gestion(tipo="carga_inconsistente", coes_afectados=[coe])
+    _post_batch(client, api_headers, [g])
+    gestiones_service.marcar_realizada(g["gestion_id"])
+    gestiones_service.confirmar_verificacion(g["gestion_id"], resultado="verificacion_fallida")
+
+    with app.app_context():
+        doc = LpgDocument.query.filter_by(coe=coe).first()
+        assert doc.control_rpa_estado == "inconsistente"
+
+
+def test_verificar_otro_tipo_gestion_no_toca_control_rpa(client, api_headers, app):
+    """Verificar una gestion que no es carga_inconsistente no toca el control RPA."""
+    from app.models.lpg_document import LpgDocument
+    from app.services import gestiones_service
+
+    coe = "33013150624400"
+    _crear_coe_inconsistente(app, coe)
+
+    g = _gestion(tipo="alta_cliente", coes_afectados=[coe])
+    _post_batch(client, api_headers, [g])
+    gestiones_service.marcar_realizada(g["gestion_id"])
+    gestiones_service.confirmar_verificacion(g["gestion_id"], resultado="verificada")
+
+    with app.app_context():
+        doc = LpgDocument.query.filter_by(coe=coe).first()
+        assert doc.control_rpa_estado == "inconsistente"
+
+
+# ---------------------------------------------------------------------------
 # Contrato gestion_id (mismo fixture compartido que RPA)
 # ---------------------------------------------------------------------------
 
