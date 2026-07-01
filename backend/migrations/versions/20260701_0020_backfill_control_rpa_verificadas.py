@@ -12,7 +12,7 @@ Revises: 20260630_0019
 Create Date: 2026-07-01
 """
 from alembic import op
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 revision = "20260701_0020"
 down_revision = "20260630_0019"
@@ -36,12 +36,11 @@ def upgrade():
     if not coes:
         return
 
-    conn.execute(
-        text(
-            "UPDATE lpg_document SET control_rpa_estado = 'ok' "
-            "WHERE control_rpa_estado = 'inconsistente' AND coe IN :coes"
-        ).bindparams(coes=tuple(coes)),
-    )
+    stmt = text(
+        "UPDATE lpg_document SET control_rpa_estado = 'ok' "
+        "WHERE control_rpa_estado = 'inconsistente' AND coe IN :coes"
+    ).bindparams(bindparam("coes", expanding=True))
+    conn.execute(stmt, {"coes": list(coes)})
 
 
 def downgrade():
