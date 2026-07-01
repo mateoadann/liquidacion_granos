@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..extensions import db
 from ..models.gestion import Gestion
+from ..models.lpg_document import LpgDocument
 from ..time_utils import now_cordoba_naive
 from .gestion_id import TIPOS_GESTION
 
@@ -182,9 +183,29 @@ def confirmar_verificacion(gestion_id: str, resultado: str, detalle: str | None 
     g.verificacion_detalle = detalle
     if resultado == "verificada":
         g.verificada_en = verificado_en or now_cordoba_naive().isoformat()
+        _limpiar_control_rpa_afectados(g)
     db.session.commit()
 
     return {"gestion_id": g.gestion_id, "estado": g.estado}
+
+
+def _limpiar_control_rpa_afectados(g: Gestion) -> None:
+    """Al verificar una gestion carga_inconsistente, la inconsistencia se
+    corrigio: los COEs afectados vuelven a reconciliar, asi que su check de
+    control RPA pasa de 'inconsistente' a 'ok'. Sin esto el check queda rojo
+    para siempre porque el RPA no re-postea el control. No commitea (el caller
+    lo hace)."""
+    if g.tipo != "carga_inconsistente":
+        return
+    coes = g.coes_afectados or []
+    if not coes:
+        return
+    (
+        LpgDocument.query
+        .filter(LpgDocument.coe.in_(coes))
+        .filter(LpgDocument.control_rpa_estado == "inconsistente")
+        .update({LpgDocument.control_rpa_estado: "ok"}, synchronize_session=False)
+    )
 
 
 # ---------------------------------------------------------------------------
